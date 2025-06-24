@@ -68,7 +68,7 @@ private val DefaultIconSize = Size(16f, 16f)
  */
 fun JMenuBar.setContent(
     parentComposition: CompositionContext,
-    content: @Composable (MenuBarScope.() -> Unit)
+    content: @Composable @MenuComposable (MenuBarScope.() -> Unit)
 ): Composition {
     val applier = MutableListApplier(asMutableList())
     val composition = Composition(applier, parentComposition)
@@ -93,7 +93,7 @@ fun JMenuBar.setContent(
  */
 fun Menu.setContent(
     parentComposition: CompositionContext,
-    content: @Composable (MenuScope.() -> Unit)
+    content: @Composable @MenuComposable (MenuScope.() -> Unit)
 ): Composition {
     val applier = MenuItemApplier(this)
     val composition = Composition(applier, parentComposition)
@@ -118,7 +118,7 @@ fun Menu.setContent(
  */
 fun JMenu.setContent(
     parentComposition: CompositionContext,
-    content: @Composable (MenuScope.() -> Unit)
+    content: @Composable @MenuComposable (MenuScope.() -> Unit)
 ): Composition {
     val applier = JMenuItemApplier(this)
     val composition = Composition(applier, parentComposition)
@@ -147,11 +147,12 @@ class MenuBarScope internal constructor() {
      * @param content content of the menu (sub menus, items, separators, etc)
      */
     @Composable
+    @MenuComposable
     fun Menu(
         text: String,
         mnemonic: Char? = null,
         enabled: Boolean = true,
-        content: @Composable MenuScope.() -> Unit
+        content: @Composable @MenuComposable MenuScope.() -> Unit
     ) {
         val menu = remember(::JMenu)
         val compositionContext = rememberCompositionContext()
@@ -176,17 +177,20 @@ class MenuBarScope internal constructor() {
 
 internal interface MenuScopeImpl {
     @Composable
+    @MenuComposable
     fun Menu(
         text: String,
         enabled: Boolean,
         mnemonic: Char?,
-        content: @Composable MenuScope.() -> Unit
+        content: @Composable @MenuComposable MenuScope.() -> Unit
     )
 
     @Composable
+    @MenuComposable
     fun Separator()
 
     @Composable
+    @MenuComposable
     fun Item(
         text: String,
         icon: Painter?,
@@ -197,6 +201,7 @@ internal interface MenuScopeImpl {
     )
 
     @Composable
+    @MenuComposable
     fun CheckboxItem(
         text: String,
         checked: Boolean,
@@ -208,6 +213,7 @@ internal interface MenuScopeImpl {
     )
 
     @Composable
+    @MenuComposable
     fun RadioButtonItem(
         text: String,
         selected: Boolean,
@@ -228,11 +234,12 @@ private class AwtMenuScope : MenuScopeImpl {
      * @param content content of the menu (sub menus, items, separators, etc)
      */
     @Composable
+    @MenuComposable
     override fun Menu(
         text: String,
         enabled: Boolean,
         mnemonic: Char?,
-        content: @Composable MenuScope.() -> Unit
+        content: @Composable @MenuComposable MenuScope.() -> Unit
     ) {
         if (mnemonic != null) {
             throw UnsupportedOperationException("java.awt.Menu doesn't support mnemonic")
@@ -252,6 +259,7 @@ private class AwtMenuScope : MenuScopeImpl {
     }
 
     @Composable
+    @MenuComposable
     override fun Separator() {
         ComposeNode<MenuItem, MenuItemApplier>(
             // item with name "-" has different look
@@ -261,6 +269,7 @@ private class AwtMenuScope : MenuScopeImpl {
     }
 
     @Composable
+    @MenuComposable
     override fun Item(
         text: String,
         icon: Painter?,
@@ -297,6 +306,7 @@ private class AwtMenuScope : MenuScopeImpl {
     }
 
     @Composable
+    @MenuComposable
     override fun CheckboxItem(
         text: String,
         checked: Boolean,
@@ -340,6 +350,7 @@ private class AwtMenuScope : MenuScopeImpl {
     }
 
     @Composable
+    @MenuComposable
     override fun RadioButtonItem(
         text: String,
         selected: Boolean,
@@ -362,11 +373,12 @@ private class SwingMenuScope : MenuScopeImpl {
      * @param content content of the menu (sub menus, items, separators, etc)
      */
     @Composable
+    @MenuComposable
     override fun Menu(
         text: String,
         enabled: Boolean,
         mnemonic: Char?,
-        content: @Composable MenuScope.() -> Unit
+        content: @Composable @MenuComposable MenuScope.() -> Unit
     ) {
         ComposeNode<JMenu, JMenuItemApplier>(
             factory = { JMenu() },
@@ -383,6 +395,7 @@ private class SwingMenuScope : MenuScopeImpl {
     }
 
     @Composable
+    @MenuComposable
     override fun Separator() {
         ComposeNode<JPopupMenu.Separator, JMenuItemApplier>(
             // item with name "-" has different look
@@ -392,6 +405,7 @@ private class SwingMenuScope : MenuScopeImpl {
     }
 
     @Composable
+    @MenuComposable
     override fun Item(
         text: String,
         icon: Painter?,
@@ -422,6 +436,7 @@ private class SwingMenuScope : MenuScopeImpl {
     }
 
     @Composable
+    @MenuComposable
     override fun CheckboxItem(
         text: String,
         checked: Boolean,
@@ -459,6 +474,7 @@ private class SwingMenuScope : MenuScopeImpl {
     }
 
     @Composable
+    @MenuComposable
     override fun RadioButtonItem(
         text: String,
         selected: Boolean,
@@ -514,11 +530,12 @@ class MenuScope internal constructor(private val impl: MenuScopeImpl) {
      * @param content content of the menu (sub menus, items, separators, etc)
      */
     @Composable
+    @MenuComposable
     fun Menu(
         text: String,
         enabled: Boolean = true,
         mnemonic: Char? = null,
-        content: @Composable MenuScope.() -> Unit
+        content: @Composable @MenuComposable MenuScope.() -> Unit
     ): Unit = impl.Menu(
         text,
         enabled,
@@ -530,6 +547,7 @@ class MenuScope internal constructor(private val impl: MenuScopeImpl) {
      * Adds separator to the menu
      */
     @Composable
+    @MenuComposable
     fun Separator() = impl.Separator()
 
     /**
@@ -547,6 +565,7 @@ class MenuScope internal constructor(private val impl: MenuScopeImpl) {
      * @param onClick action that should be performed when the user clicks on the item
      */
     @Composable
+    @MenuComposable
     fun Item(
         text: String,
         icon: Painter? = null,
@@ -573,6 +592,7 @@ class MenuScope internal constructor(private val impl: MenuScopeImpl) {
      * therefore the change of checked state in requested
      */
     @Composable
+    @MenuComposable
     fun CheckboxItem(
         text: String,
         checked: Boolean,
@@ -601,6 +621,7 @@ class MenuScope internal constructor(private val impl: MenuScopeImpl) {
      * @param onClick callback to be invoked when the radio button is being clicked
      */
     @Composable
+    @MenuComposable
     fun RadioButtonItem(
         text: String,
         selected: Boolean,
