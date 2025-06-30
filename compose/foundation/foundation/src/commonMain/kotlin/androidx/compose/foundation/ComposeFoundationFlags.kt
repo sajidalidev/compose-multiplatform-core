@@ -68,6 +68,7 @@ object ComposeFoundationFlags {
      * [BasicTextField][androidx.compose.foundation.text.BasicTextField]s. If false, the previous
      * context menu that has no public APIs will be used instead.
      */
+    // TODO mazunin-v: don't forget to revert it
     @Suppress("MutableBareField") @JvmField var isNewContextMenuEnabled = false
 
     /**

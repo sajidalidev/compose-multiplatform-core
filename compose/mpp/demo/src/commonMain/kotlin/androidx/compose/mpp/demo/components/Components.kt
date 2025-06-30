@@ -31,6 +31,7 @@ import androidx.compose.mpp.demo.components.material3.SearchBarExample
 import androidx.compose.mpp.demo.components.material3.WindowSizeClassExample
 import androidx.compose.mpp.demo.components.popup.Popups
 import androidx.compose.mpp.demo.components.text.TextDemos
+import androidx.compose.mpp.demo.textfield.NITITextFields
 import androidx.compose.mpp.demo.textfield.TextFields
 
 private val MaterialComponents = Screen.Selection(
@@ -58,6 +59,7 @@ val Components = Screen.Selection(
     Dialogs,
     TextDemos,
     TextFields,
+    NITITextFields,
     LazyLayouts,
     MaterialComponents,
     Material3Components,

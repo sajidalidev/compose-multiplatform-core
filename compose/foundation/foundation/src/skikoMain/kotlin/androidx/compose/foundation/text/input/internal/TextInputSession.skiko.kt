@@ -25,7 +25,11 @@ import androidx.compose.foundation.text.offsetByCodePoints
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.platform.PlatformTextInputSession
 import androidx.compose.ui.platform.ViewConfiguration
@@ -100,6 +104,8 @@ internal actual suspend fun PlatformTextInputSession.platformSpecificTextInputSe
 
         fun textClippingRectInRoot() = layoutState.coreNodeCoordinates?.boundsInRoot()
 
+        fun textUnclippingOffsetInRoot() = layoutState.textLayoutNodeCoordinates?.positionInRoot()
+
         startInputMethod(
             SkikoPlatformTextInputMethodRequest(
                 value = { state.untransformedText.toTextFieldValue() },
@@ -111,6 +117,7 @@ internal actual suspend fun PlatformTextInputSession.platformSpecificTextInputSe
                 focusedRectInRoot = ::focusedRectInRoot,
                 textFieldRectInRoot = ::textFieldRectInRoot,
                 textClippingRectInRoot = ::textClippingRectInRoot,
+                textUnclippingOffsetInRoot = ::textUnclippingOffsetInRoot,
                 editText = ::editText
             )
         )
@@ -235,5 +242,6 @@ internal data class SkikoPlatformTextInputMethodRequest(
     override val focusedRectInRoot: () -> Rect?,
     override val textFieldRectInRoot: () -> Rect?,
     override val textClippingRectInRoot: () -> Rect?,
+    override val textUnclippingOffsetInRoot: () -> Offset?,
     override val editText: (block: TextEditingScope.() -> Unit) -> Unit
 ): PlatformTextInputMethodRequest

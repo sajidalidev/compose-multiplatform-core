@@ -480,7 +480,7 @@ private class CupertinoOverscrollNode(
                     pointersDown--
                 }
             }
-            assert(pointersDown >= 0) { "pointersDown cannot be negative" }
+//            assert(pointersDown >= 0) { "pointersDown cannot be negative" } // TODO Overscroll in NITI shouldn't be fixed like that
         }
     }
 

@@ -61,6 +61,7 @@ import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsOwner
 import androidx.compose.ui.uikit.InterfaceOrientation
+import androidx.compose.ui.uikit.LocalNativeTextInputContext
 import androidx.compose.ui.uikit.LocalUIView
 import androidx.compose.ui.uikit.OnFocusBehavior
 import androidx.compose.ui.uikit.density
@@ -601,6 +602,7 @@ internal class ComposeSceneMediator(
         CompositionLocalProvider(
             LocalInteropContainer provides interopContainer,
             LocalUIView provides _overlayView,
+            LocalNativeTextInputContext provides textInputService,
             content = content
         )
 
@@ -744,8 +746,23 @@ internal class ComposeSceneMediator(
                     }
                 }
                 launch {
+                    snapshotFlow { request.textClippingRectInRoot() }.filterNotNull().collect {
+                        textInputService.updateClippingTextFrame(it)
+                    }
+                }
+                launch {
                     snapshotFlow { request.textFieldRectInRoot() }.filterNotNull().collect {
                         textInputService.updateTextFrame(it)
+                    }
+                }
+                launch {
+                    snapshotFlow { request.focusedRectInRoot() }.filterNotNull().collect {
+                        textInputService.updateFocusedRect(it)
+                    }
+                }
+                launch {
+                    snapshotFlow { request.textUnclippingOffsetInRoot() }.filterNotNull().collect {
+                        textInputService.updateUnclippingTextPosition(it)
                     }
                 }
                 suspendCancellableCoroutine<Nothing> { continuation ->

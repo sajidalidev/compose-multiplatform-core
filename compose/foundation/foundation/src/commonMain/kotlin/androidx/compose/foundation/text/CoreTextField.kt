@@ -387,6 +387,7 @@ internal fun CoreTextField(
         manager, enabled, interactionSource, state, focusRequester, readOnly, offsetMapping
     )
 
+    val platformDrawsTextControls = platformShouldDrawTextControls(cursorBrush, state.selectionBackgroundColor)
     val drawModifier =
         Modifier.drawBehind {
             state.layoutResult?.let { layoutResult ->
@@ -400,6 +401,7 @@ internal fun CoreTextField(
                         layoutResult.value,
                         state.highlightPaint,
                         state.selectionBackgroundColor,
+                        !platformDrawsTextControls
                     )
                 }
             }
@@ -456,7 +458,7 @@ internal fun CoreTextField(
             focusRequester,
         )
 
-    val showCursor = enabled && !readOnly && windowInfo.isWindowFocused && !state.hasHighlight()
+    val showCursor = enabled && !readOnly && windowInfo.isWindowFocused && !state.hasHighlight() && !platformDrawsTextControls
     val cursorModifier = Modifier.cursor(state, value, offsetMapping, cursorBrush, showCursor)
 
     DisposableEffect(manager) { onDispose { manager.hideSelectionToolbar() } }
@@ -657,7 +659,7 @@ internal fun CoreTextField(
                 if (
                     state.handleState == HandleState.Cursor && !readOnly && showHandleAndMagnifier
                 ) {
-                    TextFieldCursorHandle(manager = manager)
+//                    TextFieldCursorHandle(manager = manager)
                 }
             }
         }
@@ -1107,6 +1109,16 @@ internal expect fun CursorHandle(
     modifier: Modifier,
     minTouchTargetSize: DpSize = DpSize.Unspecified,
 )
+
+/**
+ * Determines whether the platform should handle drawing text controls, such as cursor and selection highlights.
+ *
+ * @param cursorBrush A brush used to draw the cursor in the text field.
+ * @param selectionColor The color used to highlight the selected text.
+ * @return A boolean value indicating whether the platform should handle drawing text controls.
+ */
+@Composable
+internal expect fun platformShouldDrawTextControls(cursorBrush: Brush, selectionColor: Color): Boolean
 
 // TODO(b/262648050) Try to find a better API.
 private fun notifyFocusedRect(

@@ -17,6 +17,7 @@
 package androidx.compose.ui.platform
 
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.EditCommand
@@ -81,6 +82,9 @@ actual interface PlatformTextInputMethodRequest {
      */
     @ExperimentalComposeUiApi
     val textClippingRectInRoot: () -> Rect?
+
+    @ExperimentalComposeUiApi
+    val textUnclippingOffsetInRoot: () -> Offset?
 
     /**
      * Allows the text input service to edit the text.

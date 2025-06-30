@@ -518,9 +518,7 @@ internal class TextFieldCoreModifierNode(
         val start = selection.min
         val end = selection.max
         if (start != end) {
-            val selectionBackgroundColor = currentValueOf(LocalTextSelectionColors).backgroundColor
-            val selectionPath = textLayoutResult.getPathForRange(start, end)
-            drawPath(selectionPath, color = selectionBackgroundColor)
+            this@TextFieldCoreModifierNode.drawPlatformSelection(this, selection, textLayoutResult)
         }
     }
 
@@ -571,12 +569,13 @@ internal class TextFieldCoreModifierNode(
 
         val cursorRect = textFieldSelectionState.getCursorRect()
 
-        drawLine(
-            cursorBrush,
-            cursorRect.topCenter,
-            cursorRect.bottomCenter,
+        // Delegate the actual drawing to platform-specific implementation, passing only
+        // prepared parameters to avoid exposing private members outside this node.
+        this@TextFieldCoreModifierNode.drawPlatformCursor(
+            scope = this,
+            cursorRect = cursorRect,
+            brush = cursorBrush,
             alpha = cursorAlphaValue,
-            strokeWidth = cursorRect.width,
         )
     }
 
@@ -681,3 +680,58 @@ private fun Float.roundToNext(): Float =
         this > 0 -> ceil(this)
         else -> floor(this)
     }
+
+/**
+ * Draws the visual highlight for the given text [selection].
+ *
+ * Platforms may override this to customize how text selection is rendered. The shared default
+ * implementation is provided by `drawDefaultSelection`.
+ *
+ * @param scope [DrawScope] used for issuing drawing commands.
+ * @param selection Range of selected text in [textLayoutResult].
+ * @param textLayoutResult Layout information used to map [selection] to canvas coordinates.
+ */
+internal expect fun CompositionLocalConsumerModifierNode.drawPlatformSelection(scope: DrawScope, selection: TextRange, textLayoutResult: TextLayoutResult)
+
+internal fun CompositionLocalConsumerModifierNode.drawDefaultSelection(scope: DrawScope, selection: TextRange, textLayoutResult: TextLayoutResult) {
+    val selectionBackgroundColor = currentValueOf(LocalTextSelectionColors).backgroundColor
+    val selectionPath = textLayoutResult.getPathForRange(selection.min, selection.max)
+    with(scope) {
+        drawPath(selectionPath, color = selectionBackgroundColor)
+    }
+}
+
+/**
+ * Draws the visual cursor indicator using the provided [cursorRect].
+ *
+ * Platforms may override this to customize how the text cursor is rendered. The shared default
+ * implementation is provided by `drawDefaultCursor`.
+ *
+ * @param scope [DrawScope] used for issuing drawing commands.
+ * @param cursorRect Rectangle representing the cursor in canvas coordinates.
+ * @param brush [Brush] used to paint the cursor.
+ * @param alpha Opacity to use when drawing the cursor.
+ */
+internal expect fun CompositionLocalConsumerModifierNode.drawPlatformCursor(
+    scope: DrawScope,
+    cursorRect: Rect,
+    brush: Brush,
+    alpha: Float,
+)
+
+internal fun CompositionLocalConsumerModifierNode.drawDefaultCursor(
+    scope: DrawScope,
+    cursorRect: Rect,
+    brush: Brush,
+    alpha: Float,
+) {
+    with(scope) {
+        drawLine(
+            brush = brush,
+            start = cursorRect.topCenter,
+            end = cursorRect.bottomCenter,
+            alpha = alpha,
+            strokeWidth = cursorRect.width,
+        )
+    }
+}

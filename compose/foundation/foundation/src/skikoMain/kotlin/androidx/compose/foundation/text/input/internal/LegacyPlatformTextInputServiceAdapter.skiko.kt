@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.text.TextLayoutResult
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.input.SetComposingTextCommand
 import androidx.compose.ui.text.input.TextEditingScope
 import androidx.compose.ui.text.input.TextEditorState
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TextInputService
 import kotlinx.coroutines.Job
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -48,6 +50,7 @@ internal actual fun createLegacyPlatformTextInputServiceAdapter():
         private var focusedRectInRoot by mutableStateOf(Rect.Zero)
         private var textFieldRectInRoot by mutableStateOf(Rect.Zero)
         private var textClippingRectInRoot by mutableStateOf(Rect.Zero)
+        private var textUnclippingOffsetInRoot by mutableStateOf(Offset.Zero)
 
         override fun startInput(
             value: TextFieldValue,
@@ -95,6 +98,10 @@ internal actual fun createLegacyPlatformTextInputServiceAdapter():
             textClippingRectInRoot = matrix.map(innerTextFieldBounds)
             val cursorOffset = offsetMapping.originalToTransformed(textFieldValue.selection.max)
             focusedRectInRoot = matrix.map(textLayoutResult.getCursorRect(cursorOffset))
+            textUnclippingOffsetInRoot = Offset(
+                x = textClippingRectInRoot.topLeft.x - innerTextFieldBounds.topLeft.x,
+                y = textClippingRectInRoot.topLeft.y - innerTextFieldBounds.topLeft.y
+            )
         }
 
         override fun startStylusHandwriting() {}
@@ -164,6 +171,7 @@ internal actual fun createLegacyPlatformTextInputServiceAdapter():
                 focusedRectInRoot = { focusedRectInRoot },
                 textFieldRectInRoot = { textFieldRectInRoot },
                 textClippingRectInRoot = { textClippingRectInRoot },
+                textUnclippingOffsetInRoot = { textUnclippingOffsetInRoot },
                 editText = editBlock
             )
         }

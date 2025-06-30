@@ -536,6 +536,7 @@ internal class TextFieldSelectionState(
         try {
             coroutineScope {
                 launch { observeTextChanges() }
+                launch { observeSelectionChanges() }
                 launch { observeTextToolbarVisibility() }
             }
         } finally {
@@ -543,6 +544,23 @@ internal class TextFieldSelectionState(
             if (textToolbarState != None) {
                 hideTextToolbar()
             }
+        }
+    }
+
+    private suspend fun observeSelectionChanges() {
+        snapshotFlow {
+            val isCollapsed = textFieldState.visualText.selection.collapsed
+            if (draggingHandle == null && isInTouchMode) {
+                if (isCollapsed) {
+                    Cursor
+                } else {
+                    Selection
+                }
+            } else {
+                None
+            }
+        }.collect { state ->
+            updateTextToolbarState(state)
         }
     }
 

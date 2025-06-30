@@ -48,7 +48,9 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.UIKitNativeTextInputContext
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.uikit.LocalNativeTextInputContext
 import androidx.compose.ui.uikit.utils.CMPEditMenuView
 import androidx.compose.ui.uikit.utils.CMPEditMenuCustomAction
 import androidx.compose.ui.unit.Density
@@ -145,6 +147,8 @@ private fun ProvideNewContextMenuDefaultProviders(
 ) {
     val toolbarProvider = LocalTextContextMenuToolbarProvider.current
     val dropdownProvider = LocalTextContextMenuDropdownProvider.current
+    val contextMenuHandlerProvider = LocalNativeTextInputContext.current
+
     if (toolbarProvider == null || dropdownProvider == null) {
         val layoutCoordinates: MutableState<LayoutCoordinates?> = remember {
             mutableStateOf(null, neverEqualPolicy())
@@ -160,6 +164,7 @@ private fun ProvideNewContextMenuDefaultProviders(
                 menuDelay = menuDelay,
                 editMenuView = editMenuView,
                 density = density,
+                nativeContextMenuHandler = contextMenuHandlerProvider,
                 coordinates = { layoutCoordinates.value }
             )
         }
@@ -197,6 +202,7 @@ private class ContextMenuToolbarProvider(
     private val menuDelay: Duration,
     val editMenuView: CMPEditMenuView,
     private val density: Density,
+    private val nativeContextMenuHandler: UIKitNativeTextInputContext,
     private val coordinates: () -> LayoutCoordinates?
 ): TextContextMenuProvider {
     @OptIn(FlowPreview::class)
@@ -265,8 +271,17 @@ private class ContextMenuToolbarProvider(
                         rect = rect
                     )
                 }.filterNotNull().collect {
-                    getEditMenuView().showEditMenuAtRect(
-                        targetRect = it.rect.toCGRect(density),
+//                    getEditMenuView().showEditMenuAtRect(
+//                        targetRect = it.rect.toCGRect(density),
+//                        copy = it.copy,
+//                        cut = it.cut,
+//                        paste = it.paste,
+//                        selectAll = it.selectAll,
+//                        customActions = it.customActions
+//                    )
+
+                    nativeContextMenuHandler.updateEditMenuState(
+                        targetRect = it.rect,
                         copy = it.copy,
                         cut = it.cut,
                         paste = it.paste,
@@ -279,7 +294,7 @@ private class ContextMenuToolbarProvider(
             suspendCancellableCoroutine { continuation ->
                 session = TextContextMenuSessionImpl(editMenuView, continuation)
                 continuation.invokeOnCancellation {
-                    editMenuView.hideEditMenu()
+                     editMenuView.hideEditMenu()
                 }
             }
             job.cancel()

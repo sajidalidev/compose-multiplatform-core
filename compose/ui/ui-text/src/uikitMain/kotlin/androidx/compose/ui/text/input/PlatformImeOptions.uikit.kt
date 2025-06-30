@@ -43,6 +43,7 @@ private data class PlatformImeOptionsImpl(
     val inputView: UIView?,
     val inputAccessoryView: UIView?,
     val writingToolsBehavior: UIWritingToolsBehavior,
+    val useNativeInputHandling: Boolean,
 ): PlatformImeOptions()
 
 /**
@@ -62,6 +63,7 @@ class PlatformImeOptionsConfiguration internal constructor() {
     private var inputView: UIView? = null
     private var inputAccessoryView: UIView? = null
     private var writingToolsBehavior: UIWritingToolsBehavior = UIWritingToolsBehaviorDefault
+    private var useNativeInputHandling: Boolean = false
     /**
      * Sets the keyboard type to be used for the text input field.
      * If not set, the value will be derived from [ImeOptions].
@@ -181,6 +183,15 @@ class PlatformImeOptionsConfiguration internal constructor() {
     }
 
     /**
+     * Enables or disables native input handling in Compose iOS text input pipeline.
+     * Default is false.
+     */
+    @ExperimentalComposeUiApi
+    fun useNativeInputHandling(value: Boolean): PlatformImeOptionsConfiguration = apply {
+        useNativeInputHandling = value
+    }
+
+    /**
      * Builds the final PlatformImeOptions instance with the configured values.
      */
     internal fun build(): PlatformImeOptions {
@@ -197,6 +208,7 @@ class PlatformImeOptionsConfiguration internal constructor() {
             inputView = inputView,
             inputAccessoryView = inputAccessoryView,
             writingToolsBehavior = writingToolsBehavior,
+            useNativeInputHandling = useNativeInputHandling,
         )
     }
 }
@@ -262,3 +274,7 @@ val PlatformImeOptions.inputAccessoryView: UIView?
 @ExperimentalComposeUiApi
 val PlatformImeOptions.writingToolsBehavior: UIWritingToolsBehavior
     get() = (this as? PlatformImeOptionsImpl)?.writingToolsBehavior ?: UIWritingToolsBehaviorDefault
+
+@ExperimentalComposeUiApi
+val PlatformImeOptions.useNativeInputHandling: Boolean
+    get() = (this as? PlatformImeOptionsImpl)?.useNativeInputHandling ?: false

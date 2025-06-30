@@ -135,6 +135,7 @@ internal class TextFieldDelegate {
             textLayoutResult: TextLayoutResult,
             highlightPaint: Paint,
             selectionBackgroundColor: Color,
+            drawSelectionHighlight: Boolean = true,
         ) {
             if (!selectionPreviewHighlightRange.collapsed) {
                 highlightPaint.color = selectionBackgroundColor
@@ -157,7 +158,7 @@ internal class TextFieldDelegate {
                     textLayoutResult,
                     highlightPaint,
                 )
-            } else if (!value.selection.collapsed) {
+            } else if (!value.selection.collapsed && drawSelectionHighlight) {
                 highlightPaint.color = selectionBackgroundColor
                 drawHighlight(
                     canvas,
