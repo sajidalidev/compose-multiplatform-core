@@ -48,7 +48,6 @@ import androidx.compose.ui.navigationevent.UIKitNavigationEventInput
 import androidx.compose.ui.platform.AccessibilityMediator
 import androidx.compose.ui.platform.CUPERTINO_TOUCH_SLOP
 import androidx.compose.ui.platform.DefaultInputModeManager
-import androidx.compose.ui.platform.EmptyViewConfiguration
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.PlatformInsets
 import androidx.compose.ui.platform.PlatformArchitectureComponentsOwner
@@ -85,10 +84,11 @@ import androidx.compose.ui.viewinterop.UIKitInteropContainer
 import androidx.compose.ui.viewinterop.UIKitInteropTransaction
 import androidx.compose.ui.window.ComposeSceneKeyboardOffsetManager
 import androidx.compose.ui.window.FocusedViewsList
+import androidx.compose.ui.window.BackgroundInputView
 import androidx.compose.ui.window.KeyboardVisibilityListener
 import androidx.compose.ui.window.MetalRedrawer
 import androidx.compose.ui.window.TouchesEventKind
-import androidx.compose.ui.window.UserInputView
+import androidx.compose.ui.window.OverlayInputView
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -184,7 +184,7 @@ private class SemanticsOwnerListenerImpl(
 
 internal class ComposeSceneMediator(
     private val onFocusBehavior: OnFocusBehavior,
-    private val focusedViewsList: FocusedViewsList?,
+    focusedViewsList: FocusedViewsList?,
     private val windowContext: PlatformWindowContext,
     private val architectureComponentsOwner: PlatformArchitectureComponentsOwner,
     private val coroutineContext: CoroutineContext,
@@ -207,9 +207,9 @@ internal class ComposeSceneMediator(
     private var disposed = false
 
     private val viewConfiguration: ViewConfiguration =
-        object : ViewConfiguration by EmptyViewConfiguration {
+        object : ViewConfiguration by PlatformContext.DefaultViewConfiguration {
             override val touchSlop: Float
-                get() = with(density) {
+                get() = with(screenDensity) {
                     // this value is originating from iOS 16 drag behavior reverse engineering
                     CUPERTINO_TOUCH_SLOP.dp.toPx()
                 }
@@ -233,13 +233,28 @@ internal class ComposeSceneMediator(
             }
         }
 
-    var density: Density
+    /**
+     * Density used by the Compose scene for dp/px conversions within Compose.
+     *
+     * This value is intentionally separate from [screenDensity] so we can support setting custom
+     * composeSceneDensity without regressions (merging [screenDensity] and [composeSceneDensity]
+     * into one causes rendering and interaction issues because they are semantically different).
+     */
+    var composeSceneDensity: Density
         get() = scene.density
         set(value) {
             if (!disposed) {
                 scene.density = value
             }
         }
+
+    /**
+     * Density of the hosting UIKit screen.
+     *
+     * This value is intentionally separate from [composeSceneDensity] so we can support setting
+     * composeSceneDensity without regressions.
+     */
+    val screenDensity: Density get() = _overlayView.density
 
     var layoutDirection: LayoutDirection
         get() = scene.layoutDirection
@@ -260,41 +275,51 @@ internal class ComposeSceneMediator(
     val hasInteropViews: Boolean get() = interopContainer.hasInteropViews
 
     /**
-     * View wrapping the hierarchy managed by this Mediator.
+     * Primary view to handle user input.
+     * Also, it is used as a root container view for accessibility and text input.
      */
-    private val _overlayView = UIKitTransparentContainerView(onLayoutSubviews = ::updateLayout)
+    private val _overlayView = OverlayInputView(
+        hitTestInteropView = ::hitTestInteropView,
+        isPointInsideInteractionBounds = ::isPointInsideInteractionBounds,
+        onTouchesEvent = ::onTouchesEvent,
+        onCancelAllTouches = ::onCancelAllTouches,
+        onScrollEvent = ::onScrollEvent,
+        onCancelScroll = ::onCancelScroll,
+        onHoverEvent = ::onHoverEvent,
+        onKeyboardPresses = ::onKeyboardPresses,
+        ignoreTouchChanges = navigationEventInput::isBackGestureActive
+    )
 
     val overlayView: UIView get() = _overlayView
 
     /**
-     * View that handles the user input events and hosts interop views.
+     * A holder for interop views that located below the Metal canvas.
+     * The view handles user touches that occur only over the interop views located on it.
      */
-    private val userInputView = UserInputView(
-        ::hitTestInteropView,
-        ::isPointInsideInteractionBounds,
-        ::onTouchesEvent,
-        ::onCancelAllTouches,
-        ::onScrollEvent,
-        ::onCancelScroll,
-        ::onHoverEvent,
-        ::onKeyboardPresses,
-        navigationEventInput::isBackGestureActive
+    private val _backgroundView = BackgroundInputView(
+        onLayoutSubviews = ::updateLayout,
+        hitTestInteropView = ::hitTestInteropView,
+        isPointInsideInteractionBounds = ::isPointInsideInteractionBounds,
+        onTouchesEvent = ::onTouchesEvent,
+        onCancelAllTouches = ::onCancelAllTouches,
+        ignoreTouchChanges = navigationEventInput::isBackGestureActive
     )
 
-    val inputView: UIView get() = userInputView
+    val backgroundView: UIView get() = _backgroundView
 
     /**
      * Container for managing UIKitView and UIKitViewController
      */
     private val interopContainer = UIKitInteropContainer(
-        root = userInputView,
+        overlayContainer = _overlayView,
+        backgroundContainer = _backgroundView,
         requestRedraw = redrawer::setNeedsRedraw
     )
 
     var interactionBounds = IntRect.Zero
 
     private val dragAndDropManager = UIKitDragAndDropManager(
-        view = userInputView,
+        view = _overlayView,
         getComposeRootDragAndDropNode = { scene.rootDragAndDropNode },
     )
 
@@ -306,7 +331,7 @@ internal class ComposeSceneMediator(
      * @param point Point in the interaction view coordinate space.
      */
     private fun isPointInsideInteractionBounds(point: CValue<CGPoint>) =
-        interactionBounds.contains(point.asDpOffset().toOffset(_overlayView.density).round())
+        interactionBounds.contains(point.asDpOffset().toOffset(overlayView.density).round())
 
     private val semanticsOwnerListener by lazy {
         SemanticsOwnerListenerImpl(
@@ -329,7 +354,7 @@ internal class ComposeSceneMediator(
         ComposeSceneKeyboardOffsetManager(
             view = _overlayView,
             keyboardOverlapHeightChanged = { height ->
-                val heightPx = with(density) { height.roundToPx() }
+                val heightPx = with(screenDensity) { height.roundToPx() }
                 if (windowInsetsManager.keyboardOverlapHeight.value != heightPx) {
                     animateKeyboardOffsetChanges = false
                     windowInsetsManager.keyboardOverlapHeight.value = heightPx
@@ -366,7 +391,7 @@ internal class ComposeSceneMediator(
 
     private fun hitTestInteropView(point: CValue<CGPoint>): UIView? =
         point.useContents {
-            val position = asDpOffset().toOffset(density)
+            val position = asDpOffset().toOffset(composeSceneDensity)
             val interopView = scene.hitTestInteropView(position)
 
             // Find a group of a holder associated with a given interop view or view controller
@@ -392,12 +417,12 @@ internal class ComposeSceneMediator(
             pointers = listOf(
                 ComposeScenePointer(
                     id = PointerId(0),
-                    position = position.toOffset(density),
+                    position = position.toOffset(composeSceneDensity),
                     pressed = false,
                     type = PointerType.Mouse,
                 )
             ),
-            scrollDelta = delta.toOffset(density) * SCROLL_DELTA_MULTIPLIER,
+            scrollDelta = delta.toOffset(composeSceneDensity) * SCROLL_DELTA_MULTIPLIER,
             timeMillis = event.timeMillis,
             nativeEvent = event,
             keyboardModifiers = PointerKeyboardModifiers(event.modifierFlagsOrZero)
@@ -420,7 +445,7 @@ internal class ComposeSceneMediator(
             pointers = listOf(
                 ComposeScenePointer(
                     id = PointerId(0),
-                    position = position.toOffset(density),
+                    position = position.toOffset(composeSceneDensity),
                     pressed = false,
                     type = PointerType.Mouse,
                 )
@@ -460,7 +485,7 @@ internal class ComposeSceneMediator(
 
         val pointers = touches.mapIndexed { index, touch ->
             touch as UITouch
-            val position = touch.offsetInView(userInputView, density.density)
+            val position = touch.offsetInView(_backgroundView, screenDensity.density)
             val pointerType = when (touch.type) {
                 UITouchTypeDirect -> PointerType.Touch
                 UITouchTypeIndirect, UITouchTypeIndirectPointer -> PointerType.Mouse
@@ -479,7 +504,7 @@ internal class ComposeSceneMediator(
                 historical = event?.historicalChangesForTouch(
                     touch,
                     _overlayView,
-                    density.density
+                    screenDensity.density
                 ) ?: emptyList()
             )
         }
@@ -516,7 +541,7 @@ internal class ComposeSceneMediator(
     }
 
     fun setContent(content: @Composable () -> Unit) {
-        _overlayView.runOnceOnAppeared {
+        _backgroundView.runOnceOnAppeared {
             scene.setContent {
                 ProvideComposeSceneMediatorCompositionLocals {
                     FocusAboveKeyboardIfNeeded {
@@ -541,12 +566,12 @@ internal class ComposeSceneMediator(
                     withAnimationProgress(duration) { progress ->
                         windowInsetsManager.layoutMargins.value = lerp(
                             start = initialLayoutMargins,
-                            stop = _overlayView.layoutMargins.toPlatformInsets(density),
+                            stop = _overlayView.layoutMargins.toPlatformInsets(screenDensity),
                             fraction = progress
                         )
                         windowInsetsManager.safeAreaInsets.value = lerp(
                                 start = initialSafeAreaInsets,
-                                stop = _overlayView.safeAreaInsets.toPlatformInsets(density),
+                                stop = _overlayView.safeAreaInsets.toPlatformInsets(screenDensity),
                                 fraction = progress
                         )
                         size = lerp(
@@ -609,10 +634,10 @@ internal class ComposeSceneMediator(
         _overlayView.dispose()
         textInputService.stopInput()
         keyboardManager.dispose()
-        userInputView.dispose()
+        _backgroundView.dispose()
 
         _overlayView.removeFromSuperview()
-        userInputView.removeFromSuperview()
+        _backgroundView.removeFromSuperview()
 
         scene.close()
         interopContainer.dispose()
@@ -623,18 +648,16 @@ internal class ComposeSceneMediator(
      * Updates the [ComposeScene] with the properties derived from the [_overlayView].
      */
     private fun updateLayout() {
-        density = _overlayView.density
-
         if (isLayoutTransitionAnimating) {
             return
         }
-        windowInsetsManager.layoutMargins.value = _overlayView.layoutMargins.toPlatformInsets(density)
-        windowInsetsManager.safeAreaInsets.value = _overlayView.safeAreaInsets.toPlatformInsets(density)
+        windowInsetsManager.layoutMargins.value = _overlayView.layoutMargins.toPlatformInsets(_overlayView.density)
+        windowInsetsManager.safeAreaInsets.value = _overlayView.safeAreaInsets.toPlatformInsets(_overlayView.density)
         size = currentViewSize.roundToIntSize()
     }
 
     private val currentViewSize: Size get() {
-        return with(density) {
+        return with(_overlayView.density) {
             _overlayView.frame.useContents { size.asDpSize() }.toSize()
         }
     }

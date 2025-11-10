@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package androidx.compose.remote.core.serialization.yaml;
+package androidx.compose.remote.serialization.yaml;
 
-import androidx.compose.remote.core.serialization.AbstractArraySerializer;
-import androidx.compose.remote.core.serialization.AbstractMapSerializer;
-import androidx.compose.remote.core.serialization.AbstractSerializer;
+import androidx.compose.remote.serialization.AbstractArraySerializer;
+import androidx.compose.remote.serialization.AbstractMapSerializer;
+import androidx.compose.remote.serialization.AbstractSerializer;
 
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -55,7 +55,7 @@ public class YAMLSerializer extends AbstractSerializer {
      * Returns a concrete object
      * @return
      */
-    public @Nullable Object toObject() {
+    @Nullable public Object toObject() {
         switch (getValueType()) {
             case ARRAY:
                 YAMLArraySerializer arraySerializer = (YAMLArraySerializer) mValue;

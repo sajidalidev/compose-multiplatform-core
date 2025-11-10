@@ -18,24 +18,24 @@ package androidx.compose.foundation
 
 import android.os.SystemClock
 import android.view.MotionEvent
-import androidx.compose.ui.ExperimentalIndirectTouchTypeApi
+import androidx.compose.ui.ExperimentalIndirectPointerApi
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.indirect.IndirectTouchEvent
-import androidx.compose.ui.input.indirect.IndirectTouchEventPrimaryDirectionalMotionAxis
+import androidx.compose.ui.input.indirect.IndirectPointerEvent
+import androidx.compose.ui.input.indirect.IndirectPointerEventPrimaryDirectionalMotionAxis
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.core.view.InputDeviceCompat.SOURCE_TOUCH_NAVIGATION
 
 /** Synthetically range the x movements from 1000 to 0 */
-@OptIn(ExperimentalIndirectTouchTypeApi::class)
+@OptIn(ExperimentalIndirectPointerApi::class)
 internal fun SemanticsNodeInteraction.sendIndirectSwipeEvent(
     rule: ComposeTestRule,
     from: Offset = Offset(TouchPadStart, 0f),
     to: Offset = Offset(TouchPadEnd, 0f),
     stepCount: Int = 10,
     delayTimeMills: Long = 16L,
-    primaryDirectionalMotionAxis: IndirectTouchEventPrimaryDirectionalMotionAxis =
-        IndirectTouchEventPrimaryDirectionalMotionAxis.X,
+    primaryDirectionalMotionAxis: IndirectPointerEventPrimaryDirectionalMotionAxis =
+        IndirectPointerEventPrimaryDirectionalMotionAxis.X,
     sendMoveEvents: Boolean = true,
     sendReleaseEvent: Boolean = true,
 ) {
@@ -46,13 +46,13 @@ internal fun SemanticsNodeInteraction.sendIndirectSwipeEvent(
     var currentValue = from
 
     val downEvent =
-        sendIndirectTouchPressEvent(rule, currentTime, currentValue, primaryDirectionalMotionAxis)
+        sendIndirectPointerPressEvent(rule, currentTime, currentValue, primaryDirectionalMotionAxis)
     currentTime += delayTimeMills
     currentValue += stepSize
 
     val (newCurrentTime, newCurrentValue, lastMove) =
         if (sendMoveEvents) {
-            sendIndirectTouchMoveEvents(
+            sendIndirectPointerMoveEvents(
                 rule,
                 stepCount,
                 currentTime,
@@ -67,7 +67,7 @@ internal fun SemanticsNodeInteraction.sendIndirectSwipeEvent(
         }
 
     if (sendReleaseEvent) {
-        sendIndirectTouchReleaseEvent(
+        sendIndirectPointerReleaseEvent(
             rule,
             newCurrentTime,
             newCurrentValue,
@@ -77,15 +77,15 @@ internal fun SemanticsNodeInteraction.sendIndirectSwipeEvent(
     }
 }
 
-@OptIn(ExperimentalIndirectTouchTypeApi::class)
-internal fun SemanticsNodeInteraction.sendIndirectTouchMoveEvents(
+@OptIn(ExperimentalIndirectPointerApi::class)
+internal fun SemanticsNodeInteraction.sendIndirectPointerMoveEvents(
     rule: ComposeTestRule,
     stepCount: Int,
     currentTime: Long,
     currentValue: Offset,
     delayTimeMills: Long,
     stepSize: Offset,
-    primaryDirectionalMotionAxis: IndirectTouchEventPrimaryDirectionalMotionAxis,
+    primaryDirectionalMotionAxis: IndirectPointerEventPrimaryDirectionalMotionAxis,
     previousEvent: MotionEvent? = null,
 ): Triple<Long, Offset, MotionEvent?> {
     var currentTime1 = currentTime
@@ -106,22 +106,22 @@ internal fun SemanticsNodeInteraction.sendIndirectTouchMoveEvents(
             currentTime1 += delayTimeMills
             currentValue1 += stepSize
         }
-        performIndirectTouchEvent(
+        performIndirectPointerEvent(
             rule,
-            IndirectTouchEvent(move, primaryDirectionalMotionAxis, prevEvent),
+            IndirectPointerEvent(move, primaryDirectionalMotionAxis, prevEvent),
         )
         prevEvent = move
     }
     return Triple(currentTime1, currentValue1, prevEvent)
 }
 
-@OptIn(ExperimentalIndirectTouchTypeApi::class)
-internal fun SemanticsNodeInteraction.sendIndirectTouchReleaseEvent(
+@OptIn(ExperimentalIndirectPointerApi::class)
+internal fun SemanticsNodeInteraction.sendIndirectPointerReleaseEvent(
     rule: ComposeTestRule,
     currentTime: Long = SystemClock.uptimeMillis(),
     currentValue: Offset = Offset((TouchPadEnd - TouchPadStart) / 2f, 0f),
-    primaryAxis: IndirectTouchEventPrimaryDirectionalMotionAxis =
-        IndirectTouchEventPrimaryDirectionalMotionAxis.X,
+    primaryAxis: IndirectPointerEventPrimaryDirectionalMotionAxis =
+        IndirectPointerEventPrimaryDirectionalMotionAxis.X,
     previousEvent: MotionEvent? = null,
 ) {
     val up =
@@ -134,16 +134,16 @@ internal fun SemanticsNodeInteraction.sendIndirectTouchReleaseEvent(
             0,
         )
     up.source = SOURCE_TOUCH_NAVIGATION
-    performIndirectTouchEvent(rule, IndirectTouchEvent(up, primaryAxis, previousEvent))
+    performIndirectPointerEvent(rule, IndirectPointerEvent(up, primaryAxis, previousEvent))
 }
 
-@OptIn(ExperimentalIndirectTouchTypeApi::class)
-internal fun SemanticsNodeInteraction.sendIndirectTouchPressEvent(
+@OptIn(ExperimentalIndirectPointerApi::class)
+internal fun SemanticsNodeInteraction.sendIndirectPointerPressEvent(
     rule: ComposeTestRule,
     currentTime: Long = SystemClock.uptimeMillis(),
     currentValue: Offset = Offset((TouchPadEnd - TouchPadStart) / 2f, 0f),
-    primaryDirectionalMotionAxis: IndirectTouchEventPrimaryDirectionalMotionAxis =
-        IndirectTouchEventPrimaryDirectionalMotionAxis.X,
+    primaryDirectionalMotionAxis: IndirectPointerEventPrimaryDirectionalMotionAxis =
+        IndirectPointerEventPrimaryDirectionalMotionAxis.X,
 ): MotionEvent {
     val down =
         MotionEvent.obtain(
@@ -155,24 +155,24 @@ internal fun SemanticsNodeInteraction.sendIndirectTouchPressEvent(
             0,
         )
     down.source = SOURCE_TOUCH_NAVIGATION
-    performIndirectTouchEvent(rule, IndirectTouchEvent(down, primaryDirectionalMotionAxis))
+    performIndirectPointerEvent(rule, IndirectPointerEvent(down, primaryDirectionalMotionAxis))
     return down
 }
 
 /** Swiping away from the start of the touchpad. */
-@OptIn(ExperimentalIndirectTouchTypeApi::class)
+@OptIn(ExperimentalIndirectPointerApi::class)
 internal fun SemanticsNodeInteraction.sendIndirectSwipeBackward(rule: ComposeTestRule) {
     sendIndirectSwipeEvent(rule, Offset(TouchPadEnd, 0f), Offset(TouchPadStart, 0f))
 }
 
 /** Swiping towards the start of the touchpad. */
-@OptIn(ExperimentalIndirectTouchTypeApi::class)
+@OptIn(ExperimentalIndirectPointerApi::class)
 internal fun SemanticsNodeInteraction.sendIndirectSwipeForward(rule: ComposeTestRule) {
     sendIndirectSwipeEvent(rule, Offset(TouchPadStart, 0f), Offset(TouchPadEnd, 0f))
 }
 
-@OptIn(ExperimentalIndirectTouchTypeApi::class)
-internal fun SemanticsNodeInteraction.sendIndirectTouchCancelEvent(
+@OptIn(ExperimentalIndirectPointerApi::class)
+internal fun SemanticsNodeInteraction.sendIndirectPointerCancelEvent(
     rule: ComposeTestRule,
     sendMoveEvents: Boolean = true,
 ) {
@@ -180,20 +180,20 @@ internal fun SemanticsNodeInteraction.sendIndirectTouchCancelEvent(
     var currentTime = SystemClock.uptimeMillis()
     var currentValue = Offset(TouchPadStart, 0f)
 
-    val downEvent = sendIndirectTouchPressEvent(rule, currentTime, currentValue)
+    val downEvent = sendIndirectPointerPressEvent(rule, currentTime, currentValue)
     currentTime += 16L
     currentValue += stepSize
 
     val prevEvent =
         if (sendMoveEvents) {
-            sendIndirectTouchMoveEvents(
+            sendIndirectPointerMoveEvents(
                     rule,
                     5,
                     currentTime,
                     currentValue,
                     16L,
                     stepSize,
-                    IndirectTouchEventPrimaryDirectionalMotionAxis.X,
+                    IndirectPointerEventPrimaryDirectionalMotionAxis.X,
                     downEvent,
                 )
                 .third
@@ -203,43 +203,43 @@ internal fun SemanticsNodeInteraction.sendIndirectTouchCancelEvent(
 
     val cancel =
         MotionEvent.obtain(0L, 0L, MotionEvent.ACTION_CANCEL, Offset.Zero.y, Offset.Zero.y, 0)
-    performIndirectTouchEvent(rule, IndirectTouchEvent(cancel, previousMotionEvent = prevEvent))
+    performIndirectPointerEvent(rule, IndirectPointerEvent(cancel, previousMotionEvent = prevEvent))
 }
 
-@OptIn(ExperimentalIndirectTouchTypeApi::class)
+@OptIn(ExperimentalIndirectPointerApi::class)
 internal fun SemanticsNodeInteraction.sendIndirectPressReleaseEvent(rule: ComposeTestRule) {
     val currentTime = SystemClock.uptimeMillis()
     val currentValue = Offset((TouchPadEnd - TouchPadStart) / 2, 0f)
-    val downEvent = sendIndirectTouchPressEvent(rule, currentTime, currentValue)
+    val downEvent = sendIndirectPointerPressEvent(rule, currentTime, currentValue)
     val (newCurrentTime, newCurrentValue, lastMove) =
-        sendIndirectTouchMoveEvents(
+        sendIndirectPointerMoveEvents(
             rule,
             1,
             currentTime,
             currentValue,
             16L,
             Offset.Zero,
-            IndirectTouchEventPrimaryDirectionalMotionAxis.X,
+            IndirectPointerEventPrimaryDirectionalMotionAxis.X,
             downEvent,
         )
-    sendIndirectTouchReleaseEvent(rule, newCurrentTime, newCurrentValue, previousEvent = lastMove)
+    sendIndirectPointerReleaseEvent(rule, newCurrentTime, newCurrentValue, previousEvent = lastMove)
 }
 
 /**
- * Send the specified [IndirectTouchEvent] to the focused component.
+ * Send the specified [IndirectPointerEvent] to the focused component.
  *
  * @return true if the event was consumed. False otherwise.
  */
-@ExperimentalIndirectTouchTypeApi
-internal fun SemanticsNodeInteraction.performIndirectTouchEvent(
+@ExperimentalIndirectPointerApi
+internal fun SemanticsNodeInteraction.performIndirectPointerEvent(
     rule: ComposeTestRule,
-    indirectTouchEvent: IndirectTouchEvent,
+    indirectPointerEvent: IndirectPointerEvent,
 ): Boolean {
     val semanticsNode =
-        fetchSemanticsNode("Failed to send indirect touch event ($indirectTouchEvent)")
+        fetchSemanticsNode("Failed to send indirect pointer event ($indirectPointerEvent)")
     val root = semanticsNode.root
     requireNotNull(root) { "Failed to find owner" }
-    return rule.runOnUiThread { root.sendIndirectTouchEvent(indirectTouchEvent) }
+    return rule.runOnUiThread { root.sendIndirectPointerEvent(indirectPointerEvent) }
 }
 
 internal const val TouchPadEnd = 1000f

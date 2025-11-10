@@ -29,6 +29,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.navigationevent.UIKitNavigationEventInput
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.PlatformArchitectureComponentsOwner
+import androidx.compose.ui.uikit.EndEdgePanGestureBehavior
 import androidx.compose.ui.uikit.InterfaceOrientation
 import androidx.compose.ui.uikit.LocalUIViewController
 import androidx.compose.ui.uikit.OnFocusBehavior
@@ -59,10 +60,10 @@ internal class UIKitComposeSceneLayer(
     private val hostCompositionLocals: @Composable (@Composable () -> Unit) -> Unit,
 
     private val layersViewController: ComposeLayersViewController,
-    private val initDensity: Density,
-    private val initLayoutDirection: LayoutDirection,
+    private val initialLayoutDirection: LayoutDirection,
     private val onAccessibilityChanged: () -> Unit,
     onFocusBehavior: OnFocusBehavior,
+    endEdgeGestureBehavior: EndEdgePanGestureBehavior,
     private var focusedViewsList: FocusedViewsList?,
     compositionContext: CompositionContext,
     private val ownerProvider: PlatformArchitectureComponentsOwner,
@@ -89,7 +90,8 @@ internal class UIKitComposeSceneLayer(
 
     private val navigationEventInput = UIKitNavigationEventInput(
         density = interactionView.density,
-        getTopLeftOffsetInWindow = { boundsInWindow.topLeft }
+        getTopLeftOffsetInWindow = { boundsInWindow.topLeft },
+        endEdgePanGestureBehavior = endEdgeGestureBehavior
     ).also { navigationEventDispatcher.addInput(it) }
 
     private val mediator = ComposeSceneMediator(
@@ -103,7 +105,7 @@ internal class UIKitComposeSceneLayer(
         navigationEventInput = navigationEventInput,
         interfaceOrientationState = interfaceOrientationState
     ).also {
-        interactionView.embedSubview(it.inputView)
+        interactionView.embedSubview(it.backgroundView)
     }
 
     private fun isInsideInteractionBounds(point: CValue<CGPoint>): Boolean =
@@ -114,8 +116,8 @@ internal class UIKitComposeSceneLayer(
         platformContext: PlatformContext
     ): ComposeScene =
         PlatformLayersComposeScene(
-            density = initDensity, // We should use the local density already set for the current layer.
-            layoutDirection = initLayoutDirection,
+            density = mediator.screenDensity,
+            layoutDirection = initialLayoutDirection,
             coroutineContext = coroutineContext,
             composeSceneContext = createComposeSceneContext(platformContext),
             invalidate = invalidate,
@@ -125,7 +127,11 @@ internal class UIKitComposeSceneLayer(
 
     var isAccessibilityEnabled by mediator::isAccessibilityEnabled
 
-    override var density by mediator::density
+    override var density: Density
+        get() = mediator.composeSceneDensity
+        set(_) {
+            // density of the layer cannot be customized
+        }
 
     override var layoutDirection by mediator::layoutDirection
 
@@ -147,13 +153,14 @@ internal class UIKitComposeSceneLayer(
 
     private fun onDidMoveToWindow(window: UIWindow?) {
         if (window != null) {
-            focusedViewsList?.addAndFocus(mediator.inputView)
+            focusedViewsList?.addAndFocus(mediator.backgroundView)
         }
         navigationEventInput.onDidMoveToWindow(window, interactionView)
     }
 
     fun render(canvas: Canvas, nanoTime: Long) {
         if (scrimColor != null) {
+            val density = layersViewController.metalView.density
             val rect = layersViewController.metalView.bounds.asDpRect().toRect(density)
 
             canvas.drawRect(rect, scrimPaint)

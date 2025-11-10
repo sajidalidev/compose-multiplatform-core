@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.PlatformWindowContext
 import androidx.compose.ui.scene.ComposeSceneMediator
 import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.test.runUIKitInstrumentedTest
+import androidx.compose.ui.uikit.EndEdgePanGestureBehavior
 import androidx.compose.ui.uikit.InterfaceOrientation
 import androidx.compose.ui.uikit.OnFocusBehavior
 import androidx.compose.ui.unit.Density
@@ -48,7 +49,7 @@ class ComposeSceneMediatorTest {
         mediator.setContent {}
         mediator.dispose()
 
-        mediator.density = Density(2f)
+        mediator.composeSceneDensity = Density(2f)
         mediator.layoutDirection = LayoutDirection.Rtl
         mediator.compositionLocalContext = null
         mediator.interactionBounds = IntRect.Zero
@@ -102,7 +103,8 @@ class ComposeSceneMediatorTest {
             ),
             navigationEventInput = UIKitNavigationEventInput(
                 density = Density(1f),
-                getTopLeftOffsetInWindow = { IntOffset.Zero }
+                getTopLeftOffsetInWindow = { IntOffset.Zero },
+                endEdgePanGestureBehavior = EndEdgePanGestureBehavior.Disabled,
             ),
             interfaceOrientationState = mutableStateOf(InterfaceOrientation.Portrait),
             composeSceneFactory = { _, _ ->

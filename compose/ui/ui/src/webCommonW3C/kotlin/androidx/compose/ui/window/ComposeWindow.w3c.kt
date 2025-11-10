@@ -97,6 +97,7 @@ import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLStyleElement
 import org.w3c.dom.HTMLTitleElement
 import org.w3c.dom.MediaQueryListEvent
+import org.w3c.dom.Node
 import org.w3c.dom.OPEN
 import org.w3c.dom.ShadowRootInit
 import org.w3c.dom.ShadowRootMode
@@ -183,6 +184,7 @@ internal class DefaultWindowState(private val viewportContainer: Element) : Comp
 @OptIn(InternalComposeApi::class)
 internal class ComposeWindow(
     private val canvas: HTMLCanvasElement,
+    private val rootNode: Node,
     private val interopContainerElement: HTMLDivElement,
     private val a11yContainerElement: HTMLDivElement?,
     private val configuration: ComposeViewportConfiguration,
@@ -211,20 +213,14 @@ internal class ComposeWindow(
     // Used in WebTextInputService. Also see https://youtrack.jetbrains.com/issue/CMP-8611
     private var activeTouchOffset: Offset? = null
 
-    private val platformContext: PlatformContext = object : PlatformContext by PlatformContext.Empty {
+    private val platformContext: PlatformContext = object : PlatformContext by PlatformContext.Empty() {
         override val windowInfo get() = _windowInfo
         override val architectureComponentsOwner get() = archComponentsOwner
         override val inputModeManager: InputModeManager = DefaultInputModeManager()
 
-        override val dragAndDropManager: PlatformDragAndDropManager = object : WebDragAndDropManager(canvasEvents, state.globalEvents, density) {
+        override val dragAndDropManager: PlatformDragAndDropManager = object : WebDragAndDropManager(rootNode, canvasEvents, state.globalEvents, density) {
             override val rootDragAndDropNode: ComposeSceneDragAndDropNode
                 get() = scene.rootDragAndDropNode
-        }
-
-        private fun getCanvasCoordinates(): Pair<Double, Double> {
-            return canvas.getBoundingClientRect().let {
-                it.left to it.top
-            }
         }
 
         @Suppress("RedundantOverride")
@@ -288,7 +284,7 @@ internal class ComposeWindow(
         }
 
         override val viewConfiguration =
-            object : ViewConfiguration by PlatformContext.Empty.viewConfiguration {
+            object : ViewConfiguration by PlatformContext.DefaultViewConfiguration {
                 override val touchSlop: Float get() = with(density) { 18.dp.toPx() }
             }
 
@@ -516,27 +512,23 @@ internal class ComposeWindow(
         }
 
         /**
-         * We use both targetTouches and changedTouches:
-         * - targetTouches is empty when a last pointer is released, but changedTouches won't be empty;
-         * - changedTouches contains only a Touch of a changed pointer, but compose needs all pointers,
-         *   therefore we take targetTouches in this case;
+         * The set of touches needed for compose are:
+         * - targetTouches: contains all pressed touches for the current target element
+         * - changedTouches when the event is 'touchend' or 'touchcancel': contains released touches
          */
-        val touches = if (event.targetTouches.length > event.changedTouches.length) {
-            event.targetTouches.asList()
-        } else {
-            event.changedTouches.asList()
+        val touches = event.targetTouches.asList().fastMap { it to true }.toMutableList()
+        if (eventType == PointerEventType.Release) {
+            touches.addAll(event.changedTouches.asList().fastMap { it to false } )
         }
-        val pointers = touches.fastMap { touch ->
+
+        val pointers = touches.fastMap { (touch, pressed) ->
             ComposeScenePointer(
                 id = PointerId(touch.identifier.toLong()),
                 position = Offset(
                     x = touch.clientX - offset.x,
                     y = touch.clientY - offset.y
                 ) * density.density,
-                pressed = when (eventType) {
-                    PointerEventType.Press, PointerEventType.Move -> true
-                    else -> false
-                },
+                pressed = pressed,
                 type = PointerType.Touch,
                 pressure = touch.unsafeCast<ExtendedTouchEvent>().force.toFloat()
             )
@@ -685,6 +677,7 @@ fun CanvasBasedWindow(
 
     ComposeWindow(
         canvas = canvas,
+        rootNode = canvas.getRootNode(),
         // a detached container
         interopContainerElement = document.createElement("div") as HTMLDivElement,
         a11yContainerElement = document.createElement("div") as HTMLDivElement,
@@ -745,7 +738,18 @@ fun ComposeViewport(
     }
 
     val shadowRoot = viewportContainer.attachShadow(ShadowRootInit(ShadowRootMode.OPEN))
-    shadowRoot.appendChild(layerRoot)
+    val shadowRootStyle = document.createElement("style")
+    shadowRootStyle.textContent = """
+        :host {
+            -webkit-touch-callout: none; 
+            -webkit-user-select: none; 
+            user-select: none;
+            
+            position: relative;
+        }
+    """.trimIndent()
+
+    shadowRoot.append(shadowRootStyle, layerRoot)
     layerRoot.appendChild(canvas)
 
     val interopContainerElement = document.createElement("div") as HTMLDivElement
@@ -774,6 +778,7 @@ fun ComposeViewport(
 
     ComposeWindow(
         canvas = canvas,
+        rootNode = shadowRoot,
         interopContainerElement = interopContainerElement,
         a11yContainerElement = a11yContainerElement,
         content = content,

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The Android Open Source Project
+ * Copyright 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,23 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package androidx.compose.remote.core.serialization;
 
-import androidx.compose.remote.core.serialize.MapSerializer;
-import androidx.compose.remote.core.serialize.Serializable;
+package androidx.compose.ui.interop
 
-import org.jspecify.annotations.NonNull;
+import androidx.compose.ui.test.UIKitInstrumentedTest
+import androidx.compose.ui.test.runUIKitInstrumentedTest
 
-public class FloatValueSerializable implements Serializable {
-
-    private final float mValue;
-
-    public FloatValueSerializable(float value) {
-        mValue = value;
+internal fun runUIKitInstrumentedTestWithInterop(
+    testBlock: UIKitInstrumentedTest.(Boolean) -> Unit
+) {
+    runUIKitInstrumentedTest {
+        println("Debug: Interop view placed as overlay: false")
+        testBlock(false)
     }
-
-    @Override
-    public void serialize(@NonNull MapSerializer serializer) {
-        serializer.addType("Value").add("value", mValue);
+    runUIKitInstrumentedTest {
+        println("Debug: Interop view placed as overlay: true")
+        testBlock(true)
     }
 }

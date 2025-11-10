@@ -122,7 +122,8 @@ internal class ComposeHostingViewController(
     }
     private val navigationEventInput = UIKitNavigationEventInput(
         density = rootView.density,
-        getTopLeftOffsetInWindow = { IntOffset.Zero } //full screen
+        getTopLeftOffsetInWindow = { IntOffset.Zero }, //full screen
+        endEdgePanGestureBehavior = configuration.endEdgePanGestureBehavior
     )
 
     fun hasInvalidations(): Boolean {
@@ -323,7 +324,7 @@ internal class ComposeHostingViewController(
             navigationEventInput = navigationEventInput,
             interfaceOrientationState = interfaceOrientationState,
         ).also { mediator ->
-            rootView.embedSubview(mediator.inputView)
+            rootView.embedSubview(mediator.backgroundView)
             rootView.updateMetalView(metalView, ::onDidMoveToWindow)
             rootView.embedSubview(mediator.overlayView)
 
@@ -461,9 +462,9 @@ internal class ComposeHostingViewController(
                     createComposeSceneContext = { createComposeSceneContext(it, layersHolder) },
                     hostCompositionLocals = { ProvideContainerCompositionLocals(it) },
                     layersViewController = layersHolder.getLayersViewController(),
-                    initDensity = density,
-                    initLayoutDirection = layoutDirection,
+                    initialLayoutDirection = layoutDirection,
                     onFocusBehavior = configuration.onFocusBehavior,
+                    endEdgeGestureBehavior = configuration.endEdgePanGestureBehavior,
                     onAccessibilityChanged = ::onAccessibilityChanged,
                     focusedViewsList = if (focusable) focusedViewsList?.childFocusedViewsList() else null,
                     compositionContext = compositionContext,
@@ -524,7 +525,7 @@ internal class ComposeHostingViewController(
         )
 
     private fun ComposeSceneMediator.updateInteractionRect() {
-        interactionBounds = with(density) {
+        interactionBounds = with(view.density) {
             view.bounds.asDpRect().toRect().roundToIntRect()
         }
     }

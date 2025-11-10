@@ -51,18 +51,18 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Indirect touch input tests for [combinedClickable] similar to those in
+ * Indirect pointer input tests for [combinedClickable] similar to those in
  * [CombinedClickableParameterizedKeyInputTest], for interactions not shared with pointer input.
  * Common tests that apply to both pointer input and indirect input are in [CombinedClickableTest].
  */
 @MediumTest
 @RunWith(AndroidJUnit4::class)
-class CombinedClickableIndirectTouchInputTest() {
+class CombinedClickableIndirectPointerInputTest() {
 
     @get:Rule val rule = createComposeRule(StandardTestDispatcher())
 
     @Test
-    fun clickWithIndirectTouch() {
+    fun clickWithIndirectPointer() {
         var counter = 0
         val focusRequester = FocusRequester()
         lateinit var inputModeManager: InputModeManager
@@ -81,19 +81,19 @@ class CombinedClickableIndirectTouchInputTest() {
             focusRequester.requestFocus()
         }
 
-        val downEvent = rule.onNodeWithTag("myClickable").sendIndirectTouchPressEvent(rule)
+        val downEvent = rule.onNodeWithTag("myClickable").sendIndirectPointerPressEvent(rule)
 
         rule.runOnIdle { assertThat(counter).isEqualTo(0) }
 
         rule
             .onNodeWithTag("myClickable")
-            .sendIndirectTouchReleaseEvent(rule, previousEvent = downEvent)
+            .sendIndirectPointerReleaseEvent(rule, previousEvent = downEvent)
 
         rule.runOnIdle { assertThat(counter).isEqualTo(1) }
     }
 
     @Test
-    fun clickWithIndirectTouch_notInvokedIfFocusIsLostWhilePressed() {
+    fun clickWithIndirectPointer_notInvokedIfFocusIsLostWhilePressed() {
         var counter = 0
         val outerFocusRequester = FocusRequester()
         val clickableFocusRequester = FocusRequester()
@@ -115,7 +115,7 @@ class CombinedClickableIndirectTouchInputTest() {
             clickableFocusRequester.requestFocus()
         }
 
-        rule.onNodeWithTag("myClickable").sendIndirectTouchPressEvent(rule)
+        rule.onNodeWithTag("myClickable").sendIndirectPointerPressEvent(rule)
 
         rule.runOnIdle {
             assertThat(counter).isEqualTo(0)
@@ -124,14 +124,14 @@ class CombinedClickableIndirectTouchInputTest() {
         }
 
         // (clickable won't see this event as it is no longer focused, but emit for clarity)
-        rule.onNodeWithTag("myClickable").sendIndirectTouchReleaseEvent(rule)
+        rule.onNodeWithTag("myClickable").sendIndirectPointerReleaseEvent(rule)
 
         // The clickable should never see the up event, so it should never invoke onClick
         rule.runOnIdle { assertThat(counter).isEqualTo(0) }
     }
 
     @Test
-    fun clickWithIndirectTouch_notInvokedIfCorrespondingDownEventWasNotReceived() {
+    fun clickWithIndirectPointer_notInvokedIfCorrespondingDownEventWasNotReceived() {
         var counter = 0
         val outerFocusRequester = FocusRequester()
         val clickableFocusRequester = FocusRequester()
@@ -159,7 +159,7 @@ class CombinedClickableIndirectTouchInputTest() {
         }
 
         // Press down on the outer box
-        rule.onNodeWithTag("outerBox").sendIndirectTouchPressEvent(rule)
+        rule.onNodeWithTag("outerBox").sendIndirectPointerPressEvent(rule)
 
         rule.runOnIdle {
             assertThat(counter).isEqualTo(0)
@@ -168,7 +168,7 @@ class CombinedClickableIndirectTouchInputTest() {
         }
 
         // Release
-        rule.onNodeWithTag("myClickable").sendIndirectTouchReleaseEvent(rule)
+        rule.onNodeWithTag("myClickable").sendIndirectPointerReleaseEvent(rule)
 
         // The clickable should not invoke onClick because it only saw the up event, not the
         // corresponding down, and hence should not be considered pressed
@@ -176,7 +176,7 @@ class CombinedClickableIndirectTouchInputTest() {
     }
 
     @Test
-    fun indirectTouchPress_emitsInteraction() {
+    fun indirectPointerPress_emitsInteraction() {
         val interactionSource = MutableInteractionSource()
         val focusRequester = FocusRequester()
         lateinit var scope: CoroutineScope
@@ -204,7 +204,7 @@ class CombinedClickableIndirectTouchInputTest() {
         val interactions = mutableListOf<Interaction>()
         scope.launch { interactionSource.interactions.collect { interactions.add(it) } }
 
-        val downEvent = rule.onNodeWithTag("clickable").sendIndirectTouchPressEvent(rule)
+        val downEvent = rule.onNodeWithTag("clickable").sendIndirectPointerPressEvent(rule)
 
         rule.runOnIdle {
             assertThat(interactions).hasSize(1)
@@ -213,7 +213,7 @@ class CombinedClickableIndirectTouchInputTest() {
 
         rule
             .onNodeWithTag("clickable")
-            .sendIndirectTouchReleaseEvent(rule, previousEvent = downEvent)
+            .sendIndirectPointerReleaseEvent(rule, previousEvent = downEvent)
 
         rule.runOnIdle {
             assertThat(interactions).hasSize(2)
@@ -223,7 +223,7 @@ class CombinedClickableIndirectTouchInputTest() {
     }
 
     @Test
-    fun indirectTouchPress_emitsCancelInteractionWhenFocusIsRemovedWhilePressed() {
+    fun indirectPointerPress_emitsCancelInteractionWhenFocusIsRemovedWhilePressed() {
         val interactionSource = MutableInteractionSource()
         val outerFocusRequester = FocusRequester()
         val clickableFocusRequester = FocusRequester()
@@ -253,7 +253,7 @@ class CombinedClickableIndirectTouchInputTest() {
         val interactions = mutableListOf<Interaction>()
         scope.launch { interactionSource.interactions.collect { interactions.add(it) } }
 
-        rule.onNodeWithTag("clickable").sendIndirectTouchPressEvent(rule)
+        rule.onNodeWithTag("clickable").sendIndirectPointerPressEvent(rule)
 
         rule.runOnIdle {
             assertThat(interactions).hasSize(1)
@@ -273,7 +273,7 @@ class CombinedClickableIndirectTouchInputTest() {
     }
 
     @Test
-    fun doubleIndirectTouchPress_emitsFurtherInteractions() {
+    fun doubleIndirectPointerPress_emitsFurtherInteractions() {
         val interactionSource = MutableInteractionSource()
         val focusRequester = FocusRequester()
         lateinit var scope: CoroutineScope
@@ -312,7 +312,7 @@ class CombinedClickableIndirectTouchInputTest() {
             assertThat(interactions[1]).isInstanceOf(PressInteraction.Release::class.java)
         }
 
-        val downEvent = clickableNode.sendIndirectTouchPressEvent(rule)
+        val downEvent = clickableNode.sendIndirectPointerPressEvent(rule)
 
         rule.runOnIdle {
             assertThat(interactions).hasSize(3)
@@ -321,7 +321,7 @@ class CombinedClickableIndirectTouchInputTest() {
             assertThat(interactions[2]).isInstanceOf(PressInteraction.Press::class.java)
         }
 
-        clickableNode.sendIndirectTouchReleaseEvent(rule, previousEvent = downEvent)
+        clickableNode.sendIndirectPointerReleaseEvent(rule, previousEvent = downEvent)
 
         rule.runOnIdle {
             assertThat(interactions).hasSize(4)
@@ -333,7 +333,7 @@ class CombinedClickableIndirectTouchInputTest() {
     }
 
     @Test
-    fun interruptedIndirectTouchClick_emitsCancelInteraction() {
+    fun interruptedIndirectPointerClick_emitsCancelInteraction() {
         val interactionSource = MutableInteractionSource()
         val focusRequester = FocusRequester()
         val enabled = mutableStateOf(true)
@@ -366,7 +366,7 @@ class CombinedClickableIndirectTouchInputTest() {
 
         val clickableNode = rule.onNodeWithTag("clickable")
 
-        clickableNode.sendIndirectTouchPressEvent(rule)
+        clickableNode.sendIndirectPointerPressEvent(rule)
 
         rule.runOnIdle {
             assertThat(interactions).hasSize(1)
@@ -386,7 +386,7 @@ class CombinedClickableIndirectTouchInputTest() {
         }
 
         // Release should not result in interactions.
-        clickableNode.sendIndirectTouchReleaseEvent(rule)
+        clickableNode.sendIndirectPointerReleaseEvent(rule)
 
         // Make sure nothing has changed.
         rule.runOnIdle {
@@ -398,7 +398,7 @@ class CombinedClickableIndirectTouchInputTest() {
     }
 
     @Test
-    fun modifierReusedBetweenIndirectTouchDownAndIndirectTouchUp_doesNotCallListeners() {
+    fun modifierReusedBetweenIndirectPointerDownAndIndirectPointerUp_doesNotCallListeners() {
         var counter = 0
         var reuseKey by mutableStateOf(0)
         val focusRequester = FocusRequester()
@@ -420,10 +420,10 @@ class CombinedClickableIndirectTouchInputTest() {
             focusRequester.requestFocus()
         }
 
-        rule.onNodeWithTag("myClickable").sendIndirectTouchPressEvent(rule)
+        rule.onNodeWithTag("myClickable").sendIndirectPointerPressEvent(rule)
         rule.runOnIdle { reuseKey = 1 }
         rule.waitForIdle()
-        rule.onNodeWithTag("myClickable").sendIndirectTouchReleaseEvent(rule)
+        rule.onNodeWithTag("myClickable").sendIndirectPointerReleaseEvent(rule)
 
         rule.runOnIdle { assertThat(counter).isEqualTo(0) }
     }

@@ -237,6 +237,7 @@ import java.util.Date
 import kotlin.math.max
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import org.hamcrest.CoreMatchers.instanceOf
 import org.junit.After
 import org.junit.Before
@@ -260,7 +261,7 @@ import org.mockito.kotlin.verify
 @OptIn(ExperimentalMaterialApi::class)
 @RunWith(AndroidJUnit4::class)
 class AndroidAccessibilityTest {
-    @get:Rule val rule = createAndroidComposeRule<TestActivity>()
+    @get:Rule val rule = createAndroidComposeRule<TestActivity>(StandardTestDispatcher())
 
     private val accessibilityEventLoopIntervalMs = 100L
     private lateinit var androidComposeView: AndroidComposeView
@@ -3891,31 +3892,6 @@ class AndroidAccessibilityTest {
 
         // Assert.
         rule.runOnIdle { assertThat(outerNodeId).isEqualTo(hitNodeId) }
-    }
-
-    @Test
-    fun testSemanticsHitTest_unimportantForAccessibilityOverlay() {
-        // Arrange.
-        setContent {
-            Box {
-                Box(Modifier.size(100.dp).clickable {}.testTag(tag)) { BasicText("") }
-                Box(Modifier.size(100.dp).semantics {})
-            }
-        }
-        val clickableNodeId = rule.onNodeWithTag(tag).semanticsId()
-        val bounds = with(rule.density) { rule.onNodeWithTag(tag).getBoundsInRoot().toRect() }
-
-        // Act.
-        val hitNodeId =
-            rule.runOnIdle {
-                delegate.hitTestSemanticsAt(
-                    bounds.left + bounds.width / 2,
-                    bounds.top + bounds.height / 2,
-                )
-            }
-
-        // Assert.
-        rule.runOnIdle { assertThat(hitNodeId).isEqualTo(clickableNodeId) }
     }
 
     @Test

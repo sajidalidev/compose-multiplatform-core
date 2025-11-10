@@ -22,34 +22,34 @@ import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.InspectorInfo
 
 /**
- * Create a modifier for testing indirect touch input. For production use, use foundation gestures
- * detectors or make your own Modifier.Node implementing [IndirectTouchInputModifierNode], see
- * [IndirectTouchInputNode] below for details.
+ * Create a modifier for testing indirect pointer input. For production use, use foundation gestures
+ * detectors or make your own Modifier.Node implementing [IndirectPointerInputModifierNode], see
+ * [IndirectPointerInputNode] below for details.
  *
- * @param onEvent A callback that is invoked when an indirect touch event is received.
+ * @param onEvent A callback that is invoked when an indirect pointer event is received.
  * @param onCancel A callback that is invoked when the pointer input is cancelled.
  */
-internal fun Modifier.onIndirectTouchInput(
-    onEvent: (event: IndirectTouchEvent, pass: PointerEventPass) -> Unit,
+internal fun Modifier.onIndirectPointerInput(
+    onEvent: (event: IndirectPointerEvent, pass: PointerEventPass) -> Unit,
     onCancel: () -> Unit = {},
-): Modifier = this.then(IndirectTouchInputElement(onEvent, onCancel))
+): Modifier = this.then(IndirectPointerInputElement(onEvent, onCancel))
 
-internal class IndirectTouchInputElement(
-    val onEvent: (IndirectTouchEvent, PointerEventPass) -> Unit,
+internal class IndirectPointerInputElement(
+    val onEvent: (IndirectPointerEvent, PointerEventPass) -> Unit,
     val onCancel: () -> Unit,
-) : ModifierNodeElement<IndirectTouchInputNode>() {
+) : ModifierNodeElement<IndirectPointerInputNode>() {
 
-    override fun create(): IndirectTouchInputNode {
-        return IndirectTouchInputNode(onEvent, onCancel)
+    override fun create(): IndirectPointerInputNode {
+        return IndirectPointerInputNode(onEvent, onCancel)
     }
 
-    override fun update(node: IndirectTouchInputNode) {
+    override fun update(node: IndirectPointerInputNode) {
         node.onEvent = onEvent
         node.onCancel = onCancel
     }
 
     override fun InspectorInfo.inspectableProperties() {
-        name = "indirectTouchInput"
+        name = "indirectPointerInput"
         properties["onEvent"] = onEvent
         properties["onCancel"] = onCancel
     }
@@ -62,7 +62,7 @@ internal class IndirectTouchInputElement(
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (other !is IndirectTouchInputElement) return false
+        if (other !is IndirectPointerInputElement) return false
         if (onEvent !== other.onEvent) return false
         if (onCancel !== other.onCancel) return false
         return true
@@ -70,18 +70,18 @@ internal class IndirectTouchInputElement(
 }
 
 /**
- * A [Modifier.Node] that can be used to test indirect touch events. This is a very simple version
+ * A [Modifier.Node] that can be used to test indirect pointer events. This is a very simple version
  * that doesn't track state (which you would need for production).
  */
-internal class IndirectTouchInputNode(
-    var onEvent: (IndirectTouchEvent, PointerEventPass) -> Unit,
+internal class IndirectPointerInputNode(
+    var onEvent: (IndirectPointerEvent, PointerEventPass) -> Unit,
     var onCancel: () -> Unit,
-) : IndirectTouchInputModifierNode, Modifier.Node() {
-    override fun onIndirectTouchEvent(event: IndirectTouchEvent, pass: PointerEventPass) {
+) : IndirectPointerInputModifierNode, Modifier.Node() {
+    override fun onIndirectPointerEvent(event: IndirectPointerEvent, pass: PointerEventPass) {
         onEvent(event, pass)
     }
 
-    override fun onCancelIndirectTouchInput() {
+    override fun onCancelIndirectPointerInput() {
         onCancel()
     }
 

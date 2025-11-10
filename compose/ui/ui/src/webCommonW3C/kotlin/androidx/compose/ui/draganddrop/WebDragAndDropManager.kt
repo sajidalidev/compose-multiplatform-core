@@ -21,8 +21,9 @@ import org.w3c.dom.DragEvent
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.ImageData
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.Node
 
-internal abstract class WebDragAndDropManager(eventListener: EventTargetListener, globalEventsListener: EventTargetListener, private val density: Density) :
+internal abstract class WebDragAndDropManager(private val rootNode: Node, eventListener: EventTargetListener, globalEventsListener: EventTargetListener, private val density: Density) :
     PlatformDragAndDropManager {
     override val isRequestDragAndDropTransferRequired: Boolean
         get() = false
@@ -42,17 +43,19 @@ internal abstract class WebDragAndDropManager(eventListener: EventTargetListener
             top = "0"
             left = "0"
 
+
             setProperty("pointer-events", "none")
+            setProperty("z-index", "-1")
         }
 
-        // non-image elements passed to setDragImage should be present on document
+        // non-image elements passed to setDragImage should be present in the document
         // the only browser the only browser not burdened with this limitation is Firefox
-        document.body?.appendChild(ghostImage)
+        rootNode.appendChild(ghostImage)
 
         dataTransfer?.setDragImage(ghostImage, 0, 0)
 
         // After browser made a snapshot we can safely remove ghostImage from document
-        // But it should be done in different frame
+        // But it should be done in a different frame
         window.requestAnimationFrame {
             ghostImage.remove()
         }
@@ -96,13 +99,17 @@ internal abstract class WebDragAndDropManager(eventListener: EventTargetListener
         eventListener.addDisposableEvent("dragstart") { event ->
             // Both internal (starting from within the application)
             // and external (triggered by dragging something for the outer world)
-            // trigger the "dragenter" event but we can not set drag image anywhere apart dragstart
+            // trigger the "dragenter" event, but we cannot set drag image anywhere apart dragstart
             previousDragEventIsStart = true
             event as DragEvent
 
             val scope = InternalStartTransferScope(density)
 
             if (scope.startTransfer(event)) {
+                // without setting any kind of data in data transfer Safari on iOS won't proceed with drag action
+                // luckily, the data is mutable and we can reset it in dragAndDropSource
+                // see https://youtrack.jetbrains.com/issue/CMP-7292/Drag-and-Drop-is-not-working-in-mobile-browsers
+                event.dataTransfer?.setData("text/plain", "")
                 scope.ghostImage?.let { ghostImage ->
                     event.setAsDragImage(ghostImage)
                 }
@@ -214,7 +221,7 @@ private class InternalStartTransferScope(
         return ImageData(uint8ClampedArray, imageBitmap.width, imageBitmap.height)
     }
 
-    fun ImageData.asHtmlCanvas(): HTMLCanvasElement {
+    private fun ImageData.asHtmlCanvas(): HTMLCanvasElement {
         val canvasConverter = document.createElement("canvas") as HTMLCanvasElement
 
         canvasConverter.width = width

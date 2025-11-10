@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The Android Open Source Project
+ * Copyright (C) 2024 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,23 +13,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package androidx.compose.remote.core.serialization;
+package androidx.compose.remote.creation.modifiers;
 
-import androidx.compose.remote.core.serialize.MapSerializer;
-import androidx.compose.remote.core.serialize.Serializable;
+import androidx.annotation.RestrictTo;
+import androidx.compose.remote.creation.Rc;
+import androidx.compose.remote.creation.RemoteComposeWriter;
 
 import org.jspecify.annotations.NonNull;
 
-public class IntValueSerializable implements Serializable {
+/** align by modifier */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+public class AlignByModifier implements RecordingModifier.Element {
 
-    private final int mValue;
+    private float mLine = Rc.Layout.FIRST_BASELINE;
 
-    public IntValueSerializable(int value) {
-        mValue = value;
+    public AlignByModifier(float line) {
+        mLine = line;
     }
 
     @Override
-    public void serialize(@NonNull MapSerializer serializer) {
-        serializer.addType("Value").add("value", mValue);
+    public void write(@NonNull RemoteComposeWriter writer) {
+        writer.addAlignByModifier(mLine);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2025 The Android Open Source Project
+ * Copyright 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,23 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package androidx.compose.remote.core.serialization;
 
-import androidx.compose.remote.core.serialize.MapSerializer;
-import androidx.compose.remote.core.serialize.Serializable;
+package androidx.compose.remote.creation.modifiers;
+
+import androidx.annotation.RestrictTo;
 
 import org.jspecify.annotations.NonNull;
 
-public class VariableSerializable implements Serializable {
-
-    private final int mId;
-
-    public VariableSerializable(int id) {
-        mId = id;
-    }
-
-    @Override
-    public void serialize(@NonNull MapSerializer serializer) {
-        serializer.addType("Variable").add("id", mId);
-    }
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+@FunctionalInterface
+public interface ComponentLayoutChangesWriter {
+    /**
+     * Run the commands
+     * @param commands
+     */
+    void run(@NonNull ComponentLayoutChanges commands);
 }
