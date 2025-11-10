@@ -1686,24 +1686,6 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
             parent?.hasFixedInnerContentConstraints == false
     }
 
-    internal var isSendPendingContentCaptureEventsScheduled = false
-    private val cachedLambdaForSendPendingContentCaptureEvents = {
-        contentCaptureManager.sendPendingContentCaptureEvents()
-        isSendPendingContentCaptureEventsScheduled = false
-    }
-
-    private fun scheduleSendPendingContentCaptureEvents(): Unit {
-        if (
-            isAttachedToWindow &&
-                contentCaptureManager.isEnabled &&
-                contentCaptureManager.hasPendingEvents &&
-                !isSendPendingContentCaptureEventsScheduled
-        ) {
-            schedule(cachedLambdaForSendPendingContentCaptureEvents)
-            isSendPendingContentCaptureEventsScheduled = true
-        }
-    }
-
     override fun measureAndLayout(sendPointerUpdate: Boolean) {
         // only run the logic when we have something pending
         if (
@@ -1720,7 +1702,6 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
                 dispatchPendingInteropLayoutCallbacks()
             }
         }
-        scheduleSendPendingContentCaptureEvents()
     }
 
     override fun measureAndLayout(layoutNode: LayoutNode, constraints: Constraints) {
@@ -1734,7 +1715,6 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
                 dispatchPendingInteropLayoutCallbacks()
             }
             rectManager.dispatchCallbacks()
-            scheduleSendPendingContentCaptureEvents()
         }
     }
 
@@ -2244,10 +2224,6 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
         _autofillManager?.let {
             focusOwner.listeners += it
             semanticsOwner.listeners += it
-        }
-
-        if (ComposeUiFlags.isContentCaptureOptimizationEnabled) {
-            contentCaptureManager.let { semanticsOwner.listeners += it }
         }
     }
 

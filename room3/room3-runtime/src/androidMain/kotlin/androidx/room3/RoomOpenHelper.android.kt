@@ -16,7 +16,6 @@
 package androidx.room3
 
 import androidx.annotation.RestrictTo
-import androidx.room3.util.useCursor
 import androidx.sqlite.db.SimpleSQLiteQuery
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
@@ -140,7 +139,7 @@ public open class RoomOpenHelper(
     private fun checkIdentity(db: SupportSQLiteDatabase) {
         if (hasRoomMasterTable(db)) {
             val identityHash: String? =
-                db.query(SimpleSQLiteQuery(RoomMasterTable.READ_QUERY)).useCursor { cursor ->
+                db.query(SimpleSQLiteQuery(RoomMasterTable.READ_QUERY)).use { cursor ->
                     if (cursor.moveToFirst()) {
                         cursor.getString(0)
                     } else {
@@ -239,21 +238,21 @@ public open class RoomOpenHelper(
                     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND " +
                         "name='${ RoomMasterTable.TABLE_NAME }'"
                 )
-                .useCursor { cursor ->
+                .use { cursor ->
                     return cursor.moveToFirst() && cursor.getInt(0) != 0
                 }
         }
 
         internal fun hasEmptySchema(db: SupportSQLiteDatabase): Boolean {
-            db.query("SELECT count(*) FROM sqlite_master WHERE name != 'android_metadata'")
-                .useCursor { cursor ->
-                    return cursor.moveToFirst() && cursor.getInt(0) == 0
-                }
+            db.query("SELECT count(*) FROM sqlite_master WHERE name != 'android_metadata'").use {
+                cursor ->
+                return cursor.moveToFirst() && cursor.getInt(0) == 0
+            }
         }
 
         internal fun dropAllTables(db: SupportSQLiteDatabase) {
             db.query("SELECT name, type FROM sqlite_master WHERE type = 'table' OR type = 'view'")
-                .useCursor { cursor ->
+                .use { cursor ->
                     buildList {
                         while (cursor.moveToNext()) {
                             val name = cursor.getString(0)

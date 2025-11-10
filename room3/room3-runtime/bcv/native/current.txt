@@ -443,9 +443,6 @@ final object androidx.room3/Room { // androidx.room3/Room|null[0]
     final inline fun <#A1: reified androidx.room3/RoomDatabase> inMemoryDatabaseBuilder(noinline kotlin/Function0<#A1> = ...): androidx.room3/RoomDatabase.Builder<#A1> // androidx.room3/Room.inMemoryDatabaseBuilder|inMemoryDatabaseBuilder(kotlin.Function0<0:0>){0§<androidx.room3.RoomDatabase>}[0]
 }
 
-final val androidx.room3.util/EMPTY_STRING_ARRAY // androidx.room3.util/EMPTY_STRING_ARRAY|{}EMPTY_STRING_ARRAY[0]
-    final fun <get-EMPTY_STRING_ARRAY>(): kotlin/Array<kotlin/String?> // androidx.room3.util/EMPTY_STRING_ARRAY.<get-EMPTY_STRING_ARRAY>|<get-EMPTY_STRING_ARRAY>(){}[0]
-
 final fun <#A: androidx.room3/RoomDatabase> androidx.room3.util/findDatabaseConstructorAndInitDatabaseImpl(kotlin.reflect/KClass<*>): #A // androidx.room3.util/findDatabaseConstructorAndInitDatabaseImpl|findDatabaseConstructorAndInitDatabaseImpl(kotlin.reflect.KClass<*>){0§<androidx.room3.RoomDatabase>}[0]
 final fun <#A: kotlin/Any, #B: kotlin/Any?> androidx.room3.util/recursiveFetchMap(kotlin.collections/MutableMap<#A, #B>, kotlin/Boolean, kotlin/Function1<kotlin.collections/MutableMap<#A, #B>, kotlin/Unit>) // androidx.room3.util/recursiveFetchMap|recursiveFetchMap(kotlin.collections.MutableMap<0:0,0:1>;kotlin.Boolean;kotlin.Function1<kotlin.collections.MutableMap<0:0,0:1>,kotlin.Unit>){0§<kotlin.Any>;1§<kotlin.Any?>}[0]
 final fun <#A: kotlin/Any?> androidx.room3.coroutines/createFlow(androidx.room3/RoomDatabase, kotlin/Boolean, kotlin/Array<kotlin/String>, kotlin/Function1<androidx.sqlite/SQLiteConnection, #A>): kotlinx.coroutines.flow/Flow<#A> // androidx.room3.coroutines/createFlow|createFlow(androidx.room3.RoomDatabase;kotlin.Boolean;kotlin.Array<kotlin.String>;kotlin.Function1<androidx.sqlite.SQLiteConnection,0:0>){0§<kotlin.Any?>}[0]
@@ -458,7 +455,6 @@ final fun androidx.room3.util/getColumnIndexOrThrow(androidx.sqlite/SQLiteStatem
 final fun androidx.room3.util/getLastInsertedRowId(androidx.sqlite/SQLiteConnection): kotlin/Long // androidx.room3.util/getLastInsertedRowId|getLastInsertedRowId(androidx.sqlite.SQLiteConnection){}[0]
 final fun androidx.room3.util/getTotalChangedRows(androidx.sqlite/SQLiteConnection): kotlin/Int // androidx.room3.util/getTotalChangedRows|getTotalChangedRows(androidx.sqlite.SQLiteConnection){}[0]
 final fun androidx.room3.util/joinIntoString(kotlin.collections/List<kotlin/Int>?): kotlin/String? // androidx.room3.util/joinIntoString|joinIntoString(kotlin.collections.List<kotlin.Int>?){}[0]
-final fun androidx.room3.util/newStringBuilder(): kotlin.text/StringBuilder // androidx.room3.util/newStringBuilder|newStringBuilder(){}[0]
 final fun androidx.room3.util/splitToIntList(kotlin/String?): kotlin.collections/List<kotlin/Int>? // androidx.room3.util/splitToIntList|splitToIntList(kotlin.String?){}[0]
 final fun androidx.room3.util/stringError(): kotlin/String // androidx.room3.util/stringError|stringError(){}[0]
 final fun androidx.room3.util/wrapMappedColumns(androidx.sqlite/SQLiteStatement, kotlin/Array<kotlin/String>, kotlin/IntArray): androidx.sqlite/SQLiteStatement // androidx.room3.util/wrapMappedColumns|wrapMappedColumns(androidx.sqlite.SQLiteStatement;kotlin.Array<kotlin.String>;kotlin.IntArray){}[0]
