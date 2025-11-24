@@ -19,6 +19,8 @@ package androidx.compose.remote.creation.compose.state
 
 import android.graphics.Bitmap
 import androidx.annotation.RestrictTo
+import androidx.compose.remote.core.operations.ImageAttribute.IMAGE_HEIGHT
+import androidx.compose.remote.core.operations.ImageAttribute.IMAGE_WIDTH
 import androidx.compose.remote.creation.compose.capture.LocalRemoteComposeCreationState
 import androidx.compose.remote.creation.compose.capture.RemoteComposeCreationState
 import androidx.compose.remote.player.core.state.RemoteDomains
@@ -52,6 +54,28 @@ internal constructor(
             //     "Use RemoteBitmap.getIdForCreationState directly"
             // )
             return getIdForCreationState(FallbackCreationState.state)
+        }
+
+    /** The width of the bitmap as represented in the remote document. */
+    public val width: RemoteFloat
+        get() {
+            val width =
+                state?.document?.bitmapAttribute(id, IMAGE_WIDTH)
+                    ?: throw IllegalStateException(
+                        "Bitmap width is not available in the remote document."
+                    )
+            return RemoteFloat(width)
+        }
+
+    /** The height of the bitmap as represented in the remote document. */
+    public val height: RemoteFloat
+        get() {
+            val height =
+                state?.document?.bitmapAttribute(id, IMAGE_HEIGHT)
+                    ?: throw IllegalStateException(
+                        "Bitmap height is not available in the remote document."
+                    )
+            return RemoteFloat(height)
         }
 
     public companion object {
@@ -114,20 +138,6 @@ public class MutableRemoteBitmap(
 
     public override fun writeToDocument(creationState: RemoteComposeCreationState): Int =
         idProvider(creationState)
-
-    public override var value: Bitmap
-        get() {
-            return content.value
-        }
-        set(newValue) {
-            content.value = newValue
-        }
-
-    public override operator fun component1(): Bitmap = value
-
-    public override operator fun component2(): (Bitmap) -> Unit = { newValue ->
-        content.value = newValue
-    }
 }
 
 /**

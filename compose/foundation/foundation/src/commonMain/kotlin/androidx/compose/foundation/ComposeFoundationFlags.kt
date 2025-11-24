@@ -48,7 +48,7 @@ import kotlin.jvm.JvmField
  * paths being completely removed from the artifact, which can often have nontrivial positive
  * performance impact.
  *
- *      -assumevalues class androidx.compose.runtime.ComposeFoundationFlags {
+ *      -assumevalues class androidx.compose.foundation.ComposeFoundationFlags {
  *          public static boolean SomeFeatureEnabled return false
  *      }
  */
@@ -129,8 +129,8 @@ object ComposeFoundationFlags {
 
     /**
      * With this flag on, Pager will use Cache Window as the default prefetching strategy, instead
-     * of 1 item in the direction of the scroll. The window used will be 1 view port AFTER the
+     * of 1 item in the direction of the scroll. The window used will be 1 view port after the
      * currently composed items, this includes visible and items composed through beyond bounds.
      */
-    @Suppress("MutableBareField") @JvmField var isCacheWindowForPagerEnabled = true
+    @Suppress("MutableBareField") @JvmField var isCacheWindowForPagerEnabled = false
 }

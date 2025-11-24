@@ -88,6 +88,7 @@ import androidx.compose.ui.ComposeUiFlags
 import androidx.compose.ui.ComposeUiFlags.isAdaptiveRefreshRateEnabled
 import androidx.compose.ui.ComposeUiFlags.isCanScrollUsingLastDownEventFixEnabled
 import androidx.compose.ui.ComposeUiFlags.isIndirectPointerNavigationGestureDetectorEnabled
+import androidx.compose.ui.ComposeUiFlags.isOptimizedFocusEventDispatchEnabled
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ExperimentalIndirectPointerApi
 import androidx.compose.ui.InternalComposeUiApi
@@ -112,8 +113,10 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusDirection.Companion.Down
 import androidx.compose.ui.focus.FocusDirection.Companion.Enter
 import androidx.compose.ui.focus.FocusDirection.Companion.Exit
+import androidx.compose.ui.focus.FocusListener
 import androidx.compose.ui.focus.FocusOwner
 import androidx.compose.ui.focus.FocusOwnerImpl
+import androidx.compose.ui.focus.FocusTargetModifierNode
 import androidx.compose.ui.focus.FocusTargetNode
 import androidx.compose.ui.focus.PlatformFocusOwner
 import androidx.compose.ui.focus.calculateFocusRectRelativeTo
@@ -193,8 +196,10 @@ import androidx.compose.ui.node.OwnerSnapshotObserver
 import androidx.compose.ui.node.RootForTest
 import androidx.compose.ui.node.SemanticsModifierNode
 import androidx.compose.ui.node.TraversableNode
+import androidx.compose.ui.node.ancestors
 import androidx.compose.ui.node.requireLayoutCoordinates
 import androidx.compose.ui.node.requireLayoutNode
+import androidx.compose.ui.node.setOfAncestors
 import androidx.compose.ui.node.visitSubtree
 import androidx.compose.ui.platform.MotionEventVerifierApi29.isValidMotionEvent
 import androidx.compose.ui.platform.coreshims.ViewCompatShims
@@ -216,6 +221,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.round
+import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.util.fastIsFinite
 import androidx.compose.ui.util.fastLastOrNull
 import androidx.compose.ui.util.fastRoundToInt
@@ -267,7 +273,8 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
     OutOfFrameExecutor,
     ViewTreeObserver.OnGlobalLayoutListener,
     ViewTreeObserver.OnScrollChangedListener,
-    ViewTreeObserver.OnTouchModeChangeListener {
+    ViewTreeObserver.OnTouchModeChangeListener,
+    FocusListener {
 
     /**
      * Remembers the position of the last pointer input event that was down. This position will be
@@ -914,7 +921,7 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
     /** Set to `true` when [sendHoverExitEvent] has been posted. */
     private var hoverExitReceived = false
 
-    // Determines scroll/swipe to next or previous focusable element for indirect touch events.
+    // Determines scroll/swipe to next or previous focusable element for indirect pointer events.
     private val indirectPointerNavigationGestureDetector =
         IndirectPointerNavigationGestureDetector(context) {
             focusOwner.moveFocus(focusDirection = it, wrapAroundForOneDimensionalFocus = false)
@@ -1300,10 +1307,33 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
         }
     }
 
+    // Override for View focus changes.
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
         if (!gainFocus && !hasFocus()) {
             focusOwner.releaseFocus()
+        }
+    }
+
+    // Override for Compose focus changes.
+    override fun onFocusChanged(
+        previous: FocusTargetModifierNode?,
+        current: FocusTargetModifierNode?,
+    ) {
+        @OptIn(ExperimentalComposeUiApi::class)
+        if (isOptimizedFocusEventDispatchEnabled) {
+            val previousIndirectPointerEventModifiers =
+                previous?.ancestors(type = Nodes.IndirectPointerInput, includeSelf = true) ?: return
+
+            val currentIndirectPointerEventModifiers =
+                current?.setOfAncestors(type = Nodes.IndirectPointerInput, includeSelf = true)
+
+            previousIndirectPointerEventModifiers.fastForEach {
+                val stillHasFocus = currentIndirectPointerEventModifiers?.contains(it) ?: false
+                if (!stillHasFocus) {
+                    it.onCancelIndirectPointerInput()
+                }
+            }
         }
     }
 
@@ -1407,7 +1437,6 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
         layoutNodes.remove(node.semanticsId)
         measureAndLayoutDelegate.onNodeDetached(node)
         requestClearInvalidObservations()
-        rectManager.remove(node)
         @OptIn(ExperimentalComposeUiApi::class)
         if (autofillSupported() && ComposeUiFlags.isSemanticAutofillEnabled) {
             _autofillManager?.onDetach(node)
@@ -2237,6 +2266,7 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
             focusOwner.listeners += it
             semanticsOwner.listeners += it
         }
+        focusOwner.listeners += this
     }
 
     private fun installLocalRetainedValuesStore(
@@ -2301,6 +2331,9 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
             semanticsOwner.listeners -= it
             focusOwner.listeners -= it
         }
+
+        rectManager.removeScheduledCallback()
+        focusOwner.listeners -= this
     }
 
     override fun onProvideAutofillVirtualStructure(structure: ViewStructure?, flags: Int) {
@@ -2378,6 +2411,7 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
                         }
                     } else {
                         focusOwner.dispatchIndirectPointerCancel()
+                        indirectPointerNavigationGestureDetector.cancelCurrentEventStream()
                         return true
                     }
                 }
@@ -2448,8 +2482,8 @@ internal class AndroidComposeView(context: Context, coroutineContext: CoroutineC
                 motionEvent.isFromSource(InputDevice.SOURCE_TOUCHPAD)
         if (isDown && isFromMouseOrTouchpad) {
             if (
-                (parent as? AbstractComposeView)?.autoClearFocusBehavior ==
-                    AutoClearFocusBehavior.CursorBased
+                ((parent as? View)?.getTag(R.id.auto_clear_focus_behavior_tag)
+                    ?: AutoClearFocusBehavior.Default) == AutoClearFocusBehavior.CursorBased
             ) {
                 val activeFocusTargetNode = focusOwner.activeFocusTargetNode
                 if (activeFocusTargetNode != null) {
@@ -3869,12 +3903,16 @@ internal class IndirectPointerNavigationGestureDetector(
                 // If another component consumes a move or up event, we should ignore the
                 // rest of the gesture to prevent conflicting actions on the final fling.
                 if (isConsumed) {
-                    ignoreCurrentGestureStream = true
+                    cancelCurrentEventStream()
                 }
             }
         }
-
         return gestureDetector.onTouchEvent(motionEvent)
+    }
+
+    fun cancelCurrentEventStream() {
+        primaryDirectionalMotionAxis = IndirectPointerEventPrimaryDirectionalMotionAxis.None
+        ignoreCurrentGestureStream = true
     }
 }
 
