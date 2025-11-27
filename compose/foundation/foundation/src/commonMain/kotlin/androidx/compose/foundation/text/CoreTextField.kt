@@ -659,7 +659,7 @@ internal fun CoreTextField(
                 if (
                     state.handleState == HandleState.Cursor && !readOnly && showHandleAndMagnifier
                 ) {
-//                    TextFieldCursorHandle(manager = manager)
+                    TextFieldCursorHandle(manager = manager)
                 }
             }
         }
