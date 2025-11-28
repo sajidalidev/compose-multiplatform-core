@@ -20,7 +20,6 @@ import androidx.compose.ui.platform.EmptyInputTraits
 import androidx.compose.ui.platform.IOSSkikoInput
 import androidx.compose.ui.platform.PlatformInsets
 import androidx.compose.ui.platform.SkikoUITextInputTraits
-import androidx.compose.ui.platform.TextActions
 import androidx.compose.ui.platform.TextSelectionRect
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.uikit.utils.CMPEditMenuView
@@ -155,15 +154,6 @@ internal class IntermediateTextInputUIView(
                 it.setTextInput(this)
             }
 
-
-    override fun layoutSubviews() {
-        super.layoutSubviews()
-
-        if (usingNITI) {
-            hideCursorView()
-        }
-    }
-
     private var selectionInteractionAttached: Boolean = false
 
     override fun didMoveToWindow() {
@@ -289,8 +279,8 @@ internal class IntermediateTextInputUIView(
     }
 
     override fun setSelectedTextRange(selectedTextRange: UITextRange?) {
+        val range = selectedTextRange?.toTextRange()
         if (usingNITI) {
-            val range = selectedTextRange?.toTextRange()
             if (input?.getSelectedTextRange() != range) {
                 // iOS <= 16 does not update selection handles when selection changes from the keyboard
                 // Posting an extra notification solves this issue
@@ -308,7 +298,7 @@ internal class IntermediateTextInputUIView(
             }
         } else {
             input?.withBatch {
-                input?.setSelectedTextRange(selectedTextRange?.toTextRange())
+                input?.setSelectedTextRange(range)
             }
         }
     }
@@ -513,9 +503,7 @@ internal class IntermediateTextInputUIView(
     override fun setBaseWritingDirection(
         writingDirection: NSWritingDirection,
         forRange: UITextRange
-    ) {
-        // TODO: Verify if no more handling needed
-    }
+    ) {}
 
     // Working with Geometry and Hit-Testing. Some methods return stubs for now.
     override fun firstRectForRange(range: UITextRange): CValue<CGRect> {
@@ -531,14 +519,6 @@ internal class IntermediateTextInputUIView(
     override fun caretRectForPosition(position: UITextPosition): CValue<CGRect> {
         val fallbackRect = CGRectMake(x = 1.0, y = 1.0, width = 0.0, height = 1.0)
         if (usingNITI) {
-            // Cursor is drawing on Compose canvas, hence no need to display it in UIKit.
-            // Returning zero-width rect that will hide cursor on iOS 13 - iOS 16.
-            // On iOS 17+ cursor is removed manually after it is placed.
-
-            mainScope.launch {
-                hideCursorView()
-            }
-
             val position = (position as? IntermediateTextPosition)?.position ?: return fallbackRect
             val caretDpRect = input?.caretDpRectForPosition(position)
             return caretDpRect?.asCGRect() ?: fallbackRect
@@ -549,7 +529,7 @@ internal class IntermediateTextInputUIView(
 
     override fun selectionRectsForRange(range: UITextRange): List<*> {
         if (usingNITI) {
-            val fallbackList = listOf<UITextSelectionRect>() // can't be empty?
+            val fallbackList = listOf<UITextSelectionRect>()
             val textRange = TextRange(
                 start = (range.start as? IntermediateTextPosition)?.position ?: return fallbackList,
                 end = (range.end as? IntermediateTextPosition)?.position ?: return fallbackList
@@ -694,21 +674,6 @@ internal class IntermediateTextInputUIView(
     override fun editMenuDelay(): Double =
         doubleTapTimeoutMillis.milliseconds.toDouble(DurationUnit.SECONDS)
 
-    /**
-     * Show copy/paste text menu
-     * @param targetRect - rectangle of selected text area
-     * @param textActions - available (not null) actions in text menu
-     */
-    fun showTextMenu(targetRect: CValue<CGRect>, textActions: TextActions) {
-        this.showEditMenuAtRect(
-            targetRect = targetRect,
-            copy = textActions.copy,
-            cut = textActions.cut,
-            paste = textActions.paste,
-            selectAll = textActions.selectAll
-        )
-    }
-
     fun hideTextMenu() = this.hideEditMenu()
 
     fun isTextMenuShown() = isEditMenuShown
@@ -781,12 +746,13 @@ internal class IntermediateTextInputUIView(
         this.customActions = customActions
     }
 
-    @Suppress("UNCHECKED_CAST")
+
     override fun editMenuForTextRange(textRange: UITextRange, suggestedActions: List<*>): UIMenu? {
         if (usingNITI) {
             val customMenuElements = makeCustomMenuElements()
             if (customMenuElements.isEmpty()) return null // The default menu would be returned
 
+            @Suppress("UNCHECKED_CAST")
             val suggestedActionsElements = suggestedActions as List<UIMenuElement>
 
             return UIMenu.menuWithTitle("", children = customMenuElements + suggestedActionsElements)
@@ -824,22 +790,6 @@ internal class IntermediateTextInputUIView(
         mainScope.launch {
             endEditBatch()
         }
-    }
-
-    private fun hideCursorView() {
-        // TODO Revert commenting
-//        val cursorViewClass = when {
-//            available(OS.Ios to OSVersion(major = 17, minor = 4)) -> "UIStandardTextCursorView"
-//            available(OS.Ios to OSVersion(major = 17)) -> "_UITextCursorView"
-//            else -> return
-//        }
-//
-//        subviews.forEach { subview ->
-//            subview as UIView
-//            if (subview::class.simpleName == cursorViewClass) {
-//                subview.setHidden(true)
-//            }
-//        }
     }
 }
 
