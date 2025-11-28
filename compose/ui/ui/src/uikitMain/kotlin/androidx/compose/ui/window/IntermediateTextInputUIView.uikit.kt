@@ -24,7 +24,6 @@ import androidx.compose.ui.platform.TextActions
 import androidx.compose.ui.platform.TextSelectionRect
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.uikit.utils.CMPEditMenuView
-import androidx.compose.ui.uikit.utils.CMPTextInputView
 import androidx.compose.ui.uikit.utils.CMPEditMenuCustomAction
 import androidx.compose.ui.uikit.utils.CMPGestureRecognizer
 import androidx.compose.ui.uikit.utils.CMPTextInputStringTokenizer
@@ -58,7 +57,6 @@ import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGRectNull
 import platform.CoreGraphics.CGRectZero
 import platform.CoreGraphics.CGSizeEqualToSize
-import platform.Foundation.NSArray
 import platform.Foundation.NSComparisonResult
 import platform.Foundation.NSDictionary
 import platform.Foundation.NSOrderedAscending
@@ -67,7 +65,6 @@ import platform.Foundation.NSOrderedSame
 import platform.Foundation.NSRange
 import platform.Foundation.NSStringFromSelector
 import platform.Foundation.dictionary
-import platform.QuartzCore.CAShapeLayer
 import platform.UIKit.NSWritingDirection
 import platform.UIKit.NSWritingDirectionNatural
 import platform.UIKit.UIAction
@@ -79,10 +76,7 @@ import platform.UIKit.UIKeyInputProtocol
 import platform.UIKit.UIKeyboardAppearance
 import platform.UIKit.UIKeyboardType
 import platform.UIKit.UIMenu
-import platform.UIKit.UIMenuAutoFill
-import platform.UIKit.UIMenuBuilderProtocol
 import platform.UIKit.UIMenuElement
-import platform.UIKit.UIMenuItem
 import platform.UIKit.UIPress
 import platform.UIKit.UIPressesEvent
 import platform.UIKit.UIResponder
@@ -112,9 +106,7 @@ import platform.UIKit.UITextWritingDirection
 import platform.UIKit.UITouch
 import platform.UIKit.UIView
 import platform.UIKit.UIWritingToolsBehavior
-import platform.UIKit.UIWritingToolsResultOptions
 import platform.UIKit.addInteraction
-import platform.UIKit.removeInteraction
 import platform.darwin.NSInteger
 
 private val NoOpOnKeyboardPresses: (Set<*>) -> Unit = {}

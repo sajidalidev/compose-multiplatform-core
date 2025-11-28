@@ -136,27 +136,99 @@ internal interface IOSSkikoInput {
      */
     fun verticalPositionFromPosition(position: Int, verticalOffset: Int): Int?
 
-    fun currentFocusedDpRect(): DpRect?
-
+    /**
+     * Returns the caret (insertion point) rectangle for a given text position.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614490-caretrectforposition
+     * @param position A text position within the document.
+     * @return A rectangle, in dp, that encloses the caret at the specified position, or `null`
+     * if the position is invalid.
+     */
     fun caretDpRectForPosition(position: Int): DpRect?
 
+    /**
+     * Returns the selection rectangles that enclose a range of text.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614556-selectionrects
+     * @param range A range of text in the document.
+     * @return A list of rectangles, in dp, that tightly bound the visual selection for the range.
+     */
     fun selectionDpRectsForRange(range: TextRange): List<TextSelectionRect>
 
+    /**
+     * Returns the first rectangle that encloses a range of text.
+     * Mirrors UIKit's `firstRectForRange` behavior.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1649691-firstrectforrange
+     * @param range A range of text in the document.
+     * @return The first selection rectangle, in dp, or `null` if the range is invalid or empty.
+     */
     fun firstSelectionRectForRange(range: TextRange): DpRect?
 
+    /**
+     * Returns the text position that is closest to the specified point.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614480-closestposition
+     * @param point A point, in dp, in the coordinate space of the text input.
+     * @return The position closest to the point, or `null` if none can be determined.
+     */
     fun closestPositionToPoint(point: DpOffset): Int?
 
+    /**
+     * Returns the text position that is closest to the specified point, constrained to a range.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614516-closestpositionwithinrange
+     * @param point A point, in dp, in the coordinate space of the text input.
+     * @param withinRange A range that limits the returned position.
+     * @return The closest position within the given range, or `null` if none exists.
+     */
     fun closestPositionToPoint(point: DpOffset, withinRange: TextRange): Int?
 
+    /**
+     * Returns the character range at the specified point.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614471-characterrange
+     * @param point A point, in dp, in the coordinate space of the text input.
+     * @return The range of the character at the point, or `null` if none.
+     */
     fun characterRangeAtPoint(point: DpOffset): TextRange?
 
+    /**
+     * Returns a text position located at a character offset within a range.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614571-positionwithinrange
+     * @param range The containing range.
+     * @param atCharacterOffset A zero-based offset, in characters, from the start of the range.
+     * @return The resulting position, or `null` if the offset is out of bounds.
+     */
     fun positionWithinRange(range: TextRange, atCharacterOffset: Int): Int?
 
+    /**
+     * Returns the position in a specified direction that is farthest within a given range.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614551-positionwithinrange
+     * @param range The limiting range.
+     * @param farthestIndirection A direction constant (e.g., forward/backward/left/right).
+     * @return The farthest position within the range in the given direction, or `null` if none.
+     */
     fun positionWithinRange(range: TextRange, farthestIndirection: String): Int?
 
+    /**
+     * Returns the range that extends from a position in a given direction to encompass a character unit.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614559-characterrangebyextendingposition
+     * @param position The starting text position.
+     * @param direction A direction constant indicating how to extend (e.g., forward/backward).
+     * @return The extended character range, or `null` if the position is invalid.
+     */
     fun characterRangeByExtendingPosition(position: Int, direction: String): TextRange?
 
+    /**
+     * Returns the base writing direction for text at a position moving in a specified direction.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614550-basewritingdirectionforposition
+     * @param position The reference text position.
+     * @param inDirection A direction constant that indicates the movement direction.
+     * @return The base writing direction (e.g., LTR or RTL) as a string, or `null` if unknown.
+     */
     fun baseWritingDirectionForPosition(position: Int, inDirection: String): String?
 
+    /**
+     * Returns the number of characters between two positions.
+     * https://developer.apple.com/documentation/uikit/uitextinput/1614565-offsetfromposition
+     * @param fromPosition The starting position.
+     * @param toPosition The ending position.
+     * @return A positive, negative, or zero value indicating the distance in characters.
+     */
     fun offset(fromPosition: Int, toPosition: Int): Int
 }

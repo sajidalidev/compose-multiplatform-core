@@ -858,8 +858,6 @@ internal class UIKitTextInputService(
             }
         }
 
-        override fun currentFocusedDpRect(): DpRect? = currentFocusedRect?.toDpRect(view.density)
-
         override fun caretDpRectForPosition(position: Int): DpRect? {
             val text = getState()?.text ?: return null
             if (position < 0 || position > text.length) {
