@@ -37,5 +37,5 @@ FOUNDATION_EXPORT const unsigned char CMPUIKitUtilsVersionString[];
 #import "CMPTextInputStringTokenizer.h"
 #import "CMPScrollView.h"
 #import "CMPComposeContainerLifecycleDelegate.h"
-#import "CMPTextInputView.h"
 #import "CMPEditMenuCustomAction.h"
+#import "CMPEditMenuView.h"
