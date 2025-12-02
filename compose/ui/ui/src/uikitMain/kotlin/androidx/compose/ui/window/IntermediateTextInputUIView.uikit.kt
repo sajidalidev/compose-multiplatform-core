@@ -175,6 +175,7 @@ internal class IntermediateTextInputUIView(
         if (usingNITI) {
             if (!isFirstResponder && this.isFirstResponder()) {
                 this.addInteraction(selectionInteraction)
+                this.activateTextInputInteractionIfNeeded()
             }
         }
 

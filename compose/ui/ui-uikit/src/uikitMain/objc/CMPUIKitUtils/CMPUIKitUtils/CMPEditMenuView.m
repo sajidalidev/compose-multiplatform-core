@@ -432,4 +432,14 @@ willPresentMenuForConfiguration:(UIEditMenuConfiguration *)configuration
     return [UIMenu menuWithTitle:@"" children:allActions];
 }
 
+- (void)activateTextInputInteractionIfNeeded {
+    if (@available(iOS 17, *)) {
+        for (id<UIInteraction> interaction in self.interactions) {
+            if ([interaction isKindOfClass:[UITextSelectionDisplayInteraction class]]) {
+                [((UITextSelectionDisplayInteraction *)interaction) setActivated:YES];
+            }
+        }
+    }
+}
+
 @end

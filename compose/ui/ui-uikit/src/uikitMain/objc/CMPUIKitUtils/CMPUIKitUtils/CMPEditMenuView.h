@@ -43,4 +43,6 @@
 
 - (UIView *)inputAccessoryView;
 
+- (void)activateTextInputInteractionIfNeeded;
+
 @end
