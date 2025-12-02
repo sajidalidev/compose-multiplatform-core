@@ -45,4 +45,6 @@
 
 - (void)activateTextInputInteractionIfNeeded;
 
+- (void)deactivateTextInputInteractionIfNeeded;
+
 @end

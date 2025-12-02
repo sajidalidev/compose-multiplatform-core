@@ -68,7 +68,6 @@ import kotlinx.coroutines.launch
 import org.jetbrains.skia.BreakIterator
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGRectZero
-import platform.UIKit.UIColor
 import platform.UIKit.UIPress
 import platform.UIKit.UIView
 import platform.UIKit.UIViewAutoresizingFlexibleHeight
@@ -183,6 +182,8 @@ internal class UIKitTextInputService(
 
         detachIntermediateTextInputView()
         useNativeInputHandling = false
+
+        selectionTintColor = null
     }
 
     override fun showSoftwareKeyboard() {
@@ -514,13 +515,17 @@ internal class UIKitTextInputService(
 
     override fun usingNativeInput(): Boolean = useNativeInputHandling
 
-    override fun updateTintColor(color: Color) {
+    private var selectionTintColor: Color? = null
+    private fun setupTintColor() {
         textUIView?.let {
-            val uiColor = color.toUIColor()
-            if (it.tintColor != uiColor) {
-                it.setTintColor(uiColor)
-            }
+            val uiColor = selectionTintColor?.toUIColor()
+            it.setTintColor(uiColor)
         }
+    }
+
+    override fun updateTintColor(color: Color) {
+        selectionTintColor = color
+        setupTintColor()
     }
 
     // The Menu appearance is controlled by UIKit.
@@ -552,6 +557,7 @@ internal class UIKitTextInputService(
                 it.resignFirstResponder()
                 it.becomeFirstResponder()
             }
+            setupTintColor()
         } else {
             textUIView = IntermediateTextInputUIView(
                 doubleTapTimeoutMillis = viewConfiguration.doubleTapTimeoutMillis,

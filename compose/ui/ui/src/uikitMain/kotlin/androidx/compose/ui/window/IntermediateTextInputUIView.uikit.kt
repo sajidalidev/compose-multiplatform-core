@@ -67,6 +67,7 @@ import platform.Foundation.dictionary
 import platform.UIKit.NSWritingDirection
 import platform.UIKit.NSWritingDirectionNatural
 import platform.UIKit.UIAction
+import platform.UIKit.UIColor
 import platform.UIKit.UIEdgeInsetsEqualToEdgeInsets
 import platform.UIKit.UIEdgeInsetsMake
 import platform.UIKit.UIEvent
@@ -106,6 +107,7 @@ import platform.UIKit.UITouch
 import platform.UIKit.UIView
 import platform.UIKit.UIWritingToolsBehavior
 import platform.UIKit.addInteraction
+import platform.UIKit.systemBlueColor
 import platform.darwin.NSInteger
 
 private val NoOpOnKeyboardPresses: (Set<*>) -> Unit = {}
@@ -180,6 +182,17 @@ internal class IntermediateTextInputUIView(
         }
 
         return result
+    }
+
+    override fun setTintColor(tintColor: UIColor?) {
+        val colorToSet = tintColor ?: UIColor.systemBlueColor
+        if (super.tintColor != colorToSet) {
+            if (this.isFirstResponder()) {
+                this.deactivateTextInputInteractionIfNeeded()
+                this.activateTextInputInteractionIfNeeded()
+            }
+            super.setTintColor(colorToSet)
+        }
     }
 
     override fun resignFirstResponder(): Boolean {
