@@ -16,6 +16,7 @@
 
 package androidx.compose.foundation.text.input.internal
 
+import androidx.compose.foundation.text.DefaultCursorThickness
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
@@ -57,5 +58,6 @@ internal actual fun CompositionLocalConsumerModifierNode.drawPlatformCursor(
             ?.value
             ?.takeIf { it != Color.Unspecified }
             ?.let { nativeTextInputContext.updateTintColor(it) }
+        nativeTextInputContext.updateCursorThickness(DefaultCursorThickness)
     }
 }

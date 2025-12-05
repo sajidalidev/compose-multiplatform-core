@@ -45,10 +45,13 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.uikit.density
 import androidx.compose.ui.uikit.utils.CMPEditMenuCustomAction
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.asCGRect
 import androidx.compose.ui.unit.asDpOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.toDpRect
 import androidx.compose.ui.unit.toOffset
 import androidx.compose.ui.unit.toSize
@@ -106,6 +109,7 @@ internal class UIKitTextInputService(
         }
 
     private var currentFocusedRect: Rect? = null
+    private var cursorThickness = 2.dp
 
     /**
      * Workaround to prevent calling textWillChange, textDidChange, selectionWillChange, and
@@ -528,6 +532,11 @@ internal class UIKitTextInputService(
         setupTintColor()
     }
 
+    override fun updateCursorThickness(thickness: Dp) {
+        // Cursor frame must be at least 1 dp width to make it interactive
+        cursorThickness = max(thickness, 1.dp)
+    }
+
     // The Menu appearance is controlled by UIKit.
     // Return `Hidden` to make Compose always provide a new set of actions when selection changes.
     override val status: TextToolbarStatus get() = TextToolbarStatus.Hidden
@@ -874,7 +883,11 @@ internal class UIKitTextInputService(
                 return null
             }
             val rect = currentTextLayoutResult.getCursorRect(position)
-            return rect.toDpRect(view.density)
+            return rect.toDpRect(view.density).let {
+                val hafWidth = cursorThickness / 2
+                val center = (it.left + it.right) / 2
+                it.copy(left = center - hafWidth, right = center + hafWidth)
+            }
         }
 
         override fun selectionDpRectsForRange(range: TextRange): List<TextSelectionRect> {

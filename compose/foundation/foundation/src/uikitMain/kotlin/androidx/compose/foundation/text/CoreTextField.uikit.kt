@@ -34,6 +34,7 @@ internal actual fun platformShouldDrawTextControls(cursorBrush: Brush, selection
             ?.takeIf { it != Color.Unspecified }
             ?: selectionColor
         nativeInputContext.updateTintColor(controlsColor)
+        nativeInputContext.updateCursorThickness(DefaultCursorThickness)
     }
     return isUsingNativeInput
 }

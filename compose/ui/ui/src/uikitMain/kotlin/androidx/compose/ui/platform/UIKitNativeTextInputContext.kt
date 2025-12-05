@@ -19,6 +19,7 @@ package androidx.compose.ui.platform
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.uikit.utils.CMPEditMenuCustomAction
+import androidx.compose.ui.unit.Dp
 
 interface UIKitNativeTextInputContext {
     fun usingNativeInput(): Boolean
@@ -33,4 +34,6 @@ interface UIKitNativeTextInputContext {
     )
 
     fun updateTintColor(color: Color)
+
+    fun updateCursorThickness(thickness: Dp)
 }
