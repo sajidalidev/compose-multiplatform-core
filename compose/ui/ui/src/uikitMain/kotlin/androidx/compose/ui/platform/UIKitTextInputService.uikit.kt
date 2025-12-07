@@ -1050,8 +1050,11 @@ internal class UIKitTextInputService(
             TODO("Not yet implemented")
         }
 
-        private fun isIncorrect(range: TextRange): Boolean =
-            range.start < 0 || range.end > endOfDocument() || range.start > range.end
+        private fun isIncorrect(range: TextRange): Boolean {
+            // There might be a desynchronization between a Compose text processing and UIKit's calls of UITextInput methods
+            val layoutTextEnd = textLayoutResult?.multiParagraph?.intrinsics?.annotatedString?.length ?: 0
+            return range.start < 0 || range.end > endOfDocument() || range.end > layoutTextEnd || range.start > range.end
+        }
     }
 }
 
