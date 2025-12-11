@@ -69,7 +69,7 @@ if(AndroidXComposePlugin.isMultiplatformEnabled(project)) {
         desktop()
         js()
         wasm()
-        darwin()
+        darwinTv()
 
         configureDarwinFlags()
     }
@@ -165,7 +165,7 @@ if(AndroidXComposePlugin.isMultiplatformEnabled(project)) {
             skikoTest {
                 dependsOn(commonTest)
                 dependencies {
-                    implementation(project(":compose:ui:ui-test-junit4"))
+//                    implementation(project(":compose:ui:ui-test-junit4"))
                 }
             }
 

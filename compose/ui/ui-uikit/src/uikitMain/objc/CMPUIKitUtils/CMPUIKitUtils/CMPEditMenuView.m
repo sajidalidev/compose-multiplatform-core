@@ -15,7 +15,7 @@
  */
 
 #import "CMPEditMenuView.h"
-
+#if !TARGET_OS_TV
 @implementation CMPEditMenuCustomAction
 
 - (id)initWithTitle:(NSString *)title action:(void (^)(void))actionBlock {
@@ -450,3 +450,5 @@ willPresentMenuForConfiguration:(UIEditMenuConfiguration *)configuration
 }
 
 @end
+
+#endif

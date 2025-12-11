@@ -32,7 +32,7 @@ JetBrainsAndroidXPlugin.applyAndConfigure(project)
 androidXComposeMultiplatform {
     android()
     desktop()
-    darwin()
+    darwinTv()
     js()
     wasm()
 }

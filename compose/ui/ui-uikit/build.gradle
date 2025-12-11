@@ -37,21 +37,37 @@ kotlin {
         configure(it, false, "arm64", "uikitSimArm64Test")
     }
 
+    tvosX64("tvosX64") {
+        configure(it, false, "x86_64", "tvosX64Test", "tvOS")
+    }
+    tvosArm64("tvosArm64") {
+        configure(it, true, "arm64", null /*"tvosArm64Test"*/, "tvOS")
+    }
+    tvosSimulatorArm64("tvosSimArm64") {
+        configure(it, false, "arm64", "tvosSimArm64Test", "tvOS")
+    }
+
     sourceSets {
         commonMain {}
         def uikitMain = sourceSets.create("uikitMain")
         def uikitX64Main = sourceSets.getByName("uikitX64Main")
         def uikitArm64Main = sourceSets.getByName("uikitArm64Main")
         def uikitSimArm64Main = sourceSets.getByName("uikitSimArm64Main")
+        def tvosX64Main = sourceSets.getByName("tvosX64Main")
+        def tvosArm64Main = sourceSets.getByName("tvosArm64Main")
+        def tvosSimArm64Main = sourceSets.getByName("tvosSimArm64Main")
 
         uikitMain.dependsOn(commonMain)
         uikitX64Main.dependsOn(uikitMain)
         uikitArm64Main.dependsOn(uikitMain)
         uikitSimArm64Main.dependsOn(uikitMain)
+        tvosX64Main.dependsOn(uikitMain)
+        tvosArm64Main.dependsOn(uikitMain)
+        tvosSimArm64Main.dependsOn(uikitMain)
     }
 }
 
-private def configure(target, isDevice, architecture, testTarget) {
+private def configure(target, isDevice, architecture, testTarget, platform = "iOS") {
     def frameworkName = "CMPUIKitUtils"
     def buildSchemeName = frameworkName
     def testSchemeName = "${frameworkName}Tests"
@@ -59,12 +75,13 @@ private def configure(target, isDevice, architecture, testTarget) {
     def frameworkSourcesDir = new File(objcDir, frameworkName)
     def sdkName
     def destination
+    def sdkPrefix = (platform == "tvOS") ? "appletv" : "iphone"
     if (isDevice) {
-        sdkName = "iphoneos"
-        destination = "generic/platform=iOS"
+        sdkName = "${sdkPrefix}os"
+        destination = "generic/platform=${platform}"
     } else {
-        sdkName = "iphonesimulator"
-        destination = "generic/platform=iOS Simulator"
+        sdkName = "${sdkPrefix}simulator"
+        destination = "generic/platform=${platform} Simulator"
     }
     def buildDir = new File(project.buildDir, "objc/${sdkName}.xcarchive")
     def frameworkPath = new File(buildDir, "/Products/usr/local/lib/lib${frameworkName}.a")
@@ -90,7 +107,13 @@ private def configure(target, isDevice, architecture, testTarget) {
             standardOutput = new ByteArrayOutputStream()
             doLast {
                 def output = standardOutput.toString()
-                def match = output.find("iPhone 1[567][ \\w\\d]* \\(")
+                def deviceNamePattern
+                if (platform == "tvOS") {
+                    deviceNamePattern = "Apple TV"
+                } else {
+                    deviceNamePattern = "iPhone 1[567]"
+                }
+                def match = output.find("${deviceNamePattern}[ \\w\\d]* \\(")
                 def targetDevice = match.dropRight(2)
                 device = targetDevice
             }
@@ -104,7 +127,7 @@ private def configure(target, isDevice, architecture, testTarget) {
                     commandLine "xcodebuild",
                             "test",
                             "-scheme", testSchemeName,
-                            "-destination", "platform=iOS Simulator,name=${tasks[getTargetDeviceTaskName].device}",
+                            "-destination", "platform=${platform} Simulator,name=${tasks[getTargetDeviceTaskName].device}",
                             "-sdk", sdkName,
                             "VALID_ARCHS=${architecture}"
                 }
@@ -142,19 +165,19 @@ private def configure(target, isDevice, architecture, testTarget) {
 
         tasks[compileTaskProvider.name].dependsOn(libTaskName)
 
-        cinterops {
-            utils {
-                def cinteropTask = tasks[interopProcessingTaskName]
+            cinterops {
+                utils {
+                    def cinteropTask = tasks[interopProcessingTaskName]
 
-                headersPath.eachFileRecurse {
-                    if (it.name.endsWith('.h')) {
-                        extraOpts("-header", it.name)
-                        cinteropTask.inputs.file(it)
+                    headersPath.eachFileRecurse {
+                        if (it.name.endsWith('.h')) {
+                            extraOpts("-header", it.name)
+                            cinteropTask.inputs.file(it)
+                        }
                     }
+                    compilerOpts("-I${headersPath}")
                 }
-                compilerOpts("-I${headersPath}")
             }
-        }
     }
 
     target.binaries.all {

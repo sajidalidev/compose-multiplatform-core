@@ -6,7 +6,7 @@
 //
 
 #import "CMPScreenEdgePanGestureRecognizer.h"
-
+#if !TARGET_OS_TV
 @implementation CMPScreenEdgePanGestureRecognizer
 
 - (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)preventedGestureRecognizer {
@@ -18,3 +18,5 @@
 }
 
 @end
+
+#endif

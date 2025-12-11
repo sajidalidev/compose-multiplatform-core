@@ -15,7 +15,7 @@
  */
 
 #import "CMPHoverGestureHandler.h"
-
+#if !TARGET_OS_TV
 API_AVAILABLE(ios(13.0))
 @interface CMPHoverGestureRecognizer : UIHoverGestureRecognizer
 
@@ -81,3 +81,5 @@ API_AVAILABLE(ios(13.0))
 }
 
 @end
+
+#endif

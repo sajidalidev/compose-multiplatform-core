@@ -18,7 +18,7 @@
 #import "CMPMacros.h"
 
 NS_ASSUME_NONNULL_BEGIN
-
+#if !TARGET_OS_TV
 /// Class that propery exposes the methods of `UIDragInteractionDelegate` to Kotlin without signature conflicts
 @interface CMPDragInteractionProxy : NSObject <UIDragInteractionDelegate>
 
@@ -41,5 +41,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (instancetype _Nullable)cmp_itemWithAny:(Class)objectClass object:(id)object;
 
 @end
+
+#endif
 
 NS_ASSUME_NONNULL_END

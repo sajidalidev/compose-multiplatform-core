@@ -18,7 +18,7 @@
 #import "CMPMacros.h"
 
 NS_ASSUME_NONNULL_BEGIN
-
+#if !TARGET_OS_TV
 /// Class that propery exposes the methods of `UIDropInteractionDelegate` to Kotlin without signature conflicts
 @interface CMPDropInteractionProxy : NSObject <UIDropInteractionDelegate>
 
@@ -45,4 +45,5 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+#endif
 NS_ASSUME_NONNULL_END

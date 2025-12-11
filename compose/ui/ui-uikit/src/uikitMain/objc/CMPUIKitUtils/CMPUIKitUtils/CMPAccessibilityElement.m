@@ -108,11 +108,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (CGRect)focusEffectRect {
     return CGRectZero;
 }
-
+#if !TARGET_OS_TV
 - (UIFocusEffect *)focusEffect {
     return [UIFocusHaloEffect effectWithRect:[self focusEffectRect]];
 }
 
+#endif
 @end
 
 NS_ASSUME_NONNULL_END

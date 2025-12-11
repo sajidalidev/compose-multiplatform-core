@@ -56,6 +56,11 @@ abstract class AndroidXComposeMultiplatformExtension {
 
     /**
      * Provides the default target configuration and source set dependencies
+     * for all darwin native targets including tv targets
+     */
+    abstract fun darwinTv(): Unit
+    /**
+     * Provides the default target configuration and source set dependencies
      * for all linux native targets.
      */
     abstract fun linux(): Unit

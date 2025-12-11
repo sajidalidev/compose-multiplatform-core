@@ -23,6 +23,7 @@ import javax.inject.Inject
 import org.gradle.api.Project
 import org.gradle.api.tasks.Copy
 import org.gradle.kotlin.dsl.dependencies
+import org.gradle.kotlin.dsl.get
 import org.gradle.kotlin.dsl.getByName
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
@@ -218,6 +219,7 @@ open class AndroidXComposeMultiplatformExtensionImpl @Inject constructor(
         val macosMain = sourceSets.create("macosMain")
         val macosX64Main = sourceSets.getByName("macosX64Main")
         val macosArm64Main = sourceSets.getByName("macosArm64Main")
+        val uiKitCommonMain = sourceSets.create("uiKitCommonMain")
         val uikitMain = sourceSets.create("uikitMain")
         val uikitX64Main = sourceSets.getByName("uikitX64Main")
         val uikitArm64Main = sourceSets.getByName("uikitArm64Main")
@@ -226,7 +228,8 @@ open class AndroidXComposeMultiplatformExtensionImpl @Inject constructor(
         macosMain.dependsOn(darwinMain)
         macosX64Main.dependsOn(macosMain)
         macosArm64Main.dependsOn(macosMain)
-        uikitMain.dependsOn(darwinMain)
+        uiKitCommonMain.dependsOn(darwinMain)
+        uikitMain.dependsOn(uiKitCommonMain)
         uikitX64Main.dependsOn(uikitMain)
         uikitArm64Main.dependsOn(uikitMain)
         uikitSimArm64Main.dependsOn(uikitMain)
@@ -236,6 +239,7 @@ open class AndroidXComposeMultiplatformExtensionImpl @Inject constructor(
         val macosTest = sourceSets.create("macosTest")
         val macosX64Test = sourceSets.getByName("macosX64Test")
         val macosArm64Test = sourceSets.getByName("macosArm64Test")
+        val uikitCommonTest = sourceSets.create("uikitCommonTest")
         val uikitTest = sourceSets.create("uikitTest")
         val uikitX64Test = sourceSets.getByName("uikitX64Test")
         val uikitArm64Test = sourceSets.getByName("uikitArm64Test")
@@ -244,10 +248,46 @@ open class AndroidXComposeMultiplatformExtensionImpl @Inject constructor(
         macosTest.dependsOn(darwinTest)
         macosX64Test.dependsOn(macosTest)
         macosArm64Test.dependsOn(macosTest)
-        uikitTest.dependsOn(darwinTest)
+        uikitCommonTest.dependsOn(darwinTest)
+        uikitTest.dependsOn(uikitCommonTest)
         uikitX64Test.dependsOn(uikitTest)
         uikitArm64Test.dependsOn(uikitTest)
         uikitSimArm64Test.dependsOn(uikitTest)
+    }
+
+    override fun darwinTv(): Unit = multiplatformExtension.run {
+        darwin()
+
+        tvosX64("tvosX64")
+        tvosArm64("tvosArm64")
+        tvosSimulatorArm64("tvosSimArm64")
+
+        val uikitCommonMain = sourceSets.getByName("uiKitCommonMain")
+        val tvosMain = sourceSets.create("tvosMain")
+        val tvosX64Main = sourceSets.getByName("tvosX64Main")
+        val tvosArm64Main = sourceSets.getByName("tvosArm64Main")
+        val tvosSimArm64Main = sourceSets.getByName("tvosSimArm64Main")
+
+        tvosMain.dependsOn(uikitCommonMain)
+        tvosX64Main.dependsOn(tvosMain)
+        tvosArm64Main.dependsOn(tvosMain)
+        tvosSimArm64Main.dependsOn(tvosMain)
+
+//        val uikitTest = sourceSets.getByName("uikitTest")
+//        val uikitX64Test = sourceSets.getByName("uikitX64Test")
+//        val uikitArm64Test = sourceSets.getByName("uikitArm64Test")
+//        val uikitSimArm64Test = sourceSets.getByName("uikitSimArm64Test")
+//
+//        val tvosTest = sourceSets.create("tvosTest")
+//        val tvosX64Test = sourceSets.getByName("tvosX64Test")
+//        val tvosArm64Test = sourceSets.getByName("tvosArm64Test")
+//        val tvosSimArm64Test = sourceSets.getByName("tvosSimArm64Test")
+//
+//        tvosTest.dependsOn(uikitTest)
+//        tvosX64Test.dependsOn(uikitX64Test)
+//        tvosArm64Test.dependsOn(uikitArm64Test)
+//        tvosSimArm64Test.dependsOn(uikitSimArm64Test)
+
     }
 
     override fun linux(): Unit = multiplatformExtension.run {

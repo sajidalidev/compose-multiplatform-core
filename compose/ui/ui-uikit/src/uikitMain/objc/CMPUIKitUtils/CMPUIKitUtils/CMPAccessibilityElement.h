@@ -61,7 +61,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (CGRect)focusEffectRect;
 
+#if !TARGET_OS_TV
 - (UIFocusEffect *)focusEffect API_AVAILABLE(ios(15.0));
+#endif
 
 @end
 

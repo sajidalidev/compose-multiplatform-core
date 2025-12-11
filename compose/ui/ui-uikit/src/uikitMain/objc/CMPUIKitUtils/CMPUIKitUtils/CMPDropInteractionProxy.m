@@ -17,7 +17,7 @@
 #import "CMPDropInteractionProxy.h"
 
 NS_ASSUME_NONNULL_BEGIN
-
+#if !TARGET_OS_TV
 @implementation CMPDropInteractionProxy
 
 - (BOOL)dropInteraction:(UIDropInteraction *)interaction canHandleSession:(id<UIDropSession>)session {
@@ -102,4 +102,5 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+#endif
 NS_ASSUME_NONNULL_END
