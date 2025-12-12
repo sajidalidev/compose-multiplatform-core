@@ -78,7 +78,7 @@ internal expect object DragAndDropSourceDefaults {
  *
  * @sample androidx.compose.foundation.samples.TextDragAndDropSourceSample
  * @param transferData A function that receives the current offset of the drag operation and returns
- *   the [DragAndDropTransferData] to be transferred. If null is returned, the drag and drop
+ *   the [android.compose.ui.draganddrop.DragAndDropTransferData] to be transferred. If null is returned, the drag and drop
  *   transfer won't be started.
  */
 fun Modifier.dragAndDropSource(transferData: (Offset) -> DragAndDropTransferData?): Modifier =
@@ -99,7 +99,7 @@ fun Modifier.dragAndDropSource(transferData: (Offset) -> DragAndDropTransferData
  * @param drawDragDecoration provides the visual representation of the item dragged during the drag
  *   and drop gesture.
  * @param transferData A function that receives the current offset of the drag operation and returns
- *   the [DragAndDropTransferData] to be transferred. If null is returned, the drag and drop
+ *   the [android.compose.ui.draganddrop.DragAndDropTransferData] to be transferred. If null is returned, the drag and drop
  *   transfer won't be started.
  */
 fun Modifier.dragAndDropSource(

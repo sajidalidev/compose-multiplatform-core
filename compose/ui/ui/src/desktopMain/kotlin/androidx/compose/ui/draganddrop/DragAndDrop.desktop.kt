@@ -133,7 +133,7 @@ fun DragAndDropTransferable(transferable: Transferable): DragAndDropTransferable
 }
 
 /**
- * Returns the AWT [Transferable] associated with the [DragAndDropEvent].
+ * Returns the AWT [Transferable] associated with the [android.compose.ui.draganddrop.DragAndDropEvent].
  */
 @ExperimentalComposeUiApi
 val DragAndDropEvent.awtTransferable: Transferable
@@ -144,7 +144,7 @@ val DragAndDropEvent.awtTransferable: Transferable
     }
 
 /**
- * Returns the [DragData] associated with the given [DragAndDropEvent].
+ * Returns the [DragData] associated with the given [android.compose.ui.draganddrop.DragAndDropEvent].
  */
 @ExperimentalComposeUiApi
 fun DragAndDropEvent.dragData(): DragData = awtTransferable.dragData()

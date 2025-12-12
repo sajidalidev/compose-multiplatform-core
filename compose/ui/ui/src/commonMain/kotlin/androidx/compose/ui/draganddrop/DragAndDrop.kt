@@ -30,7 +30,7 @@ expect class DragAndDropTransferData
 expect class DragAndDropEvent
 
 /**
- * Returns the position of this [DragAndDropEvent] relative to the root Compose View in the layout
+ * Returns the position of this [android.compose.ui.draganddrop.DragAndDropEvent] relative to the root Compose View in the layout
  * hierarchy.
  */
 internal expect val DragAndDropEvent.positionInRoot: Offset
@@ -62,7 +62,7 @@ interface DragAndDropTarget {
     /**
      * An item has been dropped inside this [DragAndDropTarget].
      *
-     * @return true to indicate that the [DragAndDropEvent] was consumed; false indicates it was
+     * @return true to indicate that the [android.compose.ui.draganddrop.DragAndDropEvent] was consumed; false indicates it was
      *   rejected.
      */
     fun onDrop(event: DragAndDropEvent): Boolean

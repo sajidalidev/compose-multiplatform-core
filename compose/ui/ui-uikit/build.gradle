@@ -49,21 +49,25 @@ kotlin {
 
     sourceSets {
         commonMain {}
+        def uiKitCommonMain = sourceSets.create("uiKitCommonMain")
         def uikitMain = sourceSets.create("uikitMain")
         def uikitX64Main = sourceSets.getByName("uikitX64Main")
         def uikitArm64Main = sourceSets.getByName("uikitArm64Main")
         def uikitSimArm64Main = sourceSets.getByName("uikitSimArm64Main")
+        def tvosMain = sourceSets.create("tvosMain")
         def tvosX64Main = sourceSets.getByName("tvosX64Main")
         def tvosArm64Main = sourceSets.getByName("tvosArm64Main")
         def tvosSimArm64Main = sourceSets.getByName("tvosSimArm64Main")
 
-        uikitMain.dependsOn(commonMain)
+        uiKitCommonMain.dependsOn(commonMain)
+        uikitMain.dependsOn(uiKitCommonMain)
         uikitX64Main.dependsOn(uikitMain)
         uikitArm64Main.dependsOn(uikitMain)
         uikitSimArm64Main.dependsOn(uikitMain)
-        tvosX64Main.dependsOn(uikitMain)
-        tvosArm64Main.dependsOn(uikitMain)
-        tvosSimArm64Main.dependsOn(uikitMain)
+        tvosMain.dependsOn(uiKitCommonMain)
+        tvosX64Main.dependsOn(tvosMain)
+        tvosArm64Main.dependsOn(tvosMain)
+        tvosSimArm64Main.dependsOn(tvosMain)
     }
 }
 
@@ -71,7 +75,7 @@ private def configure(target, isDevice, architecture, testTarget, platform = "iO
     def frameworkName = "CMPUIKitUtils"
     def buildSchemeName = frameworkName
     def testSchemeName = "${frameworkName}Tests"
-    def objcDir = new File(project.projectDir, "src/uikitMain/objc")
+    def objcDir = new File(project.projectDir, "src/uiKitCommonMain/objc")
     def frameworkSourcesDir = new File(objcDir, frameworkName)
     def sdkName
     def destination

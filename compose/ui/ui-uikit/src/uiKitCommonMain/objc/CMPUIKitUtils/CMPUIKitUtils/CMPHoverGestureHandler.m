@@ -16,7 +16,7 @@
 
 #import "CMPHoverGestureHandler.h"
 #if !TARGET_OS_TV
-API_AVAILABLE(ios(13.0))
+API_AVAILABLE(ios(13.0),tvos(17.0))
 @interface CMPHoverGestureRecognizer : UIHoverGestureRecognizer
 
 @property (strong, nonatomic, nullable) UIEvent *lastReceivedEvent;
@@ -47,7 +47,7 @@ API_AVAILABLE(ios(13.0))
 - (instancetype)initWithTarget:(id)target action:(SEL)action {
     self = [super init];
     if (self) {
-        if (@available(iOS 13.0, *)) {
+        if (@available(iOS 13.0,tvOS 17.0, *)) {
             CMPHoverGestureRecognizer *gestureRecognizer = [[CMPHoverGestureRecognizer alloc] initWithTarget:target action:action];
             gestureRecognizer.delaysTouchesBegan = NO;
             gestureRecognizer.delaysTouchesEnded = NO;
@@ -60,20 +60,20 @@ API_AVAILABLE(ios(13.0))
 }
 
 - (void)attachToView:(nonnull UIView *)view {
-    if (@available(iOS 13.0, *)) {
+    if (@available(iOS 13.0,tvOS 17.0, *)) {
         [view addGestureRecognizer:(CMPHoverGestureRecognizer *)self.gestureRecognizer];
     }
 }
 
 - (void)detachFromViewAndDispose:(nonnull UIView *)view {
-    if (@available(iOS 13.0, *)) {
+    if (@available(iOS 1.0,tvOS 17.0, *)) {
         [view removeGestureRecognizer:(CMPHoverGestureRecognizer *)self.gestureRecognizer];
         self.gestureRecognizer = nil;
     }
 }
 
 - (UIEvent *)lastHandledEvent {
-    if (@available(iOS 13.0, *)) {
+    if (@available(iOS 13.0,tvOS 17.0, *)) {
         return ((CMPHoverGestureRecognizer *)_gestureRecognizer).lastReceivedEvent;
     } else {
         return nil;

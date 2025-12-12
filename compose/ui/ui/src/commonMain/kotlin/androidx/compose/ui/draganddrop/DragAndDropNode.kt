@@ -131,7 +131,7 @@ fun DragAndDropModifierNode(): DragAndDropModifierNode = DragAndDropNode(onStart
  * [DragAndDropModifierNode] instances provided by this function may also start drag and drop
  * sessions by calling [DragAndDropModifierNode.drag].
  *
- * @param shouldStartDragAndDrop allows for inspecting the start [DragAndDropEvent] for a given
+ * @param shouldStartDragAndDrop allows for inspecting the start [android.compose.ui.draganddrop.DragAndDropEvent] for a given
  *   session to decide whether or not the provided [DragAndDropTarget] would like to receive from
  *   it.
  * @param target allows for receiving events and transfer data from a given drag and drop session.
@@ -165,7 +165,7 @@ fun DragAndDropSourceModifierNode(
  * Creates a [DragAndDropTargetModifierNode] for receiving transfer data from platform drag and drop
  * sessions.
  *
- * @param shouldStartDragAndDrop allows for inspecting the start [DragAndDropEvent] for a given
+ * @param shouldStartDragAndDrop allows for inspecting the start [android.compose.ui.draganddrop.DragAndDropEvent] for a given
  *   session to decide whether or not the provided [DragAndDropTarget] would like to receive from
  *   it.
  * @param target allows for receiving events and transfer data from a given drag and drop session.
@@ -182,7 +182,7 @@ fun DragAndDropTargetModifierNode(
  * Core implementation of drag and drop. This [Modifier.Node] implements tree traversal for drag and
  * drop, as well as hit testing and propagation of events for drag or drop gestures.
  *
- * It uses the [DragAndDropEvent] as a representation of a single mutable drag and drop session.
+ * It uses the [android.compose.ui.draganddrop.DragAndDropEvent] as a representation of a single mutable drag and drop session.
  *
  * The implementation implicitly maintains a sorted tree of nodes where the order of traversal is
  * determined by the proximity to the last event. That is, after finding a receiving node, the next

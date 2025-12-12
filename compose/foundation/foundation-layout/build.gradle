@@ -74,7 +74,7 @@ if(AndroidXComposePlugin.isMultiplatformEnabled(project)) {
     androidXComposeMultiplatform {
         android()
         desktop()
-        darwin()
+        darwinTv()
         js()
         wasm()
     }
@@ -116,7 +116,7 @@ if(AndroidXComposePlugin.isMultiplatformEnabled(project)) {
             }
 
             skikoMain.dependsOn(commonMain)
-            uikitMain.dependsOn(skikoMain)
+            uiKitCommonMain.dependsOn(skikoMain)
             desktopMain.dependsOn(skikoMain)
             macosMain.dependsOn(skikoMain)
             webMain.dependsOn(skikoMain)

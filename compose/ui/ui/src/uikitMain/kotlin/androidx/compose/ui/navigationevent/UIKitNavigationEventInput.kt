@@ -26,7 +26,9 @@ import androidx.compose.ui.unit.asDpRect
 import androidx.compose.ui.unit.toOffset
 import androidx.compose.ui.unit.width
 import androidx.navigationevent.NavigationEvent
+import kotlin.compareTo
 import kotlin.math.abs
+import kotlin.text.compareTo
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.CPointed
 import kotlinx.cinterop.CPointer

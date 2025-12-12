@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 The Android Open Source Project
+ * Copyright 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ constructor(
 )
 
 /**
- * Returns the position of this [DragAndDropEvent] relative to the root Compose View in the
+ * Returns the position of this [android.compose.ui.draganddrop.DragAndDropEvent] relative to the root Compose View in the
  * layout hierarchy.
  */
 internal actual val DragAndDropEvent.positionInRoot: Offset

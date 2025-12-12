@@ -15,7 +15,7 @@
  */
 
 #import <UIKit/UIKit.h>
-
+#if !TARGET_OS_TV
 @interface CMPEditMenuCustomAction : NSObject
 
 @property (copy, nonatomic) NSString *title;
@@ -51,3 +51,5 @@
 - (UIView *)inputAccessoryView;
 
 @end
+
+#endif

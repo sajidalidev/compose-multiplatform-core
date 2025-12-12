@@ -380,6 +380,10 @@ open class AndroidXComposeMultiplatformExtensionImpl @Inject constructor(
             iosX64("uikitX64") { configureFreeCompilerArgs() }
             iosArm64("uikitArm64") { configureFreeCompilerArgs() }
             iosSimulatorArm64("uikitSimArm64") { configureFreeCompilerArgs() }
+            tvosX64 { configureFreeCompilerArgs() }
+            tvosArm64 { configureFreeCompilerArgs() }
+            tvosSimulatorArm64("tvosSimArm64") { configureFreeCompilerArgs() }
+
         }
     }
 

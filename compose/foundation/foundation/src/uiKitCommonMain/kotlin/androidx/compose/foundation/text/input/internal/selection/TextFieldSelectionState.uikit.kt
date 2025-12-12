@@ -382,8 +382,8 @@ internal actual class ClipboardPasteState actual constructor(private val clipboa
 
     actual suspend fun update() {
         val nativeClipboard = clipboard.nativeClipboard
-        _hasClip = nativeClipboard.numberOfItems > 0
-        _hasText = nativeClipboard.hasStrings
+//        _hasClip = nativeClipboard.numberOfItems > 0
+//        _hasText = nativeClipboard.hasStrings
     }
 }
 

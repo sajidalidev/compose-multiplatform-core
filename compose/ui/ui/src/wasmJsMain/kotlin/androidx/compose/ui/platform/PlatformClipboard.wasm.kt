@@ -20,7 +20,6 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import kotlin.getValue
 import kotlin.js.Promise
-import kotlinx.browser.window
 import kotlinx.coroutines.await
 import org.w3c.files.Blob
 

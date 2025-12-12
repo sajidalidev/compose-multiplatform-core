@@ -24,7 +24,7 @@ import androidx.compose.ui.geometry.Offset
 actual class DragAndDropEvent private constructor()
 
 /**
- * Returns the position of this [DragAndDropEvent] relative to the root Compose View in the
+ * Returns the position of this [android.compose.ui.draganddrop.DragAndDropEvent] relative to the root Compose View in the
  * layout hierarchy.
  */
 internal actual val DragAndDropEvent.positionInRoot: Offset

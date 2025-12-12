@@ -22,7 +22,7 @@ import android.view.View
 import androidx.compose.ui.geometry.Offset
 
 /**
- * [DragAndDropTransferData] representation for the Android platform. It provides the [ClipData]
+ * [android.compose.ui.draganddrop.DragAndDropTransferData] representation for the Android platform. It provides the [ClipData]
  * required for drag and drop.
  */
 actual class DragAndDropTransferData(
@@ -42,13 +42,13 @@ actual class DragAndDropTransferData(
     val flags: Int = 0,
 )
 
-/** Android [DragAndDropEvent] which delegates to a [DragEvent] */
+/** Android [android.compose.ui.draganddrop.DragAndDropEvent] which delegates to a [DragEvent] */
 actual class DragAndDropEvent(internal val dragEvent: DragEvent)
 
 /** Returns the backing [DragEvent] to read platform specific data */
 fun DragAndDropEvent.toAndroidDragEvent(): DragEvent = this.dragEvent
 
-/** The mime types present in a [DragAndDropEvent] */
+/** The mime types present in a [android.compose.ui.draganddrop.DragAndDropEvent] */
 // TODO (TJ) make this expect/actual when desktop implements
 fun DragAndDropEvent.mimeTypes(): Set<String> {
     val clipDescription = dragEvent.clipDescription ?: return emptySet()

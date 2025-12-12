@@ -14,21 +14,11 @@
  * limitations under the License.
  */
 
-#import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
+package androidx.compose.ui.platform
 
-NS_ASSUME_NONNULL_BEGIN
+actual class ClipEntry {
+    actual val clipMetadata: ClipMetadata
+        get() = ClipMetadata()
+}
 
-@interface CMPHoverGestureHandler : NSObject
-
-- (instancetype)init NS_UNAVAILABLE;
-- (instancetype)initWithTarget:(nullable id)target action:(nullable SEL)action NS_DESIGNATED_INITIALIZER;
-
-@property (readonly, nullable) UIEvent *lastHandledEvent;
-
-- (void)attachToView:(UIView *)view;
-- (void)detachFromViewAndDispose:(UIView *)view;
-
-@end
-
-NS_ASSUME_NONNULL_END
+actual class NativeClipboard

@@ -90,7 +90,7 @@ if (AndroidXComposePlugin.isMultiplatformEnabled(project)) {
     androidXComposeMultiplatform {
         android()
         desktop()
-        darwin()
+        darwinTv()
         js()
         wasm()
 
@@ -136,7 +136,7 @@ if (AndroidXComposePlugin.isMultiplatformEnabled(project)) {
             nonJvmMain.dependsOn(skikoMain)
             nativeMain.dependsOn(nonJvmMain)
             webMain.dependsOn(nonJvmMain)
-            uikitMain {
+            uiKitCommonMain {
                 dependencies {
                     implementation(project(":compose:ui:ui-uikit"))
                 }

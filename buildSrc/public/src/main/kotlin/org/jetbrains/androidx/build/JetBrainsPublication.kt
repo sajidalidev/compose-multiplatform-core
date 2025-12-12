@@ -183,7 +183,7 @@ class JetBrainsVersions(val libraryToVersion: Map<String, String>) : Serializabl
     }
 
     fun versionOf(libraryName: String): String {
-        return libraryToVersion[libraryName] ?: "9999.0.0-SNAPSHOT"
+        return libraryToVersion[libraryName] ?: "1.10.0"
     }
 
     companion object {

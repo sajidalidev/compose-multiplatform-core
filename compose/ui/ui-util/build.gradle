@@ -82,7 +82,7 @@ if(AndroidXComposePlugin.isMultiplatformEnabled(project)) {
                 }
             }
 
-            uikitMain {
+            uiKitCommonMain {
                 dependencies {
                     implementation(project(":compose:ui:ui-uikit"))
                 }

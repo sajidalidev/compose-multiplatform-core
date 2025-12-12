@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 The Android Open Source Project
+ * Copyright 2025 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,17 +40,12 @@ import androidx.compose.ui.text.input.SetSelectionCommand
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.uikit.density
 import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.asCGRect
-import androidx.compose.ui.unit.asDpOffset
-import androidx.compose.ui.unit.toDpRect
 import androidx.compose.ui.unit.toOffset
-import androidx.compose.ui.window.FocusedViewsList
-import androidx.compose.ui.window.IntermediateTextInputUIView
 import androidx.compose.ui.window.BackgroundInputView
+import androidx.compose.ui.window.FocusedViewsList
 import androidx.compose.ui.window.OverlayInputView
 import kotlin.math.absoluteValue
 import kotlin.math.min
-import kotlinx.cinterop.useContents
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -58,8 +53,6 @@ import org.jetbrains.skia.BreakIterator
 import platform.CoreGraphics.CGRectMake
 import platform.UIKit.UIPress
 import platform.UIKit.UIView
-import platform.UIKit.UIViewAutoresizingFlexibleHeight
-import platform.UIKit.UIViewAutoresizingFlexibleWidth
 
 // Due to unexpected delays between the commands to show/hide the keyboard,
 // it may jump when switching between text fields.
@@ -83,7 +76,7 @@ internal class UIKitTextInputService(
     private var currentOnEditCommand: ((List<EditCommand>) -> Unit)? = null
     private var currentImeOptions: ImeOptions? = null
     private var currentImeActionHandler: ((ImeAction) -> Unit)? = null
-    private var textUIView: IntermediateTextInputUIView? = null
+//    private var textUIView: IntermediateTextInputUIView? = null
     private var textLayoutResult : TextLayoutResult? = null
 
     /**
@@ -148,8 +141,8 @@ internal class UIKitTextInputService(
         currentImeActionHandler = onImeActionPerformed
 
         attachIntermediateTextInputView()
-        textUIView?.input = createSkikoInput()
-        textUIView?.inputTraits = getUITextInputTraits(imeOptions)
+//        textUIView?.input = createSkikoInput()
+//        textUIView?.inputTraits = getUITextInputTraits(imeOptions)
 
         showSoftwareKeyboard()
         onInputStarted()
@@ -162,21 +155,21 @@ internal class UIKitTextInputService(
         currentImeActionHandler = null
         hideSoftwareKeyboard()
 
-        textUIView?.inputTraits = EmptyInputTraits
-        textUIView?.input = null
+//        textUIView?.inputTraits = EmptyInputTraits
+//        textUIView?.input = null
         detachIntermediateTextInputView()
     }
 
     override fun showSoftwareKeyboard() {
-        textUIView?.let {
-            focusedViewsList?.addAndFocus(it)
-        }
+//        textUIView?.let {
+//            focusedViewsList?.addAndFocus(it)
+//        }
     }
 
     override fun hideSoftwareKeyboard() {
-        textUIView?.let {
-            focusedViewsList?.remove(it, delayMillis = CLEAR_FOCUS_DELAY)
-        }
+//        textUIView?.let {
+//            focusedViewsList?.remove(it, delayMillis = CLEAR_FOCUS_DELAY)
+//        }
     }
 
     override fun updateState(oldValue: TextFieldValue?, newValue: TextFieldValue) {
@@ -184,20 +177,20 @@ internal class UIKitTextInputService(
         val textChanged = internalOldValue == null || internalOldValue.text != newValue.text
         val selectionChanged = textChanged || internalOldValue.selection != newValue.selection
         if (textChanged) {
-            textUIView?.textWillChange()
+//            textUIView?.textWillChange()
         }
         if (selectionChanged) {
-            textUIView?.selectionWillChange()
+//            textUIView?.selectionWillChange()
         }
         sessionEditProcessor?.let {
             it.reset(newValue, null)
             _tempCursorPos = null
         }
         if (textChanged) {
-            textUIView?.textDidChange()
+//            textUIView?.textDidChange()
         }
         if (selectionChanged) {
-            textUIView?.selectionDidChange()
+//            textUIView?.selectionDidChange()
         }
         if (textChanged || selectionChanged) {
             updateView()
@@ -214,7 +207,7 @@ internal class UIKitTextInputService(
     }
 
     fun updateTextFrame(rect: Rect) {
-        textUIView?.setFrame(rect.toDpRect(view.density).asCGRect())
+//        textUIView?.setFrame(rect.toDpRect(view.density).asCGRect())
         showMenuOrUpdatePosition()
     }
 
@@ -341,29 +334,29 @@ internal class UIKitTextInputService(
         onCutRequested: (() -> Unit)?,
         onSelectAllRequested: (() -> Unit)?
     ) {
-        if (textUIView == null) {
-            // If showMenu() is called and textUIView is not created,
-            // then it means that showMenu() called in SelectionContainer without any textfields,
-            // and IntermediateTextInputView must be created to show an editing menu
-            attachIntermediateTextInputView()
-            updateView()
-        }
+//        if (textUIView == null) {
+//            // If showMenu() is called and textUIView is not created,
+//            // then it means that showMenu() called in SelectionContainer without any textfields,
+//            // and IntermediateTextInputView must be created to show an editing menu
+//            attachIntermediateTextInputView()
+//            updateView()
+//        }
         showMenuOrUpdatePosition = {
-            textUIView?.let { textUIView ->
-                val density = view.density
-                val offset = textUIView.frame.useContents { origin.asDpOffset().toOffset(density) }
-                val target = rect.translate(-offset).toDpRect(density).asCGRect()
-                textUIView.showTextMenu(
-                    targetRect = target,
-                    textActions = object : TextActions {
-                        override val copy: (() -> Unit)? = onCopyRequested
-                        override val cut: (() -> Unit)? = onCutRequested
-                        override val paste: (() -> Unit)? = onPasteRequested
-                        override val selectAll: (() -> Unit)? = onSelectAllRequested
-                    }
-                )
-                textMenuAppearanceChanged()
-            }
+//            textUIView?.let { textUIView ->
+//                val density = view.density
+////                val offset = textUIView.frame.useContents { origin.asDpOffset().toOffset(density) }
+////                val target = rect.translate(-offset).toDpRect(density).asCGRect()
+////                textUIView.showTextMenu(
+////                    targetRect = target,
+////                    textActions = object : TextActions {
+////                        override val copy: (() -> Unit)? = onCopyRequested
+////                        override val cut: (() -> Unit)? = onCutRequested
+////                        override val paste: (() -> Unit)? = onPasteRequested
+////                        override val selectAll: (() -> Unit)? = onSelectAllRequested
+////                    }
+////                )
+//                textMenuAppearanceChanged()
+//            }
         }
         showMenuOrUpdatePosition()
     }
@@ -373,18 +366,18 @@ internal class UIKitTextInputService(
      */
     override fun hide() {
         showMenuOrUpdatePosition = {}
-        textUIView?.let {
-            it.hideTextMenu()
-            textMenuAppearanceChanged()
-        }
-        if ((textUIView != null) && (sessionEditProcessor == null)) { // means that editing context menu shown in selection container
-            textUIView?.resignFirstResponder()
-            detachIntermediateTextInputView()
-        }
+//        textUIView?.let {
+//            it.hideTextMenu()
+//            textMenuAppearanceChanged()
+//        }
+//        if ((textUIView != null) && (sessionEditProcessor == null)) { // means that editing context menu shown in selection container
+//            textUIView?.resignFirstResponder()
+//            detachIntermediateTextInputView()
+//        }
     }
 
     override val status: TextToolbarStatus
-        get() = if (textUIView?.isTextMenuShown() == true)
+        get() = if (/*textUIView?.isTextMenuShown() ==*/ true)
             TextToolbarStatus.Shown
         else
             TextToolbarStatus.Hidden
@@ -392,32 +385,32 @@ internal class UIKitTextInputService(
     private fun attachIntermediateTextInputView() {
         detachIntermediateTextInputView()
         showMenuOrUpdatePosition = {}
-        textUIView = IntermediateTextInputUIView(
-            doubleTapTimeoutMillis = viewConfiguration.doubleTapTimeoutMillis
-        ).also {
-            it.setAutoresizingMask(
-                UIViewAutoresizingFlexibleWidth or UIViewAutoresizingFlexibleHeight
-            )
-            it.onKeyboardPresses = onKeyboardPresses
-            view.addSubview(it)
-            it.setFrame(view.bounds)
-        }
+//        textUIView = IntermediateTextInputUIView(
+//            doubleTapTimeoutMillis = viewConfiguration.doubleTapTimeoutMillis
+//        ).also {
+//            it.setAutoresizingMask(
+//                UIViewAutoresizingFlexibleWidth or UIViewAutoresizingFlexibleHeight
+//            )
+//            it.onKeyboardPresses = onKeyboardPresses
+//            view.addSubview(it)
+//            it.setFrame(view.bounds)
+//        }
     }
 
     private fun detachIntermediateTextInputView() {
         showMenuOrUpdatePosition = {}
-        textUIView?.let { view ->
+//        textUIView?.let { view ->
             val outOfBoundsFrame = CGRectMake(-100000.0, 0.0, 1.0, 1.0)
             // Set out-of-bounds non-empty frame to hide text keyboard focus frame
-            view.setFrame(outOfBoundsFrame)
+//            view.setFrame(outOfBoundsFrame)
 
-            view.resetOnKeyboardPressesCallback()
+//            view.resetOnKeyboardPressesCallback()
             mainScope.launch {
                 delay(CLEAR_FOCUS_DELAY)
-                view.removeFromSuperview()
+//                view.removeFromSuperview()
             }
-        }
-        textUIView = null
+//        }
+//        textUIView = null
     }
 
     fun dispose() {
@@ -430,7 +423,7 @@ internal class UIKitTextInputService(
     private fun hasFocusedNonComposeInputViewInWindowHierarchy(): Boolean {
         fun hasFocusedNonComposeInputView(view: UIView): Boolean {
             if (view.isFirstResponder) {
-                return view !is IntermediateTextInputUIView &&
+                return true &&
                     view !is OverlayInputView &&
                     view !is BackgroundInputView
             }
