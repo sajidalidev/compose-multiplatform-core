@@ -451,4 +451,52 @@ willPresentMenuForConfiguration:(UIEditMenuConfiguration *)configuration
 
 @end
 
+#else
+
+@implementation CMPEditMenuCustomAction
+
+- (id)initWithTitle:(NSString *)title action:(void (^)(void))actionBlock {
+    self = [super init];
+    if (self) {
+        _title = title;
+        _actionBlock = actionBlock;
+    }
+    return self;
+}
+
+- (BOOL)isEqual:(id)other {
+    return [self.title isEqualToString:((CMPEditMenuCustomAction *)other).title];
+}
+
+- (NSUInteger)hash {
+    return self.title.hash;
+}
+
+@end
+
+// tvOS stub implementation
+@implementation CMPEditMenuView
+
+- (void)showEditMenuAtRect:(CGRect)targetRect
+                      copy:(void (^)(void))copyBlock
+                       cut:(void (^)(void))cutBlock
+                     paste:(void (^)(void))pasteBlock
+                 selectAll:(void (^)(void))selectAllBlock {
+    // No-op for tvOS
+}
+
+- (void)hideEditMenu {
+    // No-op
+}
+
+- (BOOL)isEditMenuShown {
+    return NO;
+}
+
+- (NSTimeInterval)editMenuDelay {
+    return 0.0;
+}
+
+@end
+
 #endif

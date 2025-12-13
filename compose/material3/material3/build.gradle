@@ -85,7 +85,7 @@ if(AndroidXComposePlugin.isMultiplatformEnabled(project)) {
     androidXComposeMultiplatform {
         android()
         desktop()
-        darwin()
+        darwinTv()
         wasm()
         js()
     }
@@ -98,18 +98,18 @@ if(AndroidXComposePlugin.isMultiplatformEnabled(project)) {
         sourceSets {
             commonMain.dependencies {
                 implementation(libs.kotlinStdlib)
-                implementation("org.jetbrains.compose.animation:animation-core:1.9.3")
+                implementation("org.jetbrains.compose.animation:animation-core:1.10.0")
 
-                api("org.jetbrains.compose.foundation:foundation:1.9.3")
-                api("org.jetbrains.compose.material:material-ripple:1.9.3")
-                api("org.jetbrains.compose.runtime:runtime:1.9.3")
-                api("org.jetbrains.compose.ui:ui-graphics:1.9.3")
-                api("org.jetbrains.compose.ui:ui-text:1.9.3")
+                api("org.jetbrains.compose.foundation:foundation:1.10.0")
+                api("org.jetbrains.compose.material:material-ripple:1.10.0")
+                api("org.jetbrains.compose.runtime:runtime:1.10.0")
+                api("org.jetbrains.compose.ui:ui-graphics:1.10.0")
+                api("org.jetbrains.compose.ui:ui-text:1.10.0")
                 api("androidx.graphics:graphics-shapes:1.1.0")
 
-                implementation("org.jetbrains.compose.ui:ui-util:1.9.3")
-                implementation("org.jetbrains.compose.ui:ui-backhandler:1.9.3")
-                implementation("org.jetbrains.compose.foundation:foundation-layout:1.9.3")
+                implementation("org.jetbrains.compose.ui:ui-util:1.10.0")
+                implementation("org.jetbrains.compose.ui:ui-backhandler:1.10.0")
+                implementation("org.jetbrains.compose.foundation:foundation-layout:1.10.0")
                 implementation("androidx.annotation:annotation:1.9.1")
                 implementation("androidx.collection:collection:1.5.0")
             }

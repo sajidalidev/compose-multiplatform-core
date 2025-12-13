@@ -40,7 +40,7 @@ JetBrainsAndroidXPlugin.applyAndConfigure(project)
 androidXComposeMultiplatform {
     android()
     desktop()
-    darwin()
+    darwinTv()
     js()
     wasm()
 }
@@ -52,11 +52,11 @@ kotlin {
                 api(project(":lifecycle:lifecycle-common"))
                 api(project(":lifecycle:lifecycle-viewmodel"))
                 api("androidx.annotation:annotation:1.9.1")
-                api("org.jetbrains.compose.runtime:runtime:1.9.3")
+                api("org.jetbrains.compose.runtime:runtime:1.10.0")
 
                 // Moved from platform dependencies
                 api(project(":lifecycle:lifecycle-viewmodel-savedstate"))
-                api("org.jetbrains.compose.ui:ui:1.9.3")
+                api("org.jetbrains.compose.ui:ui:1.10.0")
 
                 api(libs.kotlinSerializationCore)
                 implementation(libs.kotlinStdlib)
