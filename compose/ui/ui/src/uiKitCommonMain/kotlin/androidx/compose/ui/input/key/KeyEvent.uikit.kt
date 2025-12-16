@@ -27,9 +27,12 @@ import platform.UIKit.UIPressPhase.UIPressPhaseBegan
 import platform.UIKit.UIPressPhase.UIPressPhaseEnded
 import platform.UIKit.UIPressTypeDownArrow
 import platform.UIKit.UIPressTypeLeftArrow
+import platform.UIKit.UIPressTypeMenu
 import platform.UIKit.UIPressTypePageDown
 import platform.UIKit.UIPressTypePageUp
+import platform.UIKit.UIPressTypePlayPause
 import platform.UIKit.UIPressTypeRightArrow
+import platform.UIKit.UIPressTypeSelect
 import platform.UIKit.UIPressTypeUpArrow
 
 internal fun UIPress.toComposeEvent(): KeyEvent {
@@ -46,6 +49,9 @@ internal fun UIPress.toComposeEvent(): KeyEvent {
         UIPressTypeDownArrow -> Key.DirectionDown
         UIPressTypeLeftArrow -> Key.DirectionLeft
         UIPressTypeRightArrow -> Key.DirectionRight
+        UIPressTypeSelect -> Key.DirectionCenter
+        UIPressTypeMenu -> Key.Back
+        UIPressTypePlayPause -> Key.MediaPlayPause
         UIPressTypePageDown -> Key.PageDown
         UIPressTypePageUp -> Key.PageUp
         else -> null

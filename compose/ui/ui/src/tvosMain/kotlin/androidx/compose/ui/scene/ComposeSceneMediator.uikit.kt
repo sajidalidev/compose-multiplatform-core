@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.animation.withAnimationProgress
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -664,6 +665,10 @@ internal class ComposeSceneMediator(
         }
     }
 
+    fun didUpdateFocusInContext() {
+        scene.focusManager.takeFocus(FocusDirection.Enter)
+    }
+
     fun sceneDidAppear() {
         redrawer.setNeedsRedraw()
         keyboardManager.start()
@@ -685,11 +690,15 @@ internal class ComposeSceneMediator(
      * Converts [UIPress] objects to [KeyEvent] and dispatches them to the appropriate handlers.
      * @param presses a [Set] of [UIPress] objects. Erasure happens due to K/N not supporting Obj-C lightweight generics.
      */
-    private fun onKeyboardPresses(presses: Set<*>) {
+    fun onKeyboardPresses(presses: Set<*>): Boolean {
+        var result = false
         presses.forEach {
             val press = it as UIPress
-            onKeyboardEvent(press.toComposeEvent())
+            if(onKeyboardEvent(press.toComposeEvent()))
+                result = true
         }
+
+        return result
     }
 
     private fun onKeyboardEvent(keyEvent: KeyEvent): Boolean =

@@ -368,7 +368,7 @@ class AndroidXImplPlugin @Inject constructor(val componentFactory: SoftwareCompo
                 }
         }
         // setup a partial docs artifact that can be used to generate offline docs, if requested.
-        AndroidXKmpDocsImplPlugin.setupPartialDocsArtifact(project)
+//        AndroidXKmpDocsImplPlugin.setupPartialDocsArtifact(project)
         if (plugin is KotlinMultiplatformPluginWrapper) {
             //project.configureKonanDirectory()
             project.extensions.findByType<LibraryExtension>()?.apply {

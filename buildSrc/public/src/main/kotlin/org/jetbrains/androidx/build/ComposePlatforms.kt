@@ -113,6 +113,7 @@ enum class ComposePlatforms(vararg val alternativeNames: String) {
         val SKIKO_SUPPORT =
             EnumSet.of(KotlinMultiplatform) + JVM_BASED + UI_KIT + MACOS_NATIVE + WEB
 
+        val SKIKO_AND_TVOS = SKIKO_SUPPORT + TV_OS
         val ALL = EnumSet.allOf(ComposePlatforms::class.java) - IOS
         val ALL_AOSP = EnumSet.allOf(ComposePlatforms::class.java) - UI_KIT
 

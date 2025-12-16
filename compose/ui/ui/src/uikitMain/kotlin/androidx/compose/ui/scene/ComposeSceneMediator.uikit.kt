@@ -155,6 +155,7 @@ private class SemanticsOwnerListenerImpl(
     }
 
     override fun onSemanticsOwnerRemoved(semanticsOwner: SemanticsOwner) {
+
         if (accessibilityMediator?.owner == semanticsOwner) {
             accessibilityMediator?.dispose()
             accessibilityMediator = null

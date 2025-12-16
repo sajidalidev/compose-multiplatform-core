@@ -28,15 +28,20 @@ import platform.CoreGraphics.CGRectEqualToRect
 import platform.CoreGraphics.CGRectMake
 import platform.UIKit.UIColor
 import platform.UIKit.UIEvent
+import platform.UIKit.UIFocusAnimationCoordinator
+import platform.UIKit.UIFocusUpdateContext
 import platform.UIKit.UIGraphicsImageRenderer
 import platform.UIKit.UIImage
 import platform.UIKit.UIImageView
+import platform.UIKit.UIPress
+import platform.UIKit.UIPressesEvent
 import platform.UIKit.UIScreen
 import platform.UIKit.UITraitCollection
 import platform.UIKit.UIUserInterfaceStyle
 import platform.UIKit.UIView
 import platform.UIKit.UIViewContentMode
 import platform.UIKit.UIWindow
+import platform.UIKit.nextFocusedView
 
 internal class ComposeView(
     private val useOpaqueConfiguration: Boolean,
@@ -59,11 +64,16 @@ internal class ComposeView(
         return true
     }
 
+    override fun canBecomeFocused(): Boolean {
+        return true
+    }
+
     override fun traitCollectionDidChange(previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
 
         updateBackgroundColor()
     }
+
 
     private fun updateBackgroundColor() {
         backgroundColor = if (useOpaqueConfiguration) {

@@ -132,6 +132,7 @@ internal class FocusOwnerImpl(
      */
     override fun takeFocus(focusDirection: FocusDirection, previouslyFocusedRect: Rect?): Boolean {
         return focusSearch(focusDirection, previouslyFocusedRect) {
+            println("Requesting focus in direction: $focusDirection and node $it")
             it.requestFocus(focusDirection)
         } ?: false
     }

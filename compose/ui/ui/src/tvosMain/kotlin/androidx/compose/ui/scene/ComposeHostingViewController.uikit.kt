@@ -66,22 +66,77 @@ import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExportObjCClass
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import org.jetbrains.skia.skottie.Logger
 import platform.CoreGraphics.CGSize
 import platform.Foundation.NSKeyValueObservingOptionNew
 import platform.Foundation.addObserver
 import platform.Foundation.removeObserver
 import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
 import platform.UIKit.UIApplication
+import platform.UIKit.UIFocusAnimationCoordinator
+import platform.UIKit.UIFocusUpdateContext
+import platform.UIKit.UIPress
+import platform.UIKit.UIPressPhase
+import platform.UIKit.UIPressesEvent
 import platform.UIKit.UITraitCollection
 import platform.UIKit.UIUserInterfaceLayoutDirection
 import platform.UIKit.UIUserInterfaceStyle
 import platform.UIKit.UIViewControllerTransitionCoordinatorProtocol
 import platform.UIKit.UIWindow
 import platform.UIKit.UIWindowScene
+import platform.UIKit.nextFocusedView
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
+
+class KeyRepeatHandler(
+    private val coroutineScope: CoroutineScope,
+    private val initialDelayMillis: Long = 400L,
+    private val repeatIntervalMillis: Long = 60L,
+    private val onKeyRepeat: (UIPress) -> Unit
+) {
+    private val activeJobs = mutableMapOf<Long, Job>()
+
+    fun handlePress(press: UIPress) {
+        val keyCode = press.key?.keyCode ?: return
+
+        when (press.phase) {
+            UIPressPhase.UIPressPhaseBegan -> {
+                // Cancel any existing repeat for this key
+                activeJobs[keyCode]?.cancel()
+
+                // Start a new repeat coroutine
+                activeJobs[keyCode] = coroutineScope.launch {
+                    // Initial delay before repeating starts
+                    delay(initialDelayMillis)
+
+                    // Repeat at interval until cancelled
+                    while (isActive) {
+                        onKeyRepeat(press)
+                        delay(repeatIntervalMillis)
+                    }
+                }
+            }
+            UIPressPhase.UIPressPhaseEnded,
+            UIPressPhase.UIPressPhaseCancelled -> {
+                // Stop repeating when key is released
+                activeJobs[keyCode]?.cancel()
+                activeJobs.remove(keyCode)
+            }
+            else -> { /* Ignore other phases */ }
+        }
+    }
+
+    fun cancelAll() {
+        activeJobs.values.forEach { it.cancel() }
+        activeJobs.clear()
+    }
+}
 @OptIn(BetaInteropApi::class)
 @ExportObjCClass
 internal class ComposeHostingViewController(
@@ -115,6 +170,17 @@ internal class ComposeHostingViewController(
     private val interfaceOrientationObserver = SceneGeometryObserver {
         updateInterfaceOrientationState()
     }
+
+    private val keyRepeatHandler by lazy {
+        KeyRepeatHandler(
+            coroutineScope = CoroutineScope(composeCoroutineContext),
+            onKeyRepeat = { press ->
+                // Forward the repeated key event to your mediator
+                mediator?.onKeyboardPresses(setOf(press))
+            }
+        )
+    }
+
 //    private val navigationEventInput = UIKitNavigationEventInput(
 //        density = rootView.density,
 //        getTopLeftOffsetInWindow = { IntOffset.Zero }, //full screen
@@ -172,13 +238,44 @@ internal class ComposeHostingViewController(
         view = rootView
     }
 
+    override fun pressesBegan(presses: Set<*>, withEvent: UIPressesEvent?) {
+        mediator?.onKeyboardPresses(presses as Set<UIPress>)?.let { isConsumed ->
+            if(!isConsumed){
+                super.pressesBegan(presses, withEvent)
+            }
+        }
+    }
+
+    override fun pressesEnded(presses: Set<*>, withEvent: UIPressesEvent?) {
+        mediator?.onKeyboardPresses(presses as Set<UIPress>)?.let { isConsumed ->
+            if(!isConsumed){
+                super.pressesEnded(presses, withEvent)
+            }
+        }
+    }
+
+    override fun pressesCancelled(presses: Set<*>, withEvent: UIPressesEvent?) {
+        super.pressesCancelled(presses, withEvent)
+    }
+
+    override fun didUpdateFocusInContext(
+        context: UIFocusUpdateContext,
+        withAnimationCoordinator: UIFocusAnimationCoordinator
+    ) {
+        super.didUpdateFocusInContext(context, withAnimationCoordinator)
+        if(context.nextFocusedView == view){
+            println("didUpdateFocusInContext: $context")
+            mediator?.didUpdateFocusInContext()
+        }
+    }
+
     @Suppress("DEPRECATION")
     override fun viewDidLoad() {
         super.viewDidLoad()
-
-        if (configuration.enforceStrictPlistSanityCheck) {
-            PlistSanityCheck.performIfNeeded()
-        }
+// Not needed for tvos
+//        if (configuration.enforceStrictPlistSanityCheck) {
+//            PlistSanityCheck.performIfNeeded()
+//        }
 
         configuration.delegate.viewDidLoad()
         systemThemeState.value = traitCollection.userInterfaceStyle.asComposeSystemTheme()

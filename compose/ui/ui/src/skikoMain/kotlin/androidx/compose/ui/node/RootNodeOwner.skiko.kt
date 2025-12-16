@@ -319,6 +319,9 @@ internal class RootNodeOwner(
     private fun handleFocusKeys(keyEvent: KeyEvent): Boolean {
         // TODO(b/177931787) : Consider creating a KeyInputManager like we have for FocusManager so
         //  that this common logic can be used by all owners.
+
+        println("Handling focus keys: ${keyEvent.key}")
+
         val focusDirection = getFocusDirection(keyEvent)
         if (focusDirection == null || keyEvent.type != KeyEventType.KeyDown) return false
 
@@ -332,6 +335,10 @@ internal class RootNodeOwner(
             Key.Tab -> if (keyEvent.isShiftPressed) FocusDirection.Previous else FocusDirection.Next
             Key.DirectionCenter -> FocusDirection.Enter
             Key.Back -> FocusDirection.Exit
+            Key.DirectionDown -> FocusDirection.Down
+            Key.DirectionUp -> FocusDirection.Up
+            Key.DirectionLeft -> FocusDirection.Left
+            Key.DirectionRight -> FocusDirection.Right
             else -> null
         }
     }
