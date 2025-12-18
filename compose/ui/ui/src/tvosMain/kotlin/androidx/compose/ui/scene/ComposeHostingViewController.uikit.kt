@@ -93,50 +93,6 @@ import platform.UIKit.nextFocusedView
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
-
-class KeyRepeatHandler(
-    private val coroutineScope: CoroutineScope,
-    private val initialDelayMillis: Long = 400L,
-    private val repeatIntervalMillis: Long = 60L,
-    private val onKeyRepeat: (UIPress) -> Unit
-) {
-    private val activeJobs = mutableMapOf<Long, Job>()
-
-    fun handlePress(press: UIPress) {
-        val keyCode = press.key?.keyCode ?: return
-
-        when (press.phase) {
-            UIPressPhase.UIPressPhaseBegan -> {
-                // Cancel any existing repeat for this key
-                activeJobs[keyCode]?.cancel()
-
-                // Start a new repeat coroutine
-                activeJobs[keyCode] = coroutineScope.launch {
-                    // Initial delay before repeating starts
-                    delay(initialDelayMillis)
-
-                    // Repeat at interval until cancelled
-                    while (isActive) {
-                        onKeyRepeat(press)
-                        delay(repeatIntervalMillis)
-                    }
-                }
-            }
-            UIPressPhase.UIPressPhaseEnded,
-            UIPressPhase.UIPressPhaseCancelled -> {
-                // Stop repeating when key is released
-                activeJobs[keyCode]?.cancel()
-                activeJobs.remove(keyCode)
-            }
-            else -> { /* Ignore other phases */ }
-        }
-    }
-
-    fun cancelAll() {
-        activeJobs.values.forEach { it.cancel() }
-        activeJobs.clear()
-    }
-}
 @OptIn(BetaInteropApi::class)
 @ExportObjCClass
 internal class ComposeHostingViewController(
@@ -169,16 +125,6 @@ internal class ComposeHostingViewController(
 
     private val interfaceOrientationObserver = SceneGeometryObserver {
         updateInterfaceOrientationState()
-    }
-
-    private val keyRepeatHandler by lazy {
-        KeyRepeatHandler(
-            coroutineScope = CoroutineScope(composeCoroutineContext),
-            onKeyRepeat = { press ->
-                // Forward the repeated key event to your mediator
-                mediator?.onKeyboardPresses(setOf(press))
-            }
-        )
     }
 
 //    private val navigationEventInput = UIKitNavigationEventInput(
