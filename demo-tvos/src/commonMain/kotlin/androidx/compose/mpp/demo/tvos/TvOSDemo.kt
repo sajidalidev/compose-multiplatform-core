@@ -2,6 +2,7 @@ package androidx.compose.mpp.demo.tvos
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -14,8 +15,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -28,20 +36,42 @@ data class DemoItem(
 
 @Composable
 fun TvOSDemoApp() {
+    var showOverLay by remember { mutableStateOf(false) }
+    var overlayFocus = remember { FocusRequester() }
     MaterialTheme {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF1A1A1A))
-                .padding(48.dp)
         ) {
-            FocusableCardGrid()
+            Box(modifier = Modifier.fillMaxSize().padding(48.dp)) {
+                FocusableCardGrid {
+                    showOverLay = true
+                    overlayFocus.requestFocus()
+                }
+            }
+
+            if(showOverLay) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White)
+                        .focusable()
+                        .focusRequester(overlayFocus)
+                        .onPreviewKeyEvent {
+                            if(it.type == KeyEventType.KeyUp && it.key == Key.Back) {
+                                showOverLay = false
+                            }
+                            false
+                        }
+                )
+            }
         }
     }
 }
 
 @Composable
-fun FocusableCardGrid() {
+fun FocusableCardGrid(onClick: (DemoItem) -> Unit) {
     val items = remember {
         listOf(
             DemoItem(1, "Foundation", "Layout & Focus APIs", Color(0xFF6200EE)),
@@ -67,13 +97,13 @@ fun FocusableCardGrid() {
         modifier = Modifier.fillMaxSize()
     ) {
         items(items) { item ->
-            FocusableCard(item)
+            FocusableCard(item,onClick)
         }
     }
 }
 
 @Composable
-fun FocusableCard(item: DemoItem) {
+fun FocusableCard(item: DemoItem,onClick: (DemoItem) -> Unit) {
     var isFocused by remember { mutableStateOf(false) }
     
     Card(
@@ -83,6 +113,9 @@ fun FocusableCard(item: DemoItem) {
                 isFocused = focusState.isFocused
             }
             .focusable()
+            .clickable {
+                onClick(item)
+            }
             .border(
                 width = if (isFocused) 4.dp else 0.dp,
                 color = if (isFocused) Color.White else Color.Transparent

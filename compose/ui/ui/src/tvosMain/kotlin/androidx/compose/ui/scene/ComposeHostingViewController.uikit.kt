@@ -211,7 +211,6 @@ internal class ComposeHostingViewController(
     ) {
         super.didUpdateFocusInContext(context, withAnimationCoordinator)
         if(context.nextFocusedView == view){
-            println("didUpdateFocusInContext: $context")
             mediator?.didUpdateFocusInContext()
         }
     }

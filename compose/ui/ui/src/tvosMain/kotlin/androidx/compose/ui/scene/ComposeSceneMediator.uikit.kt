@@ -94,7 +94,6 @@ import androidx.compose.ui.window.FocusedViewsList
 import androidx.compose.ui.window.MetalRedrawer
 import androidx.compose.ui.window.OverlayInputView
 import androidx.compose.ui.window.TouchesEventKind
-import kotlin.collections.forEach
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -205,6 +204,7 @@ internal class ComposeSceneMediator(
     ) -> ComposeScene
 ) {
     private var onPreviewKeyEvent: (KeyEvent) -> Boolean = { false }
+
     // Android-style key repeat: repeatedly dispatch KeyDown while key is held
     private val repeatingKeys = mutableMapOf<Long, Job>()
     private val keyRepeatInitialDelayMs = 500L
@@ -298,7 +298,7 @@ internal class ComposeSceneMediator(
         onCancelScroll = ::onCancelScroll,
         onHoverEvent = ::onHoverEvent,
         onKeyboardPresses = ::onKeyboardPresses,
-        ignoreTouchChanges = { false}
+        ignoreTouchChanges = { false }
     )
 
     val overlayView: UIView get() = _overlayView
@@ -334,7 +334,8 @@ internal class ComposeSceneMediator(
 //        getComposeRootDragAndDropNode = { scene.rootDragAndDropNode },
 //    )
 
-    private val windowInsetsManager = UIKitWindowInsetsManager(interfaceOrientation = interfaceOrientationState)
+    private val windowInsetsManager =
+        UIKitWindowInsetsManager(interfaceOrientation = interfaceOrientationState)
 
     /**
      * A callback to define whether the precondition for the user input view hit test is met.
@@ -541,6 +542,7 @@ internal class ComposeSceneMediator(
             }
         }
     }
+
     private var previousButtonMask: Long = 0L
     private var previousTouchEventKind: TouchesEventKind? = null
 
@@ -581,9 +583,9 @@ internal class ComposeSceneMediator(
                             fraction = progress
                         )
                         windowInsetsManager.safeAreaInsets.value = lerp(
-                                start = initialSafeAreaInsets,
-                                stop = _overlayView.safeAreaInsets.toPlatformInsets(screenDensity),
-                                fraction = progress
+                            start = initialSafeAreaInsets,
+                            stop = _overlayView.safeAreaInsets.toPlatformInsets(screenDensity),
+                            fraction = progress
                         )
                         size = lerp(
                             start = initialSize,
@@ -662,16 +664,19 @@ internal class ComposeSceneMediator(
         if (isLayoutTransitionAnimating) {
             return
         }
-        windowInsetsManager.layoutMargins.value = _overlayView.layoutMargins.toPlatformInsets(_overlayView.density)
-        windowInsetsManager.safeAreaInsets.value = _overlayView.safeAreaInsets.toPlatformInsets(_overlayView.density)
+        windowInsetsManager.layoutMargins.value =
+            _overlayView.layoutMargins.toPlatformInsets(_overlayView.density)
+        windowInsetsManager.safeAreaInsets.value =
+            _overlayView.safeAreaInsets.toPlatformInsets(_overlayView.density)
         size = currentViewSize.roundToIntSize()
     }
 
-    private val currentViewSize: Size get() {
-        return with(_overlayView.density) {
-            _overlayView.frame.useContents { size.asDpSize() }.toSize()
+    private val currentViewSize: Size
+        get() {
+            return with(_overlayView.density) {
+                _overlayView.frame.useContents { size.asDpSize() }.toSize()
+            }
         }
-    }
 
     fun didUpdateFocusInContext() {
         scene.focusManager.takeFocus(FocusDirection.Enter)
@@ -723,15 +728,18 @@ internal class ComposeSceneMediator(
                         repeatingKeys[keyId] = job
                     }
                 }
+
                 platform.UIKit.UIPressPhase.UIPressPhaseEnded -> {
                     // Stop repeating and send KeyUp
                     repeatingKeys.remove(keyId)?.cancel()
                     if (onKeyboardEvent(event)) result = true
                 }
+
                 platform.UIKit.UIPressPhase.UIPressPhaseCancelled -> {
                     // Stop repeating, don't send KeyUp for cancelled
                     repeatingKeys.remove(keyId)?.cancel()
                 }
+
                 else -> Unit
             }
         }
@@ -746,7 +754,7 @@ internal class ComposeSceneMediator(
 
     private fun onKeyboardEvent(keyEvent: KeyEvent): Boolean =
 //        textInputService.onPreviewKeyEvent(keyEvent) // TODO: fix redundant call
-            onPreviewKeyEvent(keyEvent)
+        onPreviewKeyEvent(keyEvent)
             || scene.sendKeyEvent(keyEvent)
             || onKeyEvent(keyEvent)
 //            || navigationEventInput.onKeyEvent(keyEvent)
@@ -769,38 +777,42 @@ internal class ComposeSceneMediator(
             windowContext.convertScreenToLocalPosition(_overlayView, positionOnScreen)
 
         override val viewConfiguration get() = this@ComposeSceneMediator.viewConfiguration
-        override val inputModeManager = DefaultInputModeManager(InputMode.Touch)
-        override val textInputService get() = object:  PlatformTextInputService {
-            override fun startInput(
-                value: TextFieldValue,
-                imeOptions: ImeOptions,
-                onEditCommand: (List<EditCommand>) -> Unit,
-                onImeActionPerformed: (ImeAction) -> Unit
-            ) = Unit
+        override val inputModeManager = DefaultInputModeManager(InputMode.Keyboard)
+        override val textInputService
+            get() = object : PlatformTextInputService {
+                override fun startInput(
+                    value: TextFieldValue,
+                    imeOptions: ImeOptions,
+                    onEditCommand: (List<EditCommand>) -> Unit,
+                    onImeActionPerformed: (ImeAction) -> Unit
+                ) = Unit
 
-            override fun stopInput() = Unit
-            override fun showSoftwareKeyboard() = Unit
-            override fun hideSoftwareKeyboard() = Unit
-            override fun updateState(oldValue: TextFieldValue?, newValue: TextFieldValue) = Unit
-        }
-        override val textToolbar get() = object : TextToolbar {
-            override fun hide() = Unit
-            override val status: TextToolbarStatus = TextToolbarStatus.Hidden
-            override fun showMenu(
-                rect: Rect,
-                onCopyRequested: (() -> Unit)?,
-                onPasteRequested: (() -> Unit)?,
-                onCutRequested: (() -> Unit)?,
-                onSelectAllRequested: (() -> Unit)?
-            ) = Unit
-        }
+                override fun stopInput() = Unit
+                override fun showSoftwareKeyboard() = Unit
+                override fun hideSoftwareKeyboard() = Unit
+                override fun updateState(oldValue: TextFieldValue?, newValue: TextFieldValue) = Unit
+            }
+        override val textToolbar
+            get() = object : TextToolbar {
+                override fun hide() = Unit
+                override val status: TextToolbarStatus = TextToolbarStatus.Hidden
+                override fun showMenu(
+                    rect: Rect,
+                    onCopyRequested: (() -> Unit)?,
+                    onPasteRequested: (() -> Unit)?,
+                    onCutRequested: (() -> Unit)?,
+                    onSelectAllRequested: (() -> Unit)?
+                ) = Unit
+            }
         override val semanticsOwnerListener get() = this@ComposeSceneMediator.semanticsOwnerListener
-        override val dragAndDropManager get() = object: PlatformDragAndDropManager{}
+        override val dragAndDropManager get() = object : PlatformDragAndDropManager {}
         override val windowInsets get() = this@ComposeSceneMediator.windowInsetsManager.windowInsets
 
         override var isKeepScreenOnEnabled: Boolean
             get() = UIKitIdleTimerManager.isIdleTimerDisabled
-            set(value) { UIKitIdleTimerManager.setIdleTimerState(this@ComposeSceneMediator, value) }
+            set(value) {
+                UIKitIdleTimerManager.setIdleTimerState(this@ComposeSceneMediator, value)
+            }
 
         override fun voteFrameRate(frameRate: Float, frameRateCategory: Float) {
             redrawer.voteFrameRate(frameRate, frameRateCategory)
@@ -850,23 +862,26 @@ private fun UIEvent.getButton(
         null
     } else if (buttonMaskOrZero and UIEventButtonMaskPrimary != 0L &&
         (previousButtonMask and UIEventButtonMaskPrimary == 0L ||
-            eventKind != previousEventKind)) {
+            eventKind != previousEventKind)
+    ) {
         PointerButton.Primary
     } else if (buttonMaskOrZero and UIEventButtonMaskSecondary != 0L &&
         (previousButtonMask and UIEventButtonMaskSecondary == 0L ||
-            eventKind != previousEventKind)) {
+            eventKind != previousEventKind)
+    ) {
         PointerButton.Secondary
     } else {
         null
     }
 
-private val UIEvent?.timeMillis: Long get() {
-    // If the touches were cancelled due to gesture failure, the timestamp is not available,
-    // because no actual event with touch updates happened. We just use the current time in
-    // this case.
-    val timestamp = this?.timestamp ?: CACurrentMediaTime()
-    return (timestamp * 1e3).toLong()
-}
+private val UIEvent?.timeMillis: Long
+    get() {
+        // If the touches were cancelled due to gesture failure, the timestamp is not available,
+        // because no actual event with touch updates happened. We just use the current time in
+        // this case.
+        val timestamp = this?.timestamp ?: CACurrentMediaTime()
+        return (timestamp * 1e3).toLong()
+    }
 
 private val FOCUS_CHANGE_ANIMATION_DURATION = 0.15.seconds
 private val SCROLL_DELTA_MULTIPLIER = 0.01f
@@ -901,19 +916,21 @@ private fun UIEvent.historicalChangesForTouch(
     }
 }
 
-private val UIEvent?.buttonMaskOrZero: Long get() =
-    if (available(OS.Ios to OSVersion(13, 4))) {
-        /*this?.buttonMask ?:*/ 0L
-    } else {
-        0L
-    }
+private val UIEvent?.buttonMaskOrZero: Long
+    get() =
+        if (available(OS.Ios to OSVersion(13, 4))) {
+            /*this?.buttonMask ?:*/ 0L
+        } else {
+            0L
+        }
 
-private val UIEvent?.modifierFlagsOrZero: Long get() =
-    if (available(OS.Ios to OSVersion(13, 4))) {
-        this?.modifierFlags ?: 0L
-    } else {
-        0L
-    }
+private val UIEvent?.modifierFlagsOrZero: Long
+    get() =
+        if (available(OS.Ios to OSVersion(13, 4))) {
+            this?.modifierFlags ?: 0L
+        } else {
+            0L
+        }
 
 private val UITouch.isPressed
     get() = when (phase) {
