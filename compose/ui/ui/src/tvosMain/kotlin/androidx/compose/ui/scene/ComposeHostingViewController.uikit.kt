@@ -241,7 +241,8 @@ internal class ComposeHostingViewController(
     override fun pressesBegan(presses: Set<*>, withEvent: UIPressesEvent?) {
         mediator?.onKeyboardPresses(presses as Set<UIPress>)?.let { isConsumed ->
             if(!isConsumed){
-                super.pressesBegan(presses, withEvent)
+                // To fix the back button exiting the app
+//                super.pressesBegan(presses, withEvent)
             }
         }
     }
