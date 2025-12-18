@@ -94,13 +94,18 @@ import androidx.compose.ui.window.FocusedViewsList
 import androidx.compose.ui.window.MetalRedrawer
 import androidx.compose.ui.window.OverlayInputView
 import androidx.compose.ui.window.TouchesEventKind
+import kotlin.collections.forEach
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.useContents
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.jetbrains.skiko.OS
@@ -200,7 +205,10 @@ internal class ComposeSceneMediator(
     ) -> ComposeScene
 ) {
     private var onPreviewKeyEvent: (KeyEvent) -> Boolean = { false }
-
+    // Android-style key repeat: repeatedly dispatch KeyDown while key is held
+    private val repeatingKeys = mutableMapOf<Long, Job>()
+    private val keyRepeatInitialDelayMs = 500L
+    private val keyRepeatIntervalMs = 50L
     private var onKeyEvent: (KeyEvent) -> Boolean = { false }
     private var animateKeyboardOffsetChanges by mutableStateOf(false)
     private var platformScreenReader = object : PlatformScreenReader {
@@ -692,14 +700,49 @@ internal class ComposeSceneMediator(
      */
     fun onKeyboardPresses(presses: Set<*>): Boolean {
         var result = false
-        presses.forEach {
-            val press = it as UIPress
-            if(onKeyboardEvent(press.toComposeEvent()))
-                result = true
-        }
+        presses.forEach { anyPress ->
+            val press = anyPress as UIPress
+            val event = press.toComposeEvent()
+            val keyId = pressKeyId(press)
 
+            when (press.phase) {
+                platform.UIKit.UIPressPhase.UIPressPhaseBegan -> {
+                    // Deliver the initial KeyDown immediately
+                    if (onKeyboardEvent(event)) result = true
+
+                    // Start repeat if not already started
+                    if (repeatingKeys[keyId]?.isActive != true) {
+                        val job = CoroutineScope(coroutineContext).launch {
+                            // Initial delay before repeating
+                            delay(keyRepeatInitialDelayMs)
+                            while (isActive) {
+                                onKeyboardEvent(event)
+                                delay(keyRepeatIntervalMs)
+                            }
+                        }
+                        repeatingKeys[keyId] = job
+                    }
+                }
+                platform.UIKit.UIPressPhase.UIPressPhaseEnded -> {
+                    // Stop repeating and send KeyUp
+                    repeatingKeys.remove(keyId)?.cancel()
+                    if (onKeyboardEvent(event)) result = true
+                }
+                platform.UIKit.UIPressPhase.UIPressPhaseCancelled -> {
+                    // Stop repeating, don't send KeyUp for cancelled
+                    repeatingKeys.remove(keyId)?.cancel()
+                }
+                else -> Unit
+            }
+        }
         return result
     }
+
+    private fun pressKeyId(press: UIPress): Long {
+        val keyCode = press.key?.keyCode
+        return keyCode?.toLong() ?: -(press.type.toLong() + 1L)
+    }
+
 
     private fun onKeyboardEvent(keyEvent: KeyEvent): Boolean =
 //        textInputService.onPreviewKeyEvent(keyEvent) // TODO: fix redundant call
