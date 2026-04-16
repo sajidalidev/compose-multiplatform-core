@@ -337,6 +337,10 @@ internal class RootNodeOwner(
             Key.Tab -> if (keyEvent.isShiftPressed) FocusDirection.Previous else FocusDirection.Next
             Key.DirectionCenter -> FocusDirection.Enter
             Key.Back -> FocusDirection.Exit
+            Key.DirectionDown -> FocusDirection.Down
+            Key.DirectionUp -> FocusDirection.Up
+            Key.DirectionLeft -> FocusDirection.Left
+            Key.DirectionRight -> FocusDirection.Right
             else -> null
         }
     }
