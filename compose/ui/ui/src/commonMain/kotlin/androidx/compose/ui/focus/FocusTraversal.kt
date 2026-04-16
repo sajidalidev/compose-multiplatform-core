@@ -129,8 +129,10 @@ internal fun FocusTargetNode.focusSearch(
                     Rtl -> Left
                     Ltr -> Right
                 }
-            findActiveFocusNode()
-                ?.twoDimensionalFocusSearch(direction, previouslyFocusedRect, onFound)
+            // Initial findActiveFocusNode is null which prevents the focus
+            // To work around this, we use the current node as the starting point
+            (findActiveFocusNode() ?: this)
+                .twoDimensionalFocusSearch(direction, previouslyFocusedRect, onFound)
         }
         Exit ->
             findActiveFocusNode()?.findNonDeactivatedParent().let {
