@@ -34,6 +34,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.PointerKeyboardModifiers
+import androidx.compose.ui.input.key.copy
 import androidx.compose.ui.input.key.toComposeEvent
 import androidx.compose.ui.input.pointer.HistoricalChange
 import androidx.compose.ui.input.pointer.PointerButton
@@ -778,10 +779,11 @@ internal class ComposeSceneMediator(
                     onKeyboardEvent(event)
 
                     if (repeatingKeys[keyId]?.isActive != true) {
+                        val repeatEvent = event.copy(isRepeat = true)
                         repeatingKeys[keyId] = CoroutineScope(coroutineContext).launch {
                             delay(keyRepeatInitialDelayMs)
                             while (isActive) {
-                                onKeyboardEvent(event)
+                                onKeyboardEvent(repeatEvent)
                                 delay(keyRepeatIntervalMs)
                             }
                         }
