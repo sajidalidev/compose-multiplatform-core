@@ -2,7 +2,9 @@ package androidx.compose.mpp.demo.tvos
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +28,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isRepeat
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -190,23 +193,40 @@ fun FocusableCardGrid(onClick: (DemoItem) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FocusableCard(item: DemoItem, onClick: (DemoItem) -> Unit) {
     var isFocused by remember { mutableStateOf(false) }
+    var isLongPressed by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
             .size(width = 280.dp, height = 180.dp)
             .onFocusChanged { focusState ->
                 isFocused = focusState.isFocused
+                if (!focusState.isFocused) isLongPressed = false
             }
-            .focusable()
-            .clickable {
-                onClick(item)
+            // combinedClickable handles long-press on Key.DirectionCenter (Select) natively.
+            // For any other held key, use onPreviewKeyEvent + event.isRepeat.
+            // NOTE: do NOT add .focusable() before combinedClickable — it adds its own FocusTarget
+            // internally, and a second outer FocusTarget causes lastLocalKeyInputNode() to return
+            // null, so key events never reach combinedClickable.onKeyEvent.
+            .combinedClickable(
+                onClick = { onClick(item) },
+                onLongClick = { isLongPressed = true }
+            )
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && event.isRepeat) {
+                    // Any key held past keyRepeatInitialDelayMs — treat as long press signal.
+                    isLongPressed = true
+                }
+                false // don't consume; let normal key handling proceed
             }
             .border(
                 width = if (isFocused) 4.dp else 0.dp,
-                color = if (isFocused) Color.White else Color.Transparent
+                color = if (isFocused) {
+                    if (isLongPressed) Color.Yellow else Color.White
+                } else Color.Transparent
             ),
         colors = CardDefaults.cardColors(
             containerColor = item.color.copy(alpha = if (isFocused) 1f else 0.7f)
