@@ -16,6 +16,8 @@
 
 #import "CMPHoverGestureRecognizer.h"
 
+#if !TARGET_OS_TV
+
 @implementation CMPHoverGestureRecognizer
 
 - (BOOL)shouldReceiveEvent:(UIEvent *)event {
@@ -27,3 +29,5 @@
 }
 
 @end
+
+#endif

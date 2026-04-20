@@ -107,6 +107,32 @@ kotlin {
             }
         }
     }
+    tvosArm64("tvosArm64") {
+        binaries {
+            executable() {
+                entryPoint = "androidx.compose.mpp.demo.main"
+                freeCompilerArgs += listOf(
+                    "-linker-option", "-framework", "-linker-option", "Metal",
+                    "-linker-option", "-framework", "-linker-option", "CoreText",
+                    "-linker-option", "-framework", "-linker-option", "CoreGraphics"
+                )
+                freeCompilerArgs += "-Xdisable-phases=VerifyBitcode"
+            }
+        }
+    }
+    tvosSimulatorArm64("tvosSimArm64") {
+        binaries {
+            executable() {
+                entryPoint = "androidx.compose.mpp.demo.main"
+                freeCompilerArgs += listOf(
+                    "-linker-option", "-framework", "-linker-option", "Metal",
+                    "-linker-option", "-framework", "-linker-option", "CoreText",
+                    "-linker-option", "-framework", "-linker-option", "CoreGraphics"
+                )
+                freeCompilerArgs += "-Xdisable-phases=VerifyBitcode"
+            }
+        }
+    }
     sourceSets {
         val commonMain by getting {
             dependencies {
@@ -181,6 +207,7 @@ kotlin {
         val darwinMain by creating { dependsOn(nativeMain) }
         val macosMain by getting { dependsOn(darwinMain) }
         val iosMain by getting { dependsOn(darwinMain) }
+        val tvosMain by getting { dependsOn(darwinMain) }
     }
 
     targets.withType<KotlinJsIrTarget>().all { configureSkikoWebRuntime(project, this) }
@@ -189,6 +216,8 @@ kotlin {
 enum class Target(val simulator: Boolean, val key: String) {
     IOS_ARM64(false, "iosArm64"),
     IOS_SIM_ARM64(true, "iosSimArm64"),
+    TVOS_ARM64(false, "tvosArm64"),
+    TVOS_SIM_ARM64(true, "tvosSimArm64"),
 }
 
 if (System.getProperty("os.name") == "Mac OS X") {
@@ -201,6 +230,14 @@ if (System.getProperty("os.name") == "Mac OS X") {
             it.startsWith("iphonesimulator") -> {
                 if (System.getProperty("os.arch") == "aarch64") {
                     Target.IOS_SIM_ARM64
+                } else {
+                    error("x64 host is not supported anymore!")
+                }
+            }
+            it.startsWith("appletvos") -> Target.TVOS_ARM64
+            it.startsWith("appletvsimulator") -> {
+                if (System.getProperty("os.arch") == "aarch64") {
+                    Target.TVOS_SIM_ARM64
                 } else {
                     error("x64 host is not supported anymore!")
                 }
