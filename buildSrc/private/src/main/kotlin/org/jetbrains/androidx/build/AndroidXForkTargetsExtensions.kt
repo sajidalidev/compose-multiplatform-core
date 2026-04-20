@@ -156,16 +156,18 @@ fun configureDarwinFlags(project: Project) {
         "-linker-option", "-framework", "-linker-option", "CoreGraphics",
         "-linker-option", "-framework", "-linker-option", "CoreServices"
     )
-    val iosFlags = listOf("-linker-option", "-framework", "-linker-option", "UIKit")
+    val uikitFlags = listOf("-linker-option", "-framework", "-linker-option", "UIKit")
 
     fun KotlinNativeTarget.configureFreeCompilerArgs() {
-        val isIOS = konanTarget == KonanTarget.IOS_SIMULATOR_ARM64 ||
-            konanTarget == KonanTarget.IOS_ARM64
+        val isUIKit = konanTarget == KonanTarget.IOS_SIMULATOR_ARM64 ||
+            konanTarget == KonanTarget.IOS_ARM64 ||
+            konanTarget == KonanTarget.TVOS_SIMULATOR_ARM64 ||
+            konanTarget == KonanTarget.TVOS_ARM64
 
         binaries.forEach {
             val flags = mutableListOf<String>().apply {
                 addAll(darwinFlags)
-                if (isIOS) addAll(iosFlags)
+                if (isUIKit) addAll(uikitFlags)
             }
 
              it.freeCompilerArgs += flags
@@ -175,6 +177,8 @@ fun configureDarwinFlags(project: Project) {
         macosArm64 { configureFreeCompilerArgs() }
         iosArm64 { configureFreeCompilerArgs() }
         iosSimulatorArm64 { configureFreeCompilerArgs() }
+        tvosArm64 { configureFreeCompilerArgs() }
+        tvosSimulatorArm64 { configureFreeCompilerArgs() }
     }
 }
 

@@ -16,6 +16,15 @@
 
 #import "CMPEditMenuView.h"
 
+#if TARGET_OS_TV
+
+// tvOS stub: CMPEditMenuView is iOS-only. This empty implementation satisfies
+// the linker when the interface is included via the shared cinterop headers.
+@implementation CMPEditMenuView
+@end
+
+#else // !TARGET_OS_TV
+
 @interface CMPEditMenuViewRegister: NSObject
 
 @property (nonatomic, strong) NSMutableSet<CMPEditMenuView *> *trackedMenus;
@@ -486,3 +495,5 @@ willPresentMenuForConfiguration:(UIEditMenuConfiguration *)configuration
 }
 
 @end
+
+#endif

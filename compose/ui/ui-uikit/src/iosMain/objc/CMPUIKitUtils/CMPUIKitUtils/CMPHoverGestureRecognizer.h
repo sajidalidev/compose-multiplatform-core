@@ -19,10 +19,14 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#if !TARGET_OS_TV
+
 @interface CMPHoverGestureRecognizer : UIHoverGestureRecognizer
 
 @property (strong, nonatomic, nullable) UIEvent *lastReceivedEvent;
 
 @end
+
+#endif
 
 NS_ASSUME_NONNULL_END
