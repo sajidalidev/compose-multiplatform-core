@@ -19,6 +19,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#if !TARGET_OS_TV
+
 /// Class that propery exposes the methods of `UIDropInteractionDelegate` to Kotlin without signature conflicts
 @interface CMPDropInteractionProxy : NSObject <UIDropInteractionDelegate>
 
@@ -44,5 +46,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)cmp_loadAny:(Class)objectClass onCompletion:(void (^)(id _Nullable result, NSError *_Nullable error))completionHandler;
 
 @end
+
+#endif
 
 NS_ASSUME_NONNULL_END

@@ -47,6 +47,7 @@ androidXMultiplatform {
     desktop()
     mac()
     ios()
+    tvos()
     js()
     wasmJs()
 
@@ -178,6 +179,14 @@ androidXMultiplatform {
         }
 
         iosTest {
+            dependsOn(darwinTest)
+        }
+
+        tvosMain {
+            dependsOn(darwinMain)
+        }
+
+        tvosTest {
             dependsOn(darwinTest)
         }
 

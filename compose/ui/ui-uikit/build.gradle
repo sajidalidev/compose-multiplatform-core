@@ -32,6 +32,12 @@ kotlin {
     iosSimulatorArm64("iosSimulatorArm64") {
         configure(it, false, "arm64", "iosSimulatorArm64Test")
     }
+    tvosArm64("tvosArm64") {
+        configure(it, true, "arm64", null /*"tvosArm64Test"*/, "tvOS")
+    }
+    tvosSimulatorArm64("tvosSimulatorArm64") {
+        configure(it, false, "arm64", "tvosSimulatorArm64Test", "tvOS")
+    }
 
     sourceSets {
         configureEach {
@@ -40,7 +46,7 @@ kotlin {
     }
 }
 
-private def configure(target, isDevice, architecture, testTarget) {
+private def configure(target, isDevice, architecture, testTarget, platform = "iOS") {
     def frameworkName = "CMPUIKitUtils"
     def buildSchemeName = frameworkName
     def testSchemeName = "${frameworkName}Tests"
@@ -48,12 +54,13 @@ private def configure(target, isDevice, architecture, testTarget) {
     def frameworkSourcesDir = new File(objcDir, frameworkName)
     def sdkName
     def destination
+    def sdkPrefix = (platform == "tvOS") ? "appletv" : "iphone"
     if (isDevice) {
-        sdkName = "iphoneos"
-        destination = "generic/platform=iOS"
+        sdkName = "${sdkPrefix}os"
+        destination = "generic/platform=${platform}"
     } else {
-        sdkName = "iphonesimulator"
-        destination = "generic/platform=iOS Simulator"
+        sdkName = "${sdkPrefix}simulator"
+        destination = "generic/platform=${platform} Simulator"
     }
     def buildDir = new File(project.buildDir, "objc/${sdkName}.xcarchive")
     def frameworkPath = new File(buildDir, "/Products/usr/local/lib/lib${frameworkName}.a")
@@ -79,7 +86,8 @@ private def configure(target, isDevice, architecture, testTarget) {
             standardOutput = new ByteArrayOutputStream()
             doLast {
                 def output = standardOutput.toString()
-                def match = output.find("iPhone 1[567][ \\w\\d]* \\(")
+                def deviceNamePattern = (platform == "tvOS") ? "Apple TV" : "iPhone 1[567]"
+                def match = output.find("${deviceNamePattern}[ \\w\\d]* \\(")
                 def targetDevice = match.dropRight(2)
                 device = targetDevice
             }
@@ -94,7 +102,7 @@ private def configure(target, isDevice, architecture, testTarget) {
                     commandLine "xcodebuild",
                             "test",
                             "-scheme", testSchemeName,
-                            "-destination", "platform=iOS Simulator,name=${tasks[getTargetDeviceTaskName].device}",
+                            "-destination", "platform=${platform} Simulator,name=${tasks[getTargetDeviceTaskName].device}",
                             "-sdk", sdkName,
                             "VALID_ARCHS=${architecture}"
                 }

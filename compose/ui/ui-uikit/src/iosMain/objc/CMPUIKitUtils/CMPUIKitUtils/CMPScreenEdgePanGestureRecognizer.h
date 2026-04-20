@@ -9,6 +9,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#if !TARGET_OS_TV
+
 @interface CMPScreenEdgePanGestureRecognizer : UIScreenEdgePanGestureRecognizer
 
 - (BOOL)canPreventGestureRecognizer:(UIGestureRecognizer *)preventedGestureRecognizer;
@@ -16,5 +18,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)canBePreventedByGestureRecognizer:(UIGestureRecognizer *)preventingGestureRecognizer;
 
 @end
+
+#endif
 
 NS_ASSUME_NONNULL_END
