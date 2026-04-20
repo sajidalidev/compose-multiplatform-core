@@ -205,6 +205,14 @@ androidXMultiplatform {
         iosTest {
             dependsOn(darwinTest)
         }
+
+        tvosMain {
+            dependsOn(darwinMain)
+        }
+
+        tvosTest {
+            dependsOn(darwinTest)
+        }
     }
 }
 
