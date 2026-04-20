@@ -17,6 +17,7 @@
 #import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
+#if !TARGET_OS_TV
 
 @interface CMPUIWindowSceneUtils : NSObject
 
@@ -29,5 +30,6 @@ NS_ASSUME_NONNULL_BEGIN
 + (UIInterfaceOrientation)interfaceOrientationForWindowScene:(UIWindowScene * _Nullable)windowScene;
 
 @end
+#endif
 
 NS_ASSUME_NONNULL_END

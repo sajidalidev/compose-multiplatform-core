@@ -1173,17 +1173,3 @@ private class TouchTrackingGestureRecognizer : CMPGestureRecognizer(target = nul
         return true
     }
 }
-
-// Kotlin wrapper for UITextLayoutDirection
-internal enum class PlatformTextLayoutDirection(val platform: UITextLayoutDirection) {
-    Left(UITextLayoutDirectionLeft),
-    Right(UITextLayoutDirectionRight),
-    Up(UITextLayoutDirectionUp),
-    Down(UITextLayoutDirectionDown);
-
-    companion object {
-        operator fun invoke(platform: UITextLayoutDirection): PlatformTextLayoutDirection? {
-            return entries.find { it.platform == platform }
-        }
-    }
-}

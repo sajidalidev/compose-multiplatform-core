@@ -15,6 +15,7 @@
  */
 
 #import "CMPUIWindowSceneExtensions.h"
+#if !TARGET_OS_TV
 
 @implementation CMPUIWindowSceneUtils
 
@@ -30,3 +31,4 @@
 }
 
 @end
+#endif

@@ -43,6 +43,7 @@ androidXMultiplatform {
     desktop()
     mac()
     ios()
+    tvos()
     js()
     wasmJs()
 
@@ -87,6 +88,12 @@ androidXMultiplatform {
         }
 
         iosMain {
+            dependencies {
+                implementation(project(":compose:ui:ui-uikit"))
+            }
+        }
+
+        tvosMain {
             dependencies {
                 implementation(project(":compose:ui:ui-uikit"))
             }

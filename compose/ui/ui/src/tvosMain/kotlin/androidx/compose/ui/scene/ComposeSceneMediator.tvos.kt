@@ -34,6 +34,8 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.PointerKeyboardModifiers
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.copy
 import androidx.compose.ui.input.key.toComposeEvent
 import androidx.compose.ui.input.pointer.HistoricalChange
@@ -50,6 +52,7 @@ import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.PlatformScreenReader
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.platform.PlatformWindowContext
+import androidx.compose.ui.platform.TvOSTextInputService
 import androidx.compose.ui.platform.UIKitIdleTimerManager
 import androidx.compose.ui.platform.UIKitWindowInsetsManager
 import androidx.compose.ui.platform.ViewConfiguration
@@ -481,11 +484,13 @@ internal class ComposeSceneMediator(
     )
 
     private val windowInsetsManager = UIKitWindowInsetsManager(
-        windowInsetsViews = listOf(
-            { _overlayView },
-            { windowContext.window?.rootViewController?.view },
-        ),
+        windowInsetsView = { windowContext.window?.rootViewController?.view },
         interfaceOrientation = interfaceOrientationState
+    )
+
+    private val tvOSTextInputService = TvOSTextInputService(
+        view = _overlayView,
+        focusedViewsList = focusedViewsList,
     )
 
     /**
@@ -801,10 +806,21 @@ internal class ComposeSceneMediator(
         }
     }
 
-    private fun onKeyboardEvent(keyEvent: KeyEvent): Boolean =
-        onPreviewKeyEvent(keyEvent)
+    private fun onKeyboardEvent(keyEvent: KeyEvent): Boolean {
+        // Show the tvOS system keyboard when the user presses Select on a focused text field.
+        // The keyboard must not open on D-pad navigation alone (only on explicit Select press).
+        if (tvOSTextInputService.activeRequest != null &&
+            !tvOSTextInputService.isKeyboardVisible &&
+            keyEvent.key == Key.DirectionCenter &&
+            keyEvent.type == KeyEventType.KeyDown
+        ) {
+            tvOSTextInputService.showKeyboard()
+            return true
+        }
+        return onPreviewKeyEvent(keyEvent)
             || scene.sendKeyEvent(keyEvent)
             || onKeyEvent(keyEvent)
+    }
 
     private inner class PlatformContextImpl : PlatformContext {
         override val windowInfo: WindowInfo get() = windowContext.windowInfo
@@ -840,9 +856,20 @@ internal class ComposeSceneMediator(
         }
 
         override suspend fun startInputMethod(request: PlatformTextInputMethodRequest): Nothing {
-            // tvOS does not support the same text input system as iOS.
-            // Suspend indefinitely to satisfy the contract.
-            kotlinx.coroutines.suspendCancellableCoroutine<Nothing> { }
+            tvOSTextInputService.startInput(request)
+            try {
+                // Suspend until Compose cancels this session (text field loses focus).
+                // The keyboard UI is shown/hidden independently via showKeyboard()/hideKeyboard();
+                // we do NOT cancel here on keyboard dismissal so the user can re-open the
+                // keyboard by pressing Select on the same field without losing and regaining focus.
+                kotlinx.coroutines.suspendCancellableCoroutine<Nothing> { continuation ->
+                    continuation.invokeOnCancellation {
+                        tvOSTextInputService.stopInput()
+                    }
+                }
+            } finally {
+                tvOSTextInputService.stopInput()
+            }
         }
     }
 }

@@ -67,7 +67,7 @@ object JetBrainsPublication {
             ComposeComponent(":compose:ui:ui-tooling-preview"),
             ComposeComponent(
                 ":compose:ui:ui-uikit",
-                supportedPlatforms = ComposePlatforms.IOS
+                supportedPlatforms = ComposePlatforms.IOS + ComposePlatforms.TV_OS
             ),
             ComposeComponent(":compose:ui:ui-unit"),
             ComposeComponent(":compose:ui:ui-util"),

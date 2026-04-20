@@ -18,6 +18,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#if !TARGET_OS_TV
+
 @implementation CMPDragInteractionProxy
 
 - (NSArray<UIDragItem *> *)dragInteraction:(UIDragInteraction *)interaction itemsForBeginningSession:(id<UIDragSession>)session {
@@ -88,5 +90,7 @@ NS_ASSUME_NONNULL_BEGIN
 }
 
 @end
+
+#endif
 
 NS_ASSUME_NONNULL_END

@@ -17,6 +17,8 @@
 #import "CMPTextLoupeSession.h"
 #import <UIKit/UIKit.h>
 
+#if !TARGET_OS_TV
+
 @implementation CMPTextLoupeSession {
     id _session;
 }
@@ -50,3 +52,5 @@
 }
 
 @end
+
+#endif
