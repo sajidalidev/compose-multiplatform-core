@@ -117,9 +117,11 @@ NS_ASSUME_NONNULL_BEGIN
     return CGRectZero;
 }
 
+#if !TARGET_OS_TV
 - (UIFocusEffect *)focusEffect {
     return [UIFocusHaloEffect effectWithRect:[self focusEffectRect]];
 }
+#endif
 
 - (nullable id)accessibilityHitTest:(CGPoint)point withEvent:(nullable UIEvent *)event {
     if (@available(iOS 18.0, *)) {

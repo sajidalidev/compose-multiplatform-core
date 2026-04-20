@@ -17,6 +17,7 @@
 #import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
+#if !TARGET_OS_TV
 
 @interface CMPUIWindowSceneUtils : NSObject
 
@@ -33,5 +34,6 @@ NS_ASSUME_NONNULL_BEGIN
                              errorHandler:(void (^ _Nullable)(NSError * _Nonnull error))errorHandler;
 
 @end
+#endif
 
 NS_ASSUME_NONNULL_END

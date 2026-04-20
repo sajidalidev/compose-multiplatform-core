@@ -62,6 +62,7 @@ androidXMultiplatform {
     desktop()
     mac()
     ios()
+    tvos()
     js()
     wasmJs()
 
@@ -267,10 +268,19 @@ androidXMultiplatform {
             dependsOn(nonJvmTest)
         }
 
-        iosMain {
+        uiKitCommonMain {
+            dependsOn(nativeMain)
             dependencies {
                 implementation(project(":compose:ui:ui-uikit"))
             }
+        }
+
+        iosMain {
+            dependsOn(uiKitCommonMain)
+        }
+
+        tvosMain {
+            dependsOn(uiKitCommonMain)
         }
 
         iosInstrumentedTest {
