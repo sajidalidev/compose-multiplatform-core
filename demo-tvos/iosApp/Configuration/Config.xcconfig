@@ -1,0 +1,4 @@
+TEAM_ID=
+BUNDLE_ID=org.jetbrains.compose.demo.tvos
+FRAMEWORK_SEARCH_PATHS=$(inherited) $(SRCROOT)/../out/compose-multiplatform-core/demo-tvos/build/xcode-frameworks/$(CONFIGURATION)/$(PLATFORM_NAME)$(SDK_DIR_SUFFIX)
+OTHER_LDFLAGS=$(inherited) -framework ComposeApp

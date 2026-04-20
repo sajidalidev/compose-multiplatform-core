@@ -18,6 +18,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#if !TARGET_OS_TV
+
 /// Wrapper class around UITextLoupeSession that prevents class type loading for iOS < 17.0
 API_AVAILABLE(ios(17.0))
 @interface CMPTextLoupeSession : NSObject
@@ -33,5 +35,7 @@ API_AVAILABLE(ios(17.0))
 - (void)invalidate;
 
 @end
+
+#endif
 
 NS_ASSUME_NONNULL_END
