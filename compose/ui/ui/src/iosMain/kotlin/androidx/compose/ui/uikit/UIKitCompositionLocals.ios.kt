@@ -21,28 +21,6 @@ import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.NativeTextInputContextMenuCustomAction
 import androidx.compose.ui.platform.NativeTextInputContext
-import platform.UIKit.UIView
-import platform.UIKit.UIViewController
-
-/**
- * Public value to get UIViewController of Compose window for library authors.
- * Maybe useful for features, like VideoPlayer and Bottom menus.
- * Please use it carefully and don't add or remove other views - check
- * [androidx.compose.ui.interop.UIKitView] for those purposes.
- */
-val LocalUIViewController = staticCompositionLocalOf<UIViewController> {
-    error("CompositionLocal UIViewController not provided")
-}
-
-/**
- * Public value to get top UIView of the current Compose window for library authors.
- * This might be useful for adding extra UIKit views on top of Composable content.
- * Please use it carefully and don't add or remove other views - check
- * [androidx.compose.ui.interop.UIKitView] for those purposes.
- */
-val LocalUIView = staticCompositionLocalOf<UIView> {
-    error("CompositionLocal UIView not provided")
-}
 
 @InternalComposeUiApi
 val LocalNativeTextInputContext = staticCompositionLocalOf<NativeTextInputContext> {

@@ -15,6 +15,7 @@
  */
 
 #import "CMPUIWindowSceneExtensions.h"
+#if !TARGET_OS_TV
 
 static NSString * const CMPUIWindowSceneUtilsErrorDomain = @"CMPUIWindowSceneUtilsErrorDomain";
 
@@ -118,3 +119,4 @@ typedef NS_ENUM(NSInteger, CMPUIWindowSceneUtilsErrorCode) {
 }
 
 @end
+#endif

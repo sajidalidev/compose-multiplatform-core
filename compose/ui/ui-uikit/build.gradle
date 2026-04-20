@@ -32,6 +32,12 @@ kotlin {
     iosSimulatorArm64("iosSimulatorArm64") {
         configure(it, false, "arm64", "iosSimulatorArm64Test")
     }
+    tvosArm64("tvosArm64") {
+        configure(it, true, "arm64", null /*"tvosArm64Test"*/, "tvOS")
+    }
+    tvosSimulatorArm64("tvosSimulatorArm64") {
+        configure(it, false, "arm64", "tvosSimulatorArm64Test", "tvOS")
+    }
 
     sourceSets {
         configureEach {
@@ -63,18 +69,19 @@ private def isMacHost() {
     return System.getProperty("os.name") == "Mac OS X"
 }
 
-private def configure(target, isDevice, architecture, testTarget) {
+private def configure(target, isDevice, architecture, testTarget, platform = "iOS") {
     if (!isMacHost()) return
     def objcDir = new File(project.projectDir, "src/iosMain/objc")
     def xcodeProjectDir = new File(objcDir, "CMPUIKitUtils")
-    def sdkName = isDevice ? "iphoneos" : "iphonesimulator"
-    def destination = isDevice ? "generic/platform=iOS" : "generic/platform=iOS Simulator"
+    def sdkPrefix = (platform == "tvOS") ? "appletv" : "iphone"
+    def sdkName = isDevice ? "${sdkPrefix}os" : "${sdkPrefix}simulator"
+    def destination = isDevice ? "generic/platform=${platform}" : "generic/platform=${platform} Simulator"
 
-    configureObjcUtils(target, xcodeProjectDir, sdkName, destination, architecture, isDevice, testTarget)
+    configureObjcUtils(target, xcodeProjectDir, sdkName, destination, architecture, isDevice, testTarget, platform)
     configureSwiftUtils(target, xcodeProjectDir, sdkName, destination, architecture)
 }
 
-private def configureObjcUtils(target, xcodeProjectDir, sdkName, destination, architecture, isDevice, testTarget) {
+private def configureObjcUtils(target, xcodeProjectDir, sdkName, destination, architecture, isDevice, testTarget, platform = "iOS") {
     def libraryName = "CMPUIKitObjcUtils"
     def testSchemeName = "CMPUIKitUtilsTests"
     def buildDir = new File(project.buildDir, "objc/${libraryName}-${sdkName}.xcarchive")
@@ -101,7 +108,8 @@ private def configureObjcUtils(target, xcodeProjectDir, sdkName, destination, ar
             standardOutput = new ByteArrayOutputStream()
             doLast {
                 def output = standardOutput.toString()
-                def match = output.find("iPhone 1[567][ \\w\\d]* \\(")
+                def deviceNamePattern = (platform == "tvOS") ? "Apple TV" : "iPhone 1[567]"
+                def match = output.find("${deviceNamePattern}[ \\w\\d]* \\(")
                 def targetDevice = match.dropRight(2)
                 device = targetDevice
             }
@@ -116,7 +124,7 @@ private def configureObjcUtils(target, xcodeProjectDir, sdkName, destination, ar
                     commandLine "xcodebuild",
                             "test",
                             "-scheme", testSchemeName,
-                            "-destination", "platform=iOS Simulator,name=${tasks[getTargetDeviceTaskName].device}",
+                            "-destination", "platform=${platform} Simulator,name=${tasks[getTargetDeviceTaskName].device}",
                             "-sdk", sdkName,
                             "VALID_ARCHS=${architecture}"
                 }

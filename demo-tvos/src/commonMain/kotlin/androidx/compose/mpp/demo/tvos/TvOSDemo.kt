@@ -13,6 +13,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
@@ -21,7 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -32,6 +37,7 @@ import androidx.compose.ui.input.key.isRepeat
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -42,10 +48,12 @@ data class DemoItem(
     val color: Color
 )
 
+private const val TEXT_INPUT_DEMO_ID = 19
+
 @Composable
 fun TvOSDemoApp() {
     var selectedItem by remember { mutableStateOf<DemoItem?>(null) }
-    var overlayFocus = remember { FocusRequester() }
+    val overlayFocus = remember { FocusRequester() }
     MaterialTheme {
         Box(
             modifier = Modifier
@@ -55,16 +63,22 @@ fun TvOSDemoApp() {
             Box(modifier = Modifier.fillMaxSize().padding(48.dp)) {
                 FocusableCardGrid { item ->
                     selectedItem = item
-                    overlayFocus.requestFocus()
                 }
             }
 
             selectedItem?.let { item ->
-                DetailOverlay(
-                    item = item,
-                    focusRequester = overlayFocus,
-                    onDismiss = { selectedItem = null }
-                )
+                if (item.id == TEXT_INPUT_DEMO_ID) {
+                    TextInputDemo(
+                        focusRequester = overlayFocus,
+                        onDismiss = { selectedItem = null }
+                    )
+                } else {
+                    DetailOverlay(
+                        item = item,
+                        focusRequester = overlayFocus,
+                        onDismiss = { selectedItem = null }
+                    )
+                }
             }
         }
     }
@@ -76,6 +90,7 @@ fun DetailOverlay(
     focusRequester: FocusRequester,
     onDismiss: () -> Unit
 ) {
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -83,10 +98,10 @@ fun DetailOverlay(
             .focusable()
             .focusRequester(focusRequester)
             .onPreviewKeyEvent {
-                if (it.type == KeyEventType.KeyUp && it.key == Key.Back) {
+                if (it.type == KeyEventType.KeyUp && it.key == Key.Menu) {
                     onDismiss()
-                }
-                false
+                    true
+                } else false
             },
         contentAlignment = Alignment.Center
     ) {
@@ -116,7 +131,7 @@ fun DetailOverlay(
                 // focusProperties { canFocus = false } prevents D-pad focus from entering the list
                 // item-by-item, so swiping scrolls the list instead of moving focus through rows.
                 Text(
-                    text = "Swipe UP/DOWN to scroll · Swipe LEFT/RIGHT to move focus · BACK to dismiss",
+                    text = "Swipe UP/DOWN to scroll · Swipe LEFT/RIGHT to move focus · MENU to dismiss",
                     fontSize = 14.sp,
                     color = Color.White.copy(alpha = 0.5f)
                 )
@@ -176,7 +191,8 @@ fun FocusableCardGrid(onClick: (DemoItem) -> Unit) {
             DemoItem(15, "Images", "Async Image Loading", Color(0xFFFF4081)),
             DemoItem(16, "Dialogs", "Popups & Sheets", Color(0xFF536DFE)),
             DemoItem(17, "Canvas", "Custom Drawing", Color(0xFF00E676)),
-            DemoItem(18, "Interop", "Native View Interop", Color(0xFFFF6D00))
+            DemoItem(18, "Interop", "Native View Interop", Color(0xFFFF6D00)),
+            DemoItem(TEXT_INPUT_DEMO_ID, "Text Input", "System Keyboard Input", Color(0xFF1565C0))
         )
     }
 
@@ -190,6 +206,126 @@ fun FocusableCardGrid(onClick: (DemoItem) -> Unit) {
         items(items) { item ->
             FocusableCard(item, onClick)
         }
+    }
+}
+
+@Composable
+fun TextInputDemo(focusRequester: FocusRequester, onDismiss: () -> Unit) {
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xCC000000))
+            .focusable()
+            .focusRequester(focusRequester)
+            .onPreviewKeyEvent { event ->
+                when {
+                    event.type == KeyEventType.KeyUp && event.key == Key.Menu -> {
+                        onDismiss(); true
+                    }
+                    // Intercept D-pad UP/DOWN so BasicTextField doesn't consume them for
+                    // cursor movement — on tvOS the D-pad is for focus navigation, not text editing.
+                    event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown -> {
+                        if (!focusManager.moveFocus(FocusDirection.Down))
+                            focusManager.moveFocus(FocusDirection.Enter)
+                        true
+                    }
+                    event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp -> {
+                        if (!focusManager.moveFocus(FocusDirection.Up))
+                            focusManager.moveFocus(FocusDirection.Enter)
+                        true
+                    }
+                    else -> false
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.size(width = 800.dp, height = 560.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2A3A))
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(40.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                Text(
+                    text = "Text Input Demo",
+                    fontSize = 36.sp,
+                    color = Color(0xFF90CAF9),
+                    style = MaterialTheme.typography.headlineLarge
+                )
+                Text(
+                    text = "Navigate to a field with D-pad · Press SELECT to open keyboard · Press MENU to dismiss",
+                    fontSize = 16.sp,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+                Divider(color = Color.White.copy(alpha = 0.2f))
+
+                LabeledTextField(label = "Username", placeholder = "Enter username…")
+                LabeledTextField(label = "Search", placeholder = "Search for something…")
+                LabeledTextField2(label = "Notes (TextFieldState)", placeholder = "Type notes here…")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LabeledTextField(label: String, placeholder: String) {
+    var text by remember { mutableStateOf("") }
+    var isFocused by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(text = label, fontSize = 18.sp, color = Color.White.copy(alpha = 0.8f))
+        BasicTextField(
+            value = text,
+            onValueChange = { text = it },
+            textStyle = TextStyle(fontSize = 20.sp, color = Color.White),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { isFocused = it.isFocused }
+                .border(
+                    width = if (isFocused) 2.dp else 1.dp,
+                    color = if (isFocused) Color(0xFF90CAF9) else Color.White.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(8.dp)
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            decorationBox = { inner ->
+                if (text.isEmpty()) {
+                    Text(placeholder, fontSize = 20.sp, color = Color.White.copy(alpha = 0.35f))
+                }
+                inner()
+            }
+        )
+    }
+}
+
+@Composable
+private fun LabeledTextField2(label: String, placeholder: String) {
+    val state = remember { TextFieldState() }
+    var isFocused by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(text = label, fontSize = 18.sp, color = Color.White.copy(alpha = 0.8f))
+        BasicTextField(
+            state = state,
+            textStyle = TextStyle(fontSize = 20.sp, color = Color.White),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { isFocused = it.isFocused }
+                .border(
+                    width = if (isFocused) 2.dp else 1.dp,
+                    color = if (isFocused) Color(0xFF90CAF9) else Color.White.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(8.dp)
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            decorator = { inner ->
+                if (state.text.isEmpty()) {
+                    Text(placeholder, fontSize = 20.sp, color = Color.White.copy(alpha = 0.35f))
+                }
+                inner()
+            }
+        )
     }
 }
 
