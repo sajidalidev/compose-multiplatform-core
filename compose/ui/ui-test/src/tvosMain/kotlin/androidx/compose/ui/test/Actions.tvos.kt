@@ -14,4 +14,11 @@
  * limitations under the License.
  */
 
-package androidx.compose.ui.uikit
+package androidx.compose.ui.test
+
+@OptIn(ExperimentalTestApi::class)
+internal actual fun SemanticsNodeInteraction.performClickImpl(): SemanticsNodeInteraction {
+    return performTouchInput {
+        click()
+    }
+}
