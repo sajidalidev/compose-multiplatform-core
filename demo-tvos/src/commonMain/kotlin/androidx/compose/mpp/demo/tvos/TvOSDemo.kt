@@ -98,7 +98,7 @@ fun DetailOverlay(
             .focusable()
             .focusRequester(focusRequester)
             .onPreviewKeyEvent {
-                if (it.type == KeyEventType.KeyUp && it.key == Key.Menu) {
+                if (it.type == KeyEventType.KeyUp && it.key == Key.Back) {
                     onDismiss()
                     true
                 } else false
@@ -221,7 +221,7 @@ fun TextInputDemo(focusRequester: FocusRequester, onDismiss: () -> Unit) {
             .focusRequester(focusRequester)
             .onPreviewKeyEvent { event ->
                 when {
-                    event.type == KeyEventType.KeyUp && event.key == Key.Menu -> {
+                    event.type == KeyEventType.KeyUp && event.key == Key.Back -> {
                         onDismiss(); true
                     }
                     // Intercept D-pad UP/DOWN so BasicTextField doesn't consume them for

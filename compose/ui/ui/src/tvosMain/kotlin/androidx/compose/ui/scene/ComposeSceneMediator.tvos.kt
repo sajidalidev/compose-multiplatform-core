@@ -779,7 +779,9 @@ internal class ComposeSceneMediator(
     fun onKeyboardPresses(presses: Set<*>) {
         presses.forEach { anyPress ->
             val press = anyPress as UIPress
-            val event = press.toComposeEvent()
+            val rawEvent = press.toComposeEvent()
+            // Siri Remote's Menu button is tvOS's back gesture.
+            val event = if (rawEvent.key == Key.Menu) rawEvent.copy(key = Key.Back) else rawEvent
             val keyId = press.key?.keyCode?.toLong() ?: -(press.type.toLong() + 1L)
 
             when (press.phase) {
