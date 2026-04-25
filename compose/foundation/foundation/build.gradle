@@ -188,7 +188,7 @@ androidXMultiplatform {
             dependsOn(darwinTest)
         }
 
-        uiKitCommonMain {
+        uiKitMain {
             dependsOn(darwinMain)
             dependencies {
                 // TODO: We shouldn't use it directly here
@@ -197,11 +197,11 @@ androidXMultiplatform {
         }
 
         iosMain {
-            dependsOn(uiKitCommonMain)
+            dependsOn(uiKitMain)
         }
 
         tvosMain {
-            dependsOn(uiKitCommonMain)
+            dependsOn(uiKitMain)
         }
 
         iosTest {
