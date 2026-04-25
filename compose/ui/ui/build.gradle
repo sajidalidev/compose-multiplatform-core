@@ -268,7 +268,7 @@ androidXMultiplatform {
             dependsOn(nonJvmTest)
         }
 
-        uiKitCommonMain {
+        uiKitMain {
             dependsOn(nativeMain)
             dependencies {
                 implementation(project(":compose:ui:ui-uikit"))
@@ -276,11 +276,11 @@ androidXMultiplatform {
         }
 
         iosMain {
-            dependsOn(uiKitCommonMain)
+            dependsOn(uiKitMain)
         }
 
         tvosMain {
-            dependsOn(uiKitCommonMain)
+            dependsOn(uiKitMain)
         }
 
         iosInstrumentedTest {
