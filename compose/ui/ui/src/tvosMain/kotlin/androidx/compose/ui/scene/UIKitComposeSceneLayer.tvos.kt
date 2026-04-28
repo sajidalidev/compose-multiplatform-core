@@ -94,6 +94,7 @@ internal class UIKitComposeSceneLayer(
         architectureComponentsOwner = ownerProvider,
         coroutineContext = layerCoroutineContext,
         redrawer = layersViewController.metalView.redrawer,
+        navigationEventInput = navigationEventInput,
         composeSceneFactory = ::createComposeScene,
         interfaceOrientationState = interfaceOrientationState
     ).also {

@@ -25,7 +25,7 @@ import androidx.navigationevent.NavigationEventInput
 
 internal open class BackNavigationEventInput : NavigationEventInput() {
     fun onKeyEvent(event: KeyEvent): Boolean {
-        if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+        if (event.type == KeyEventType.KeyDown && (event.key == Key.Escape || event.key == Key.Back)) {
             dispatchOnBackCompleted()
             return true
         } else {
