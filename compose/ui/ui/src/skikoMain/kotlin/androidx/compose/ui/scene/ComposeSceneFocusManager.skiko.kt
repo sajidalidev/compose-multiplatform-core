@@ -66,6 +66,15 @@ class ComposeSceneFocusManager internal constructor(
     }
 
     /**
+     * Move focus within [ComposeScene] in the specified [focusDirection].
+     *
+     * Returns `true` if focus was moved successfully.
+     */
+    fun moveFocus(focusDirection: FocusDirection): Boolean = measureAndLayoutThen {
+        focusOwner().moveFocus(focusDirection)
+    }
+
+    /**
      * Release focus from [ComposeScene].
      */
     fun releaseFocus() = measureAndLayoutThen { focusOwner().releaseFocus() }

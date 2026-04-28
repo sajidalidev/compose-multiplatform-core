@@ -821,10 +821,36 @@ internal class ComposeSceneMediator(
             tvOSTextInputService.showKeyboard()
             return true
         }
+
+        // tvOS text fields must not consume D-pad presses — there's no in-line cursor on
+        // tvOS, so consuming the key would trap focus inside the field. While a Compose
+        // text field holds input focus, route D-pad directly to focus traversal instead
+        // of letting `scene.sendKeyEvent` deliver it to the field.
+        if (tvOSTextInputService.activeRequest != null &&
+            !tvOSTextInputService.isKeyboardVisible
+        ) {
+            val direction = keyEvent.toFocusDirection()
+            if (direction != null) {
+                if (onPreviewKeyEvent(keyEvent)) return true
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    scene.focusManager.moveFocus(direction)
+                }
+                return true
+            }
+        }
+
         return onPreviewKeyEvent(keyEvent)
             || scene.sendKeyEvent(keyEvent)
             || onKeyEvent(keyEvent)
             || navigationEventInput.onKeyEvent(keyEvent)
+    }
+
+    private fun KeyEvent.toFocusDirection(): FocusDirection? = when (key) {
+        Key.DirectionUp -> FocusDirection.Up
+        Key.DirectionDown -> FocusDirection.Down
+        Key.DirectionLeft -> FocusDirection.Left
+        Key.DirectionRight -> FocusDirection.Right
+        else -> null
     }
 
     private inner class PlatformContextImpl : PlatformContext {
