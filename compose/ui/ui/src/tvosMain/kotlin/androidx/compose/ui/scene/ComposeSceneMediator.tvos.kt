@@ -44,6 +44,7 @@ import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.navigationevent.BackNavigationEventInput
 import androidx.compose.ui.platform.AccessibilityMediator
 import androidx.compose.ui.platform.CUPERTINO_TOUCH_SLOP
 import androidx.compose.ui.platform.DefaultInputModeManager
@@ -357,6 +358,7 @@ internal class ComposeSceneMediator(
     private val architectureComponentsOwner: PlatformArchitectureComponentsOwner,
     private val coroutineContext: CoroutineContext,
     private val redrawer: MetalRedrawer,
+    private val navigationEventInput: BackNavigationEventInput,
     interfaceOrientationState: State<InterfaceOrientation>,
     composeSceneFactory: (
         invalidate: () -> Unit,
@@ -825,6 +827,7 @@ internal class ComposeSceneMediator(
         return onPreviewKeyEvent(keyEvent)
             || scene.sendKeyEvent(keyEvent)
             || onKeyEvent(keyEvent)
+            || navigationEventInput.onKeyEvent(keyEvent)
     }
 
     private inner class PlatformContextImpl : PlatformContext {
