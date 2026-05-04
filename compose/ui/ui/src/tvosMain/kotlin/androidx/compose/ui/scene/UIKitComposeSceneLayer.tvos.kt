@@ -105,14 +105,20 @@ internal class UIKitComposeSceneLayer(
     private fun createComposeScene(
         invalidate: () -> Unit,
         platformContext: PlatformContext
-    ): ComposeScene =
-        PlatformLayersComposeScene(
-            density = mediator.screenDensity,
+    ): ComposeScene {
+        val screenDensity = mediator.screenDensity
+        val computed = Density(
+            density = screenDensity.density * screenDensity.density,
+            fontScale = screenDensity.fontScale
+        )
+        return PlatformLayersComposeScene(
+            density = computed,
             layoutDirection = initialLayoutDirection,
             coroutineContext = layerCoroutineContext,
             composeSceneContext = createComposeSceneContext(platformContext),
             invalidate = invalidate,
         )
+    }
 
     val hasInvalidations by mediator::hasInvalidations
 
