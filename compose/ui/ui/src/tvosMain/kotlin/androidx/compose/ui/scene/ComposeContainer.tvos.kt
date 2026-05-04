@@ -324,16 +324,23 @@ internal class ComposeContainer(
         platformContext: PlatformContext,
         layersHolder: ComposeLayersHolder,
         coroutineContext: CoroutineContext
-    ): ComposeScene = PlatformLayersComposeScene(
-        density = view.density,
-        layoutDirection = layoutDirection,
-        coroutineContext = coroutineContext,
-        composeSceneContext = createComposeSceneContext(
-            platformContext = platformContext,
-            layersHolder = layersHolder
-        ),
-        invalidate = invalidate,
-    )
+    ): ComposeScene {
+        val density = view.density
+        val computed = Density(
+            density = density.density * density.density,
+            fontScale = density.fontScale
+        )
+        return PlatformLayersComposeScene(
+            density = computed,
+            layoutDirection = layoutDirection,
+            coroutineContext = coroutineContext,
+            composeSceneContext = createComposeSceneContext(
+                platformContext = platformContext,
+                layersHolder = layersHolder
+            ),
+            invalidate = invalidate,
+        )
+    }
 
     /**
      * Enables or disables accessibility for each layer, as well as the root mediator, taking into
