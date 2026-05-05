@@ -373,10 +373,15 @@ internal class ComposeSceneMediator(
 
     // Tracks the start position of each Siri Remote indirect touch for swipe-to-focus fallback.
     private val indirectTouchStartPositions = mutableMapOf<Int, Offset>()
+    // True when a Select press fired while at least one indirect touch was in flight. The
+    // Siri Remote trackpad is itself the Select button; clicking it produces both a UIPress
+    // and a UITouch whose ENDED position can drift several dp from where it began. Without
+    // this flag, that drift is misread as a swipe.
+    private var selectPressedDuringIndirectTouch = false
     private val keyRepeatInitialDelayMs = 500L
     private val keyRepeatIntervalMs = 50L
     // Minimum swipe distance (dp) on the Siri Remote trackpad to trigger a focus move.
-    private val INDIRECT_SWIPE_THRESHOLD_DP = 20f
+    private val INDIRECT_SWIPE_THRESHOLD_DP = 40f
     private var platformScreenReader = object : PlatformScreenReader {
         override var isActive by mutableStateOf(false)
     }
@@ -542,6 +547,7 @@ internal class ComposeSceneMediator(
     private fun onCancelAllTouches(touches: Set<*>) {
         redrawer.ongoingInteractionEventsCount -= touches.count()
         indirectTouchStartPositions.clear()
+        selectPressedDuringIndirectTouch = false
         scene.cancelPointerInput()
     }
 
@@ -570,9 +576,19 @@ internal class ComposeSceneMediator(
             if (touch.type == UITouchTypeIndirect) {
                 val position = touch.offsetInView(_backgroundView, screenDensity.density)
                 when (eventKind) {
-                    TouchesEventKind.BEGAN -> indirectTouchStartPositions[touch.hashCode()] = position
+                    TouchesEventKind.BEGAN -> {
+                        if (indirectTouchStartPositions.isEmpty()) {
+                            selectPressedDuringIndirectTouch = false
+                        }
+                        indirectTouchStartPositions[touch.hashCode()] = position
+                    }
                     TouchesEventKind.ENDED -> {
-                        val startPos = indirectTouchStartPositions.remove(touch.hashCode()) ?: continue
+                        val startPos = indirectTouchStartPositions.remove(touch.hashCode())
+                        val suppressSwipe = selectPressedDuringIndirectTouch
+                        if (indirectTouchStartPositions.isEmpty()) {
+                            selectPressedDuringIndirectTouch = false
+                        }
+                        if (startPos == null || suppressSwipe) continue
                         val dx = position.x - startPos.x
                         val dy = position.y - startPos.y
                         val threshold = with(screenDensity) { INDIRECT_SWIPE_THRESHOLD_DP.dp.toPx() }
@@ -782,6 +798,17 @@ internal class ComposeSceneMediator(
             // Siri Remote's Menu button is tvOS's back gesture.
             val event = if (rawEvent.key == Key.Menu) rawEvent.copy(key = Key.Back) else rawEvent
             val keyId = press.key?.keyCode?.toLong() ?: -(press.type.toLong() + 1L)
+
+            // The Siri Remote trackpad doubles as the Select button: clicking it produces
+            // a Select press alongside an indirect touch whose end position can drift
+            // enough to look like a swipe. Mark the in-flight touch so its ENDED branch
+            // doesn't dispatch a directional key.
+            if (event.key == Key.DirectionCenter &&
+                press.phase == UIPressPhase.UIPressPhaseBegan &&
+                indirectTouchStartPositions.isNotEmpty()
+            ) {
+                selectPressedDuringIndirectTouch = true
+            }
 
             when (press.phase) {
                 UIPressPhase.UIPressPhaseBegan -> {
