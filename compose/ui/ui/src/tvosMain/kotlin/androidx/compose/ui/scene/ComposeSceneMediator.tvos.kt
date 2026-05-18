@@ -491,7 +491,10 @@ internal class ComposeSceneMediator(
     )
 
     private val windowInsetsManager = UIKitWindowInsetsManager(
-        windowInsetsView = { windowContext.window?.rootViewController?.view },
+        windowInsetsViews = listOf(
+            { _overlayView },
+            { windowContext.window?.rootViewController?.view },
+        ),
         interfaceOrientation = interfaceOrientationState
     )
 
