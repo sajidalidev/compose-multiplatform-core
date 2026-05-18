@@ -289,10 +289,11 @@ internal class ComposeContainer(
             override val platformContext: PlatformContext = platformContext
 
             override fun createLayer(
+                compositionContext: CompositionContext,
                 density: Density,
                 layoutDirection: LayoutDirection,
                 focusable: Boolean,
-                compositionContext: CompositionContext
+                consumePointerInputOutside: Boolean,
             ): ComposeSceneLayer {
                 val layer = UIKitComposeSceneLayer(
                     onClosed = {
@@ -306,6 +307,7 @@ internal class ComposeContainer(
                     configuration = configuration,
                     onAccessibilityChanged = ::onAccessibilityChanged,
                     focusedViewsList = if (focusable) focusedViewsList.childFocusedViewsList() else null,
+                    consumePointerInputOutside = consumePointerInputOutside,
                     parentCoroutineContext = compositionContext.effectCoroutineContext,
                     ownerProvider = architectureComponentsOwner,
                     interfaceOrientationState = interfaceOrientationState,
