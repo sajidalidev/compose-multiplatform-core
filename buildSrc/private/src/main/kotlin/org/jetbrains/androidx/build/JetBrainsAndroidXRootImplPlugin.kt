@@ -34,6 +34,15 @@ class JetBrainsAndroidXRootImplPlugin @Inject constructor(
     val componentFactory: SoftwareComponentFactory
 ) : Plugin<Project> {
     override fun apply(project: Project) {
+        // Seed the published-coordinate root from a Gradle property so a publish run can
+        // swap org.jetbrains.* for an alternate namespace (e.g. dev.sajidali.*) without
+        // touching build logic. Must run before any subproject configures, so coordinate
+        // rewriting in changeMavenCoordinatesToJetBrains() sees the right value.
+        JetBrainsPublication.coordinateRoot =
+            (project.findProperty("publication.coordinateRoot") as? String)
+                ?.takeIf { it.isNotBlank() }
+                ?: "org.jetbrains"
+
         project.allprojects { subproject ->
             // Apply capability rule to resolve conflicts between org.jetbrains.androidx.* and androidx.*
             subproject.configureJetBrainsCapabilityResolution()
