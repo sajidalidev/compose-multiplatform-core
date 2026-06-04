@@ -26,8 +26,15 @@ import org.gradle.api.Project
  */
 object JetBrainsPublication {
     private const val ANDROIDX_GROUP_PREFIX = "androidx."
-    private const val JETBRAINS_COMPOSE_GROUP_PREFIX = "org.jetbrains.compose."
-    private const val JETBRAINS_FORK_GROUP_PREFIX = "org.jetbrains.androidx."
+
+    // Root namespace for the fork's published artifacts. Seeded from the Gradle property
+    // `publication.coordinateRoot` at root-plugin apply; defaults to "org.jetbrains" to
+    // preserve the historical org.jetbrains.compose.* / org.jetbrains.androidx.* coordinates.
+    @Volatile
+    var coordinateRoot: String = "org.jetbrains"
+
+    private val JETBRAINS_COMPOSE_GROUP_PREFIX: String get() = "$coordinateRoot.compose."
+    private val JETBRAINS_FORK_GROUP_PREFIX: String get() = "$coordinateRoot.androidx."
 
     val libraryToComponents = mapOf(
         "COMPOSE" to listOf(
