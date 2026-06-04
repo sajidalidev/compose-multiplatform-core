@@ -59,6 +59,7 @@ import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.create
 import org.gradle.kotlin.dsl.findByType
+import org.gradle.plugins.signing.SigningExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.gradle.plugin.KotlinMultiplatformPluginWrapper
 import org.xml.sax.InputSource
@@ -132,6 +133,20 @@ private fun Project.configureComponentPublishing(
             it.maven { repo ->
                 repo.setUrl(getRepositoryDirectory())
             }
+            val remoteUrl = (project.findProperty("publish.maven.url") as? String)
+                ?: System.getenv("MAVEN_URL")
+            if (!remoteUrl.isNullOrBlank()) {
+                it.maven { repo ->
+                    repo.name = "Remote"
+                    repo.setUrl(remoteUrl)
+                    repo.credentials { creds ->
+                        creds.username = (project.findProperty("publish.maven.username") as? String)
+                            ?: System.getenv("MAVEN_USERNAME")
+                        creds.password = (project.findProperty("publish.maven.password") as? String)
+                            ?: System.getenv("MAVEN_PASSWORD")
+                    }
+                }
+            }
         }
         publications {
             if (appliesJavaGradlePluginPlugin()) {
@@ -166,6 +181,23 @@ private fun Project.configureComponentPublishing(
                     pom, androidLibrariesSetProvider,
                     publication.name == KMP_ANCHOR_PUBLICATION_NAME, kmpExtension.defaultPlatform)
             }
+        }
+    }
+
+    // PGP-sign all publications when a key is supplied (e.g. for Maven Central). Without the
+    // key, the signing plugin is never applied so existing local-only flows keep working.
+    val signingKey = (project.findProperty("publish.signing.key") as? String)
+        ?: System.getenv("SIGNING_KEY")
+    if (!signingKey.isNullOrBlank()) {
+        val signingPassword = (project.findProperty("publish.signing.password") as? String)
+            ?: System.getenv("SIGNING_PASSWORD")
+        apply(mapOf("plugin" to "signing"))
+        configure<SigningExtension> {
+            useInMemoryPgpKeys(signingKey, signingPassword)
+            // Sign every publication, including those that the KMP plugin registers
+            // in its own afterEvaluate (per-target publications arrive late).
+            extensions.getByType(PublishingExtension::class.java)
+                .publications.all { sign(it) }
         }
     }
 
