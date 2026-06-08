@@ -17,6 +17,7 @@
 package androidx.compose.ui.scene
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.ui.graphics.Canvas
@@ -26,6 +27,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.navigationevent.BackNavigationEventInput
+import androidx.compose.ui.platform.FrameRecomposer
 import androidx.compose.ui.platform.PlatformArchitectureComponentsOwner
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.uikit.ComposeContainerConfiguration
@@ -113,7 +115,8 @@ internal class UIKitComposeSceneLayer(
 
     private fun createComposeScene(
         invalidate: () -> Unit,
-        platformContext: PlatformContext
+        platformContext: PlatformContext,
+        frameRecomposer: FrameRecomposer,
     ): ComposeScene {
         val screenDensity = mediator.screenDensity
         val computed = Density(
@@ -121,11 +124,12 @@ internal class UIKitComposeSceneLayer(
             fontScale = screenDensity.fontScale
         )
         return PlatformLayersComposeScene(
+            frameRecomposer = frameRecomposer,
             density = computed,
             layoutDirection = initialLayoutDirection,
-            coroutineContext = layerCoroutineContext,
             composeSceneContext = createComposeSceneContext(platformContext),
-            invalidate = invalidate,
+            invalidateLayout = invalidate,
+            invalidateDraw = invalidate,
         )
     }
 
@@ -204,7 +208,11 @@ internal class UIKitComposeSceneLayer(
         content = content
     )
 
-    override fun setContent(content: @Composable () -> Unit) {
+    override fun setContent(
+        parentCompositionContext: CompositionContext,
+        content: @Composable () -> Unit,
+    ) {
+        // TODO: pass [parentCompositionContext] once a shared [Recomposer] exists.
         mediator.setContent {
             hostCompositionLocals {
                 ProvideComposeSceneLayerCompositionLocals(content)
