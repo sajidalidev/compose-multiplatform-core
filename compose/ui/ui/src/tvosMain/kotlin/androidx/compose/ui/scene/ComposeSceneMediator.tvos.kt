@@ -29,6 +29,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.TvOSHapticFeedback
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -286,6 +288,7 @@ private class TvOverlayInputView(
  * gesture recognizers.
  */
 private class TvBackgroundInputView(
+    private var onMovedToWindow: () -> Unit,
     private var onLayoutSubviews: () -> Unit,
     private var hitTestInteropView: (point: CValue<CGPoint>) -> UIView?,
     private var isPointInsideInteractionBounds: (CValue<CGPoint>) -> Boolean,
@@ -320,6 +323,7 @@ private class TvBackgroundInputView(
     override fun didMoveToWindow() {
         super.didMoveToWindow()
 
+        onMovedToWindow()
         setNeedsLayout()
     }
 
@@ -347,6 +351,7 @@ private class TvBackgroundInputView(
         hitTestInteropView = { null }
         isPointInsideInteractionBounds = { false }
         onLayoutSubviews = {}
+        onMovedToWindow = {}
         onAppeared = null
     }
 }
@@ -483,6 +488,7 @@ internal class ComposeSceneMediator(
      * The view handles user touches that occur only over the interop views located on it.
      */
     private val _backgroundView = TvBackgroundInputView(
+        onMovedToWindow = ::focusOverlayViewIfNeeded,
         onLayoutSubviews = ::updateLayout,
         hitTestInteropView = ::hitTestInteropView,
         isPointInsideInteractionBounds = ::isPointInsideInteractionBounds,
@@ -534,7 +540,16 @@ internal class ComposeSceneMediator(
         )
     }
 
-    var isAccessibilityEnabled by semanticsOwnerListener::isEnabled
+    var isFocusEnabled: Boolean
+        get() = semanticsOwnerListener.isEnabled
+        set(value) {
+            semanticsOwnerListener.isEnabled = value
+            if (value) {
+                focusOverlayViewIfNeeded()
+            } else {
+                _overlayView.resignFirstResponder()
+            }
+        }
 
     val hasInvalidations: Boolean
         get() = frameRecomposer.hasPendingWork() ||
@@ -793,6 +808,32 @@ internal class ComposeSceneMediator(
         scene.focusManager.takeFocus(FocusDirection.Enter)
     }
 
+    // The overlay view needs to be the first responder to handle keyboard/Siri Remote key events.
+    // The system generally reassigns first-responder focus to the overlay when other views resign
+    // it, except at the time of initial appearance, so claim it explicitly once attached.
+    private fun focusOverlayViewIfNeeded() {
+        if (!isFocusEnabled) {
+            return
+        }
+        val window = _overlayView.window ?: return
+        fun findFirstResponder(view: UIView): UIView? {
+            if (view.isFirstResponder) {
+                return view
+            }
+            for (subview in view.subviews) {
+                subview as UIView
+                val firstResponder = findFirstResponder(subview)
+                if (firstResponder != null) {
+                    return firstResponder
+                }
+            }
+            return null
+        }
+        if (findFirstResponder(window) == null) {
+            _overlayView.becomeFirstResponder()
+        }
+    }
+
     fun setKeyEventListener(
         onPreviewKeyEvent: ((KeyEvent) -> Boolean)?,
         onKeyEvent: ((KeyEvent) -> Boolean)?
@@ -901,6 +942,10 @@ internal class ComposeSceneMediator(
         override val architectureComponentsOwner get() = this@ComposeSceneMediator.architectureComponentsOwner
         override val screenReader: PlatformScreenReader get() = platformScreenReader
 
+        override val hapticFeedback: HapticFeedback by lazy(LazyThreadSafetyMode.NONE) {
+            TvOSHapticFeedback()
+        }
+
         override fun convertLocalToWindowPosition(localPosition: Offset): Offset =
             windowContext.convertLocalToWindowPosition(_overlayView, localPosition)
 
@@ -914,9 +959,13 @@ internal class ComposeSceneMediator(
             windowContext.convertScreenToLocalPosition(_overlayView, positionOnScreen)
 
         override val viewConfiguration get() = this@ComposeSceneMediator.viewConfiguration
-        override val inputModeManager = DefaultInputModeManager(InputMode.Touch)
+
+        override val inputModeManager by lazy(LazyThreadSafetyMode.NONE) {
+            DefaultInputModeManager(InputMode.Touch)
+        }
         override val semanticsOwnerListener get() = this@ComposeSceneMediator.semanticsOwnerListener
         override val windowInsets get() = this@ComposeSceneMediator.windowInsetsManager.windowInsets
+        override val outOfFrameExecutor get() = this@ComposeSceneMediator.redrawer.outOfFrameExecutor
         // On tvOS, Siri Remote touches are UITouchTypeIndirect which map to PointerType.Mouse.
         // Clearing focus on mouse-down would lose Compose focus on every remote swipe.
         override val isClearFocusOnMouseDownEnabled: Boolean get() = false

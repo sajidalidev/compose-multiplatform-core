@@ -24,11 +24,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.LocalSystemTheme
 import androidx.compose.ui.SystemTheme
 import androidx.compose.ui.graphics.asComposeCanvas
-import androidx.compose.ui.hapticfeedback.TvOSHapticFeedback
 import androidx.compose.ui.navigationevent.BackNavigationEventInput
 import androidx.compose.ui.platform.DefaultArchitectureComponentsOwner
 import androidx.compose.ui.platform.FrameRecomposer
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.MotionDurationScaleImpl
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.PlatformWindowContext
@@ -78,7 +76,6 @@ internal class ComposeContainer(
     private val coroutineContext: CoroutineContext,
     private val lifecycleDelegate: ComposeContainerLifecycleDelegate
 ) {
-    private val hapticFeedback = TvOSHapticFeedback()
 
     val view = ComposeContainerView(
         transparentForTouches = false,
@@ -258,7 +255,7 @@ internal class ComposeContainer(
 
         architectureComponentsOwner.navigationEventDispatcher.addInput(navigationEventInput)
         lifecycleDelegate.windowScene = windowScene
-        onAccessibilityChanged()
+        onFocusConditionsChanged()
     }
 
     fun disposeComposeScene() {
@@ -299,7 +296,7 @@ internal class ComposeContainer(
                 val layer = UIKitComposeSceneLayer(
                     onClosed = {
                         layersHolder.getLayersViewController().detach(it)
-                        onAccessibilityChanged()
+                        onFocusConditionsChanged()
                     },
                     createComposeSceneContext = {
                         createComposeSceneContext(it, layersHolder, frameRecomposer)
@@ -308,7 +305,7 @@ internal class ComposeContainer(
                     layersViewController = layersHolder.getLayersViewController(),
                     initialLayoutDirection = layoutDirection,
                     configuration = configuration,
-                    onAccessibilityChanged = ::onAccessibilityChanged,
+                    onFocusConditionsChanged = ::onFocusConditionsChanged,
                     focusedViewsList = if (focusable) focusedViewsList.childFocusedViewsList() else null,
                     consumePointerInputOutside = consumePointerInputOutside,
                     parentCoroutineContext = frameRecomposer.compositionContext.effectCoroutineContext,
@@ -317,7 +314,7 @@ internal class ComposeContainer(
                 )
 
                 layersHolder.getLayersViewController().attach(layer)
-                onAccessibilityChanged()
+                onFocusConditionsChanged()
 
                 return layer
             }
@@ -355,15 +352,15 @@ internal class ComposeContainer(
      * Enables or disables accessibility for each layer, as well as the root mediator, taking into
      * account layer order and ability to overlay underlying content.
      */
-    private fun onAccessibilityChanged() {
-        var isAccessibilityEnabled = true
+    private fun onFocusConditionsChanged() {
+        var isFocusEnabled = true
         layersHolder?.layersViewController?.withLayers {
             it.fastForEachReversed { layer ->
-                layer.isAccessibilityEnabled = isAccessibilityEnabled
-                isAccessibilityEnabled = isAccessibilityEnabled && !layer.focusable
+                layer.isFocusEnabled = isFocusEnabled
+                isFocusEnabled = isFocusEnabled && !layer.focusable
             }
         }
-        mediator?.isAccessibilityEnabled = isAccessibilityEnabled
+        mediator?.isFocusEnabled = isFocusEnabled
     }
 
     private val containingViewController: UIViewController get() {
@@ -380,7 +377,6 @@ internal class ComposeContainer(
     @Composable
     private fun ProvideContainerCompositionLocals(content: @Composable () -> Unit) =
         CompositionLocalProvider(
-            LocalHapticFeedback provides hapticFeedback,
             LocalUIViewController provides containingViewController,
             LocalSystemTheme provides systemThemeState.value,
             content = content
