@@ -834,6 +834,23 @@ internal class ComposeSceneMediator(
         }
     }
 
+    /**
+     * Forcibly reclaim first responder for this scene's overlay view during overlay teardown.
+     *
+     * Unlike [focusOverlayViewIfNeeded], this does NOT bail when another responder already holds
+     * focus. When an overlay layer closes, the departing layer's view may still be first responder,
+     * and the reclaim scheduled by [androidx.compose.ui.window.FocusedViewsList.disposeChild] runs
+     * asynchronously (delay(0)) — on tvOS the focus engine can hand first responder elsewhere in
+     * that gap, permanently dropping Siri-Remote/D-pad delivery. Claiming first responder
+     * synchronously here closes the gap. Mirrors the keyboard-dismiss fix in
+     * [androidx.compose.ui.platform.TvOSTextInputService] (synchronous reclaim before removal).
+     */
+    internal fun reclaimFirstResponderOnTvOS() {
+        if (isFocusEnabled && _overlayView.window != null) {
+            _overlayView.becomeFirstResponder()
+        }
+    }
+
     fun setKeyEventListener(
         onPreviewKeyEvent: ((KeyEvent) -> Boolean)?,
         onKeyEvent: ((KeyEvent) -> Boolean)?

@@ -297,6 +297,9 @@ internal class ComposeContainer(
                     onClosed = {
                         layersHolder.getLayersViewController().detach(it)
                         onFocusConditionsChanged()
+                        // tvOS: synchronously reclaim first responder on the surviving scene so
+                        // Siri-Remote/D-pad keeps being delivered without an extra wake-up press.
+                        reclaimFirstResponderAfterLayerClosedOnTvOS()
                     },
                     createComposeSceneContext = {
                         createComposeSceneContext(it, layersHolder, frameRecomposer)
@@ -361,6 +364,32 @@ internal class ComposeContainer(
             }
         }
         mediator?.isFocusEnabled = isFocusEnabled
+    }
+
+    /**
+     * Synchronously reclaim first responder on the scene that survives a layer close, so
+     * Siri-Remote/D-pad keys keep being delivered without requiring an extra button press.
+     *
+     * The surviving scene is the top-most remaining focusable overlay, or the root mediator when no
+     * focusable overlay remains. [onFocusConditionsChanged] has already refreshed each scene's
+     * `isFocusEnabled`, and the reclaim ([ComposeSceneMediator.reclaimFirstResponderOnTvOS]) is a
+     * no-op on scenes that are not focus-enabled, so targeting the chosen survivor is safe.
+     */
+    private fun reclaimFirstResponderAfterLayerClosedOnTvOS() {
+        var topFocusableLayer: UIKitComposeSceneLayer? = null
+        layersHolder?.layersViewController?.withLayers {
+            it.fastForEachReversed { layer ->
+                if (topFocusableLayer == null && layer.focusable) {
+                    topFocusableLayer = layer
+                }
+            }
+        }
+        val survivor = topFocusableLayer
+        if (survivor != null) {
+            survivor.reclaimFirstResponderOnTvOS()
+        } else {
+            mediator?.reclaimFirstResponderOnTvOS()
+        }
     }
 
     private val containingViewController: UIViewController get() {

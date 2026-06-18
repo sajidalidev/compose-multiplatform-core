@@ -137,6 +137,15 @@ internal class UIKitComposeSceneLayer(
 
     var isFocusEnabled by mediator::isFocusEnabled
 
+    /**
+     * Forcibly reclaim first responder for this layer's scene when another layer closes and this
+     * layer becomes the surviving focus target. Forwards to the mediator's unconditional reclaim.
+     * See [ComposeSceneMediator.reclaimFirstResponderOnTvOS].
+     */
+    internal fun reclaimFirstResponderOnTvOS() {
+        mediator.reclaimFirstResponderOnTvOS()
+    }
+
     override var density: Density
         get() = mediator.composeSceneDensity
         set(_) {
