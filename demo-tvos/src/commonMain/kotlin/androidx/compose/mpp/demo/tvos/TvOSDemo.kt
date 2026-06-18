@@ -40,6 +40,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 
 data class DemoItem(
     val id: Int,
@@ -50,10 +52,35 @@ data class DemoItem(
 
 private const val TEXT_INPUT_DEMO_ID = 19
 
+// Routes the "Dialogs" card to a real Popup (a ComposeSceneLayer) instead of the inline overlay,
+// so the scene-layer first-responder reclaim on close can be exercised.
+private const val POPUP_DEMO_ID = 16
+
 @Composable
 fun TvOSDemoApp() {
     var selectedItem by remember { mutableStateOf<DemoItem?>(null) }
     val overlayFocus = remember { FocusRequester() }
+    // One FocusRequester per card so focus is restored to the EXACT card that opened an overlay once
+    // it's dismissed. We restore explicitly (not via focusRestorer()) because the opening card is
+    // always known (selectedItem), and focusRestorer()'s implicit save is scene-local — it doesn't
+    // cover the Popup case, where the overlay is a separate ComposeSceneLayer and focus never
+    // "leaves" the grid group within the main scene, so it would fall back to an arbitrary card.
+    val cardFocusRequesters = remember { mutableMapOf<Int, FocusRequester>() }
+    val focusRequesterFor: (Int) -> FocusRequester = { id ->
+        cardFocusRequesters.getOrPut(id) { FocusRequester() }
+    }
+    var lastOpenedId by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(selectedItem) {
+        val opened = selectedItem
+        if (opened != null) {
+            lastOpenedId = opened.id
+        } else {
+            lastOpenedId?.let { id ->
+                lastOpenedId = null
+                cardFocusRequesters[id]?.requestFocus()
+            }
+        }
+    }
     MaterialTheme {
         Box(
             modifier = Modifier
@@ -61,19 +88,22 @@ fun TvOSDemoApp() {
                 .background(Color(0xFF1A1A1A))
         ) {
             Box(modifier = Modifier.fillMaxSize().padding(48.dp)) {
-                FocusableCardGrid { item ->
+                FocusableCardGrid(focusRequesterFor = focusRequesterFor) { item ->
                     selectedItem = item
                 }
             }
 
             selectedItem?.let { item ->
-                if (item.id == TEXT_INPUT_DEMO_ID) {
-                    TextInputDemo(
+                when (item.id) {
+                    TEXT_INPUT_DEMO_ID -> TextInputDemo(
                         focusRequester = overlayFocus,
                         onDismiss = { selectedItem = null }
                     )
-                } else {
-                    DetailOverlay(
+                    POPUP_DEMO_ID -> PopupOverlayDemo(
+                        item = item,
+                        onDismiss = { selectedItem = null }
+                    )
+                    else -> DetailOverlay(
                         item = item,
                         focusRequester = overlayFocus,
                         onDismiss = { selectedItem = null }
@@ -170,8 +200,58 @@ fun DetailOverlay(
     }
 }
 
+/**
+ * A REAL overlay backed by a [Popup] (a ComposeSceneLayer), unlike the inline [DetailOverlay].
+ * Used to exercise the scene-layer first-responder reclaim on close: after dismissing with MENU,
+ * the grid D-pad should keep working immediately, with no extra wake-up press.
+ */
 @Composable
-fun FocusableCardGrid(onClick: (DemoItem) -> Unit) {
+fun PopupOverlayDemo(item: DemoItem, onDismiss: () -> Unit) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    Popup(
+        alignment = Alignment.Center,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true, dismissOnBackPress = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 700.dp, height = 460.dp)
+                .background(Color(0xFF2A2A2A), shape = RoundedCornerShape(16.dp))
+                .focusable()
+                .focusRequester(focusRequester)
+                .onPreviewKeyEvent {
+                    if (it.type == KeyEventType.KeyUp && it.key == Key.Back) {
+                        onDismiss()
+                        true
+                    } else false
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Text(
+                    text = "${item.title} — real Popup layer",
+                    fontSize = 32.sp,
+                    color = item.color,
+                    style = MaterialTheme.typography.headlineLarge
+                )
+                Text(
+                    text = "This overlay is a ComposeSceneLayer. Press MENU to dismiss — the grid " +
+                        "D-pad should work immediately after, with no extra button press.",
+                    fontSize = 16.sp,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun FocusableCardGrid(focusRequesterFor: (Int) -> FocusRequester, onClick: (DemoItem) -> Unit) {
     val items = remember {
         listOf(
             DemoItem(1, "Foundation", "Layout & Focus APIs", Color(0xFF6200EE)),
@@ -204,7 +284,7 @@ fun FocusableCardGrid(onClick: (DemoItem) -> Unit) {
         modifier = Modifier.fillMaxSize()
     ) {
         items(items) { item ->
-            FocusableCard(item, onClick)
+            FocusableCard(item, focusRequesterFor(item.id), onClick)
         }
     }
 }
@@ -331,13 +411,14 @@ private fun LabeledTextField2(label: String, placeholder: String) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FocusableCard(item: DemoItem, onClick: (DemoItem) -> Unit) {
+fun FocusableCard(item: DemoItem, focusRequester: FocusRequester, onClick: (DemoItem) -> Unit) {
     var isFocused by remember { mutableStateOf(false) }
     var isLongPressed by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
             .size(width = 280.dp, height = 180.dp)
+            .focusRequester(focusRequester)
             .onFocusChanged { focusState ->
                 isFocused = focusState.isFocused
                 if (!focusState.isFocused) isLongPressed = false
