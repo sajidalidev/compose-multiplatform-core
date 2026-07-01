@@ -350,6 +350,7 @@ includeProject(":compose:desktop:desktop:desktop-samples", "compose/desktop/desk
 includeProject(":compose:mpp")
 includeProject(":compose:mpp:demo")
 includeProject(":compose:mpp:demo-swiftui")
+includeProject(":demo-tvos")
 includeProject(":compose:foundation:foundation")
 includeProject(":compose:foundation:foundation-layout")
 includeProject(":compose:foundation:foundation-lint")
