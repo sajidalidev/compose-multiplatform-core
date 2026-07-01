@@ -38,6 +38,7 @@ androidXMultiplatform {
     desktop()
     mac()
     ios()
+    tvos()
     js()
     wasmJs()
 
@@ -45,7 +46,7 @@ androidXMultiplatform {
 
     sourceSets {
         commonMain.dependencies {
-            api("org.jetbrains.androidx.navigation:navigation-compose:2.9.2")
+            api(project(":navigation:navigation-compose"))
             implementation(project(":compose:material:material"))
             implementation(libs.kotlinSerializationCore)
         }
