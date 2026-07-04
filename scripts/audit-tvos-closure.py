@@ -14,6 +14,18 @@ one of the `-tvos*` platform-split modules), this script walks its declared
                                referenced group:module:version publishes tvOS klib
                                variants upstream (Maven Central / Google Maven), verified
                                by fetching its .module and checking for `tvos_` variants.
+  OK-EXTERNAL-TVOS-ASSUMED     the dependency's group is org.jetbrains.kotlin or
+                               org.jetbrains.kotlinx. The Kotlin stdlib and kotlinx
+                               libraries ship native klibs for every Kotlin/Native target
+                               (including tvOS) universally, but are resolved by the
+                               Kotlin/Native compiler's own toolchain/klib distribution
+                               mechanism rather than via per-target Gradle-variant-aware
+                               Maven artifacts -- so the upstream .module for these groups
+                               will never advertise a `tvos_`-tagged variant the same way
+                               AndroidX/Compose libraries do, and the OK-EXTERNAL-TVOS
+                               network check would always misclassify them as FAIL. This
+                               class exists purely to keep that known-safe noise out of
+                               the FAIL bucket so remaining FAILs are meaningful.
   COVERED-BY-REDIRECT          the dependency's group is one that the tvos-redirect
                                Gradle plugin rewrites to the audited prefix, AND the
                                rewritten (twin) coordinate exists locally at the exact
@@ -69,6 +81,16 @@ REDIRECT_COVERED_GROUPS = {
 }
 
 TVOS_NATIVE_TARGET_ATTR = "org.jetbrains.kotlin.native.target"
+
+# Groups whose upstream .module never advertises a `tvos_`-tagged variant even though the
+# artifact ships native klibs for every Kotlin/Native target universally (Kotlin/Native
+# resolves these via the compiler's own toolchain/klib distribution, not per-target
+# Gradle-variant-aware Maven artifacts). Classified OK-EXTERNAL-TVOS-ASSUMED instead of
+# running the (always-negative) network check, so they don't drown out real FAILs.
+ASSUMED_TVOS_UNIVERSAL_GROUP_PREFIXES = (
+    "org.jetbrains.kotlin",
+    "org.jetbrains.kotlinx",
+)
 
 # Remote repositories checked (in order) for OK-EXTERNAL-TVOS lookups.
 REMOTE_REPO_BASE_URLS = [
@@ -241,6 +263,15 @@ def classify_dependency(dep: Dependency, repo_root: Path, audited_prefix_dotted:
             )
         return "FAIL", f"covered group {dep.group} but no local twin {twin_group}:{dep.module} at any version"
 
+    # (ii-assumed) OK-EXTERNAL-TVOS-ASSUMED -- kotlin-stdlib / kotlinx libraries ship native
+    # klibs universally but are resolved outside Gradle's per-target variant metadata; skip
+    # the (always-negative) network check for them.
+    if dep.group.startswith(ASSUMED_TVOS_UNIVERSAL_GROUP_PREFIXES):
+        return "OK-EXTERNAL-TVOS-ASSUMED", (
+            "Kotlin/Native toolchain-resolved dependency (kotlin-stdlib/kotlinx); "
+            "assumed to ship tvOS klibs universally, not verified via Maven .module"
+        )
+
     # (ii) OK-EXTERNAL-TVOS
     has_tvos = fetch_external_module_tvos_support(dep.group, dep.module, dep.version)
     if has_tvos is True:
@@ -294,7 +325,15 @@ def run_audit(repo_root: Path, group_prefix: str) -> AuditResult:
 
 
 def print_report(result: AuditResult, repo_root: Path) -> int:
-    classifications = ["OK-INTERNAL", "OK-EXTERNAL-TVOS", "COVERED-BY-REDIRECT", "WARN", "FAIL", "UNKNOWN"]
+    classifications = [
+        "OK-INTERNAL",
+        "OK-EXTERNAL-TVOS",
+        "OK-EXTERNAL-TVOS-ASSUMED",
+        "COVERED-BY-REDIRECT",
+        "WARN",
+        "FAIL",
+        "UNKNOWN",
+    ]
     counts = {c: len(result.by_classification(c)) for c in classifications}
 
     problems = result.by_classification("FAIL") + result.by_classification("UNKNOWN")
