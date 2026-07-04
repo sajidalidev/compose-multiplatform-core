@@ -13,12 +13,27 @@ set -e
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # JDK 21 is required by the build (org.gradle.java.installations.fromEnv=ANDROIDX_JDK21).
-# Fail fast rather than let Gradle fall back to an unsupported JDK.
-if [ -z "$ANDROIDX_JDK21" ] && [ -z "$JAVA_HOME" ]; then
+# Fail fast rather than let Gradle fall back to an unsupported JDK. It's not enough for the
+# env var to merely be set -- verify the java binary it points at actually reports major
+# version 21.
+JDK21_HOME="${ANDROIDX_JDK21:-$JAVA_HOME}"
+if [ -z "$JDK21_HOME" ]; then
     echo "ERROR: JDK 21 is required. Export ANDROIDX_JDK21 (and/or JAVA_HOME) pointing at a JDK 21 install." >&2
     echo "Example:" >&2
     echo "  export JAVA_HOME=\"\$(/usr/libexec/java_home -v 21)\"" >&2
     echo "  export ANDROIDX_JDK21=\"\$JAVA_HOME\"" >&2
+    exit 1
+fi
+
+if [ ! -x "$JDK21_HOME/bin/java" ]; then
+    echo "ERROR: No java executable found at \"$JDK21_HOME/bin/java\". Check ANDROIDX_JDK21/JAVA_HOME." >&2
+    exit 1
+fi
+
+if ! "$JDK21_HOME/bin/java" -version 2>&1 | grep -q 'version "21'; then
+    echo "ERROR: \"$JDK21_HOME/bin/java\" is not a JDK 21 install. Got:" >&2
+    "$JDK21_HOME/bin/java" -version 2>&1 | sed 's/^/  /' >&2
+    echo "Export ANDROIDX_JDK21 (and/or JAVA_HOME) pointing at a JDK 21 install." >&2
     exit 1
 fi
 
