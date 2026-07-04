@@ -36,7 +36,16 @@ object JetBrainsPublication {
     private val JETBRAINS_COMPOSE_GROUP_PREFIX: String get() = "$coordinateRoot.compose."
     private val JETBRAINS_FORK_GROUP_PREFIX: String get() = "$coordinateRoot.androidx."
 
-    val libraryToComponents = mapOf(
+    // NOTE: this is a computed property (`get() = ...`), not a stored `val`, and must stay
+    // that way. `coordinateRoot` above is set by JetBrainsAndroidXRootImplPlugin.apply() via
+    // `JetBrainsPublication.coordinateRoot = ...`, but that assignment itself is what first
+    // touches this `object`, which forces Kotlin to run ALL of its property initializers
+    // (including this one) using the *default* "org.jetbrains" value before the assignment
+    // takes effect. A stored `val` here would therefore always see "org.jetbrains" for the
+    // `coordinateRoot`-conditional entries below, regardless of what gets published. Making it
+    // a computed property defers evaluation to each access, all of which happen after
+    // coordinateRoot has its final value.
+    val libraryToComponents: Map<String, List<ComposeComponent>> get() = mapOf(
         "COMPOSE" to listOf(
             ComposeComponent(":compose:animation:animation"),
             ComposeComponent(":compose:animation:animation-core"),
@@ -88,11 +97,23 @@ object JetBrainsPublication {
                 )
             ),
         ),
-        "COMPOSE_MATERIAL3" to listOf(
-            ComposeComponent(":compose:material3:material3"),
-            ComposeComponent(":compose:material3:material3-window-size-class"),
-            ComposeComponent(":compose:material3:material3-adaptive-navigation-suite"),
-        ),
+        "COMPOSE_MATERIAL3" to buildList {
+            add(ComposeComponent(":compose:material3:material3"))
+            add(ComposeComponent(":compose:material3:material3-window-size-class"))
+            // material3-adaptive-navigation-suite has a project dependency on
+            // :compose:material3:adaptive:adaptive (api(project(":compose:material3:adaptive:adaptive")))
+            // which in turn requires upstream androidx.window:window-core -- a library that
+            // publishes no Kotlin/Native (tvOS) klib variant at all. This tvOS release
+            // deliberately excludes COMPOSE_MATERIAL3_ADAPTIVE for that reason (see
+            // scripts/publish-tvos-fork.sh); exclude its sole COMPOSE_MATERIAL3 consumer here
+            // too for custom-root (fork) publishes, or the tvOS build would still pull
+            // adaptive/window-core in transitively via this project reference. Default
+            // (org.jetbrains) publishes are unaffected. Revisit when upstream androidx.window
+            // ships a tvOS target, or if we decide to stub/vendor it ourselves.
+            if (coordinateRoot == "org.jetbrains") {
+                add(ComposeComponent(":compose:material3:material3-adaptive-navigation-suite"))
+            }
+        },
         "COMPOSE_MATERIAL3_ADAPTIVE" to listOf(
             ComposeComponent(":compose:material3:adaptive:adaptive"),
             ComposeComponent(":compose:material3:adaptive:adaptive-layout"),
@@ -176,10 +197,13 @@ object JetBrainsPublication {
     fun isJetBrainsForkGroup(group: String): Boolean =
         group.startsWith(JETBRAINS_FORK_GROUP_PREFIX) || group.startsWith(JETBRAINS_COMPOSE_GROUP_PREFIX)
 
-    val projectPathToComponent: Map<String, ComposeComponent> = libraryToComponents.values
+    // Also computed properties (not stored `val`s), for the same reason as
+    // `libraryToComponents` above: they derive from it, so they must be re-evaluated on each
+    // access to reflect the final `coordinateRoot`-conditional membership.
+    val projectPathToComponent: Map<String, ComposeComponent> get() = libraryToComponents.values
         .flatten().associateBy { it.path }
 
-    val projectPathToLibrary: Map<String, String> = libraryToComponents.entries
+    val projectPathToLibrary: Map<String, String> get() = libraryToComponents.entries
         .flatMap { entry -> entry.value.map { entry.key to it  } }
         .associate { it.second.path to it.first }
 

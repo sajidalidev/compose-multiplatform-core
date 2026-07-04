@@ -41,7 +41,6 @@ fi
 # source of truth for these; update the values below if it changes.
 #   COMPOSE               = "1.12.0-beta01"
 #   COMPOSE_MATERIAL3     = "1.5.0-alpha22"
-#   COMPOSE_MATERIAL3_ADAPTIVE = "1.3.0-beta02"
 #   LIFECYCLE             = "2.11.0"
 #   NAVIGATION            = "2.10.0-alpha05"
 #   NAVIGATION3           = "1.2.0-alpha04"
@@ -52,9 +51,16 @@ fi
 # keys registered in JetBrainsPublication.libraryToComponents (buildSrc/public/.../
 # JetBrainsPublication.kt), which use underscores for NAVIGATION_3 and NAVIGATION_EVENT
 # even though the toml keys above (NAVIGATION3 / NAVIGATIONEVENT) do not.
+#
+# COMPOSE_MATERIAL3_ADAPTIVE is DELIBERATELY EXCLUDED from this tvOS release (controller
+# decision, task 8c attempt 3): compose:material3:adaptive:adaptive depends on upstream
+# androidx.window:window-core (via `import androidx.window.core.layout.WindowSizeClass`),
+# which publishes no Kotlin/Native klib variant at all -- not a fork regression, a genuine
+# upstream gap. Porting around it (stubbing an actual, vendoring a fork of window-core,
+# etc.) is out of scope for this release. Revisit when upstream androidx.window ships a
+# tvOS target, or if we decide to stub/vendor it ourselves.
 VERSION_COMPOSE="1.12.0-beta01"
 VERSION_COMPOSE_MATERIAL3="1.5.0-alpha22"
-VERSION_COMPOSE_MATERIAL3_ADAPTIVE="1.3.0-beta02"
 VERSION_LIFECYCLE="2.11.0"
 VERSION_NAVIGATION="2.10.0-alpha05"
 VERSION_NAVIGATION_3="1.2.0-alpha04"
@@ -62,7 +68,7 @@ VERSION_NAVIGATION_EVENT="1.1.1"
 VERSION_SAVEDSTATE="1.5.0-alpha01"
 
 COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE"
+LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 echo "About to publish to mavenLocal with:"
@@ -72,7 +78,6 @@ echo "  libraries      = $LIBRARIES"
 echo "  versions:"
 echo "    COMPOSE=$VERSION_COMPOSE"
 echo "    COMPOSE_MATERIAL3=$VERSION_COMPOSE_MATERIAL3"
-echo "    COMPOSE_MATERIAL3_ADAPTIVE=$VERSION_COMPOSE_MATERIAL3_ADAPTIVE"
 echo "    LIFECYCLE=$VERSION_LIFECYCLE"
 echo "    NAVIGATION=$VERSION_NAVIGATION"
 echo "    NAVIGATION_3=$VERSION_NAVIGATION_3"
@@ -87,7 +92,6 @@ echo "    SAVEDSTATE=$VERSION_SAVEDSTATE"
         -Pjetbrains.publication.libraries="$LIBRARIES" \
         -Pjetbrains.publication.version.COMPOSE="$VERSION_COMPOSE" \
         -Pjetbrains.publication.version.COMPOSE_MATERIAL3="$VERSION_COMPOSE_MATERIAL3" \
-        -Pjetbrains.publication.version.COMPOSE_MATERIAL3_ADAPTIVE="$VERSION_COMPOSE_MATERIAL3_ADAPTIVE" \
         -Pjetbrains.publication.version.LIFECYCLE="$VERSION_LIFECYCLE" \
         -Pjetbrains.publication.version.NAVIGATION="$VERSION_NAVIGATION" \
         -Pjetbrains.publication.version.NAVIGATION_3="$VERSION_NAVIGATION_3" \
