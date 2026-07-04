@@ -248,8 +248,8 @@ androidXMultiplatform {
             dependsOn(skikoMain)
             dependencies {
                 // To comply with Klib resolver until https://youtrack.jetbrains.com/issue/KT-61096 is fixed
-                implementation("org.jetbrains.compose.annotation-internal:annotation:1.10.0")
-                implementation("org.jetbrains.compose.collection-internal:collection:1.10.0")
+                implementation("androidx.annotation:annotation:1.9.1")
+                implementation("androidx.collection:collection:1.5.0")
                 implementation(project(":compose:ui:ui-backhandler"))
                 implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel:2.9.6")
                 implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-savedstate:2.9.6")
