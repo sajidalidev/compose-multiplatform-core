@@ -211,12 +211,21 @@ while IFS= read -r -d '' pom_file; do
     base="${pom_file%.pom}"          # .../ui-tvosarm64-1.12.0-beta01
     artifact_base="$(basename "$base")"
 
-    if [ ! -f "$base-sources.jar" ]; then
+    # pom-packaging components (e.g. Gradle plugin markers) are POM-only by design;
+    # Central's sources/javadoc requirements apply to jar-packaging components only.
+    # (Their POM still needs an .asc signature -- the signature loop below runs for them.)
+    if grep -q "<packaging>pom</packaging>" "$pom_file"; then
+        pom_only=1
+    else
+        pom_only=0
+    fi
+
+    if [ "$pom_only" -eq 0 ] && [ ! -f "$base-sources.jar" ]; then
         echo "  MISSING sources jar: $base-sources.jar"
         missing_sources=$((missing_sources + 1))
     fi
 
-    if [ ! -f "$base-javadoc.jar" ]; then
+    if [ "$pom_only" -eq 0 ] && [ ! -f "$base-javadoc.jar" ]; then
         stub_readme="$JAVADOC_STAGING_DIR/README-$artifact_base.txt"
         cat > "$stub_readme" <<EOF
 No API documentation is generated for this Kotlin/Native or resource-only artifact.
