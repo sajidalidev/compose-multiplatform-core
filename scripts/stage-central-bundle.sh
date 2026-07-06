@@ -253,11 +253,67 @@ if [ "$missing_signatures" -gt 0 ]; then
         echo "      had no PUBLISH_SIGNING_KEY (see the Step 0 warning above). Re-run with" >&2
         echo "      signing credentials set before treating this bundle as upload-ready." >&2
     else
-        echo "ERROR: $missing_signatures missing .asc signature(s) even WITH signing credentials" >&2
-        echo "       set -- investigate before proceeding (do not paper over this)." >&2
-        exit 1
+        # The unsigned files are (by construction) the stub javadoc jars generated in this
+        # step, AFTER Gradle's signed publish ran -- Gradle never saw them. Sign them here
+        # with the same key, imported into a throwaway GNUPGHOME so this stays self-contained
+        # and never touches the operator's default keyring state.
+        echo "=== Step 2b: sign the $missing_signatures artifact(s) Gradle didn't see (stub javadocs) ==="
+        SIGN_HOME="$(mktemp -d)"
+        chmod 700 "$SIGN_HOME"
+        printf '%s\n' "$PUBLISH_SIGNING_KEY" | GNUPGHOME="$SIGN_HOME" gpg --batch --quiet --import
+        signed_now=0
+        while IFS= read -r -d '' artifact_file; do
+            case "$artifact_file" in
+                *.asc|*.md5|*.sha1|*.sha256|*.sha512) continue ;;
+            esac
+            if [ ! -f "$artifact_file.asc" ]; then
+                GNUPGHOME="$SIGN_HOME" gpg --batch --quiet --pinentry-mode loopback \
+                    --passphrase "$PUBLISH_SIGNING_PASSWORD" \
+                    --detach-sign --armor --output "$artifact_file.asc" "$artifact_file"
+                signed_now=$((signed_now + 1))
+            fi
+        done < <(find "$STAGING_REPO_DIR" -type f -print0)
+        rm -rf "$SIGN_HOME"
+        echo "  Signed in step 2b: $signed_now"
+        # Re-count: anything STILL unsigned is a genuine failure.
+        still_missing=0
+        while IFS= read -r -d '' artifact_file; do
+            case "$artifact_file" in
+                *.asc|*.md5|*.sha1|*.sha256|*.sha512) continue ;;
+            esac
+            [ -f "$artifact_file.asc" ] || still_missing=$((still_missing + 1))
+        done < <(find "$STAGING_REPO_DIR" -type f -print0)
+        if [ "$still_missing" -gt 0 ]; then
+            echo "ERROR: $still_missing artifact(s) still unsigned after step 2b -- investigate." >&2
+            exit 1
+        fi
     fi
 fi
+
+# Central Portal bundles require .md5 and .sha1 checksums for every artifact file.
+# Gradle generates them when publishing to a maven { url = ... } repository but NOT for
+# publishToMavenLocal (~/.m2), which is what Step 1 uses -- so generate any missing ones
+# here. (.asc signature files themselves do not need checksums.)
+echo "=== Step 2c: generate missing .md5/.sha1 checksums ==="
+generated_checksums=0
+while IFS= read -r -d '' artifact_file; do
+    case "$artifact_file" in
+        *.asc|*.md5|*.sha1|*.sha256|*.sha512|*maven-metadata-local.xml) continue ;;
+    esac
+    if [ ! -f "$artifact_file.md5" ]; then
+        md5 -q "$artifact_file" > "$artifact_file.md5"
+        generated_checksums=$((generated_checksums + 1))
+    fi
+    if [ ! -f "$artifact_file.sha1" ]; then
+        shasum -a 1 "$artifact_file" | cut -d' ' -f1 > "$artifact_file.sha1"
+        generated_checksums=$((generated_checksums + 1))
+    fi
+done < <(find "$STAGING_REPO_DIR" -type f -print0)
+echo "  Checksum files generated: $generated_checksums"
+
+# maven-metadata-local.xml files are mavenLocal-only bookkeeping; they must not ship in a
+# Central bundle.
+find "$STAGING_REPO_DIR" -name 'maven-metadata-local.xml*' -delete
 
 echo "=== Step 3: zip bundle (Central Portal layout: repo-root-relative paths) ==="
 (
