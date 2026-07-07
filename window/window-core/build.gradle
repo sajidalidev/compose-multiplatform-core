@@ -27,12 +27,15 @@ import androidx.build.PlatformIdentifier
 
 plugins {
     id("AndroidXPlugin")
+    id("JetBrainsAndroidXPlugin")
 }
 
 androidXMultiplatform {
     jvm()
-    androidLibrary {
-        namespace = "androidx.window.core"
+    redirect("androidx.window") {
+        androidLibrary {
+            namespace = "org.jetbrains.androidx.window.core"
+        }
     }
     mac()
     linux()
