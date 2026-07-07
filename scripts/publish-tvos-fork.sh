@@ -46,19 +46,26 @@ fi
 #   NAVIGATION3           = "1.2.0-alpha04"
 #   NAVIGATIONEVENT       = "1.1.1"
 #   SAVEDSTATE            = "1.5.0-alpha01"
+#   WINDOW                = "1.6.0-alpha02"
 #
 # NOTE: the -Pjetbrains.publication.version.<LIB> property names below use the library
 # keys registered in JetBrainsPublication.libraryToComponents (buildSrc/public/.../
 # JetBrainsPublication.kt), which use underscores for NAVIGATION_3 and NAVIGATION_EVENT
 # even though the toml keys above (NAVIGATION3 / NAVIGATIONEVENT) do not.
 #
-# COMPOSE_MATERIAL3_ADAPTIVE is DELIBERATELY EXCLUDED from this tvOS release (controller
-# decision, task 8c attempt 3): compose:material3:adaptive:adaptive depends on upstream
-# androidx.window:window-core (via `import androidx.window.core.layout.WindowSizeClass`),
-# which publishes no Kotlin/Native klib variant at all -- not a fork regression, a genuine
-# upstream gap. Porting around it (stubbing an actual, vendoring a fork of window-core,
-# etc.) is out of scope for this release. Revisit when upstream androidx.window ships a
-# tvOS target, or if we decide to stub/vendor it ourselves.
+# WINDOW (:window:window-core) was added in task 18a: its androidLibrary target is wrapped
+# in redirect("androidx.window") { ... } (see window/window-core/build.gradle), so its
+# android variant redirects to the real androidx.window:window-core:1.5.0 artifact while
+# tvOS/iOS/etc. are fork-built from this repo's in-tree AOSP copy.
+#
+# COMPOSE_MATERIAL3_ADAPTIVE is still DELIBERATELY EXCLUDED from this tvOS release (controller
+# decision, task 8c attempt 3): compose:material3:adaptive:adaptive depends on
+# project(":window:window-core") (not, as previously assumed here, an external upstream
+# artifact -- see task 18a's investigation), which task 18a now fork-builds with tvOS klibs.
+# `:compose:material3:adaptive:adaptive:compileKotlinTvosArm64` was verified to build
+# successfully against it. This entry remains excluded pending a follow-up task to actually
+# add COMPOSE_MATERIAL3_ADAPTIVE (and its COMPOSE_MATERIAL3 navigation-suite consumer) back
+# into this release now that the window-core gap is closed.
 VERSION_COMPOSE="1.12.0-beta01"
 VERSION_COMPOSE_MATERIAL3="1.5.0-alpha22"
 VERSION_LIFECYCLE="2.11.0"
@@ -66,9 +73,10 @@ VERSION_NAVIGATION="2.10.0-alpha05"
 VERSION_NAVIGATION_3="1.2.0-alpha04"
 VERSION_NAVIGATION_EVENT="1.1.1"
 VERSION_SAVEDSTATE="1.5.0-alpha01"
+VERSION_WINDOW="1.6.0-alpha02"
 
 COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE"
+LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 echo "About to publish to mavenLocal with:"
@@ -83,6 +91,7 @@ echo "    NAVIGATION=$VERSION_NAVIGATION"
 echo "    NAVIGATION_3=$VERSION_NAVIGATION_3"
 echo "    NAVIGATION_EVENT=$VERSION_NAVIGATION_EVENT"
 echo "    SAVEDSTATE=$VERSION_SAVEDSTATE"
+echo "    WINDOW=$VERSION_WINDOW"
 
 (
     cd "$ROOT_DIR"
@@ -96,5 +105,6 @@ echo "    SAVEDSTATE=$VERSION_SAVEDSTATE"
         -Pjetbrains.publication.version.NAVIGATION="$VERSION_NAVIGATION" \
         -Pjetbrains.publication.version.NAVIGATION_3="$VERSION_NAVIGATION_3" \
         -Pjetbrains.publication.version.NAVIGATION_EVENT="$VERSION_NAVIGATION_EVENT" \
-        -Pjetbrains.publication.version.SAVEDSTATE="$VERSION_SAVEDSTATE"
+        -Pjetbrains.publication.version.SAVEDSTATE="$VERSION_SAVEDSTATE" \
+        -Pjetbrains.publication.version.WINDOW="$VERSION_WINDOW"
 )

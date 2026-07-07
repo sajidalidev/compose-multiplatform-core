@@ -605,7 +605,14 @@ includeProject(":paging:paging-compose:integration-tests", "mpp/stub-project")
 includeProject(":paging:paging-compose:integration-tests:paging-demos", "mpp/stub-project")
 includeProject(":savedstate:savedstate-ktx", "mpp/stub-project")
 includeProject(":test:screenshot:screenshot", "mpp/stub-project")
-includeProject(":window:window-core", "mpp/stub-project")
+// :window:window-core is unstubbed (task 18a): its androidLibrary target is wrapped in
+// redirect("androidx.window") { ... } (see window/window-core/build.gradle), so it is
+// fork-built for tvOS/iOS/etc. like other Compose Multiplatform modules, while its android
+// target still redirects to the real androidx.window:window-core artifact.
+includeProject(":window:window-core")
+// window-core's samples() reference isn't needed in fork-mode (same rationale as the other
+// *-samples stubs above).
+includeProject(":window:window-core-samples", "mpp/stub-project")
 includeProject(":window:window-testing", "mpp/stub-project")
 
 // ---------------------------------------------------------------------

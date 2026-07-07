@@ -154,6 +154,12 @@ object JetBrainsPublication {
             ComposeComponent(":savedstate:savedstate", supportedPlatforms = ComposePlatforms.ALL),
             ComposeComponent(":savedstate:savedstate-compose", supportedPlatforms = ComposePlatforms.ALL),
         ),
+        // window-core's androidLibrary target is redirected to the real androidx.window:window-core
+        // artifact (see redirect("androidx.window") { ... } in window/window-core/build.gradle); the
+        // other targets, including tvOS, are fork-built from this repo's in-tree AOSP copy (task 18a).
+        "WINDOW" to listOf(
+            ComposeComponent(":window:window-core", supportedPlatforms = ComposePlatforms.ALL),
+        ),
     )
 
     private val jetBrainsProjectsWithAndroidTarget = setOf(
