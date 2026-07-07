@@ -102,17 +102,14 @@ object JetBrainsPublication {
             add(ComposeComponent(":compose:material3:material3-window-size-class"))
             // material3-adaptive-navigation-suite has a project dependency on
             // :compose:material3:adaptive:adaptive (api(project(":compose:material3:adaptive:adaptive")))
-            // which in turn requires upstream androidx.window:window-core -- a library that
-            // publishes no Kotlin/Native (tvOS) klib variant at all. This tvOS release
-            // deliberately excludes COMPOSE_MATERIAL3_ADAPTIVE for that reason (see
-            // scripts/publish-tvos-fork.sh); exclude its sole COMPOSE_MATERIAL3 consumer here
-            // too for custom-root (fork) publishes, or the tvOS build would still pull
-            // adaptive/window-core in transitively via this project reference. Default
-            // (org.jetbrains) publishes are unaffected. Revisit when upstream androidx.window
-            // ships a tvOS target, or if we decide to stub/vendor it ourselves.
-            if (coordinateRoot == "org.jetbrains") {
-                add(ComposeComponent(":compose:material3:material3-adaptive-navigation-suite"))
-            }
+            // which in turn depends on :window:window-core. Both are now fork-built with tvOS
+            // klib variants (task 18a fixed window-core's settings.gradle stub-project
+            // redirect; task 18b confirmed compileKotlinTvosArm64 succeeds for adaptive,
+            // adaptive-layout, adaptive-navigation, adaptive-navigation3, and this
+            // navigation-suite module itself), so the previous custom-root (fork) exclusion is
+            // obsolete and has been removed -- navigation-suite now publishes under custom
+            // roots the same as under org.jetbrains.
+            add(ComposeComponent(":compose:material3:material3-adaptive-navigation-suite"))
         },
         "COMPOSE_MATERIAL3_ADAPTIVE" to listOf(
             ComposeComponent(":compose:material3:adaptive:adaptive"),
