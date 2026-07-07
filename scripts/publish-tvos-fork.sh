@@ -41,6 +41,7 @@ fi
 # source of truth for these; update the values below if it changes.
 #   COMPOSE               = "1.12.0-beta01"
 #   COMPOSE_MATERIAL3     = "1.5.0-alpha22"
+#   COMPOSE_MATERIAL3_ADAPTIVE = "1.3.0-beta02"
 #   LIFECYCLE             = "2.11.0"
 #   NAVIGATION            = "2.10.0-alpha05"
 #   NAVIGATION3           = "1.2.0-alpha04"
@@ -53,21 +54,28 @@ fi
 # JetBrainsPublication.kt), which use underscores for NAVIGATION_3 and NAVIGATION_EVENT
 # even though the toml keys above (NAVIGATION3 / NAVIGATIONEVENT) do not.
 #
-# WINDOW (:window:window-core) was added in task 18a: its androidLibrary target is wrapped
-# in redirect("androidx.window") { ... } (see window/window-core/build.gradle), so its
-# android variant redirects to the real androidx.window:window-core:1.5.0 artifact while
-# tvOS/iOS/etc. are fork-built from this repo's in-tree AOSP copy.
+# WINDOW (:window:window-core) was added in task 18a and is now a PERMANENT part of this
+# release (not a one-off): its androidLibrary target is wrapped in
+# redirect("androidx.window") { ... } (see window/window-core/build.gradle), so its android
+# variant redirects to the real androidx.window:window-core:1.5.0 artifact while
+# tvOS/iOS/etc. are fork-built from this repo's in-tree AOSP copy. COMPOSE_MATERIAL3_ADAPTIVE
+# (below) depends on it via a project(":window:window-core") reference, so WINDOW must always
+# be published alongside it.
 #
-# COMPOSE_MATERIAL3_ADAPTIVE is still DELIBERATELY EXCLUDED from this tvOS release (controller
-# decision, task 8c attempt 3): compose:material3:adaptive:adaptive depends on
-# project(":window:window-core") (not, as previously assumed here, an external upstream
-# artifact -- see task 18a's investigation), which task 18a now fork-builds with tvOS klibs.
-# `:compose:material3:adaptive:adaptive:compileKotlinTvosArm64` was verified to build
-# successfully against it. This entry remains excluded pending a follow-up task to actually
-# add COMPOSE_MATERIAL3_ADAPTIVE (and its COMPOSE_MATERIAL3 navigation-suite consumer) back
-# into this release now that the window-core gap is closed.
+# COMPOSE_MATERIAL3_ADAPTIVE was RE-INCLUDED in task 18b, lifting the earlier task-8c-attempt-3
+# exclusion. That exclusion was based on the (incorrect) assumption that
+# compose:material3:adaptive:adaptive depended on an external, tvOS-less upstream
+# androidx.window:window-core artifact; task 18a's investigation found it's actually a
+# project(":window:window-core") reference, and task 18a fork-built window-core with real tvOS
+# klib variants (see the WINDOW note above). Task 18b verified
+# `:compose:material3:adaptive:{adaptive,adaptive-layout,adaptive-navigation,
+# adaptive-navigation3}:compileKotlinTvosArm64` all succeed, and additionally verified
+# `:compose:material3:material3-adaptive-navigation-suite:compileKotlinTvosArm64` (the
+# COMPOSE_MATERIAL3 consumer of adaptive) succeeds too, so the navigation-suite exclusion in
+# JetBrainsPublication.kt was removed as well.
 VERSION_COMPOSE="1.12.0-beta01"
 VERSION_COMPOSE_MATERIAL3="1.5.0-alpha22"
+VERSION_COMPOSE_MATERIAL3_ADAPTIVE="1.3.0-beta02"
 VERSION_LIFECYCLE="2.11.0"
 VERSION_NAVIGATION="2.10.0-alpha05"
 VERSION_NAVIGATION_3="1.2.0-alpha04"
@@ -76,7 +84,7 @@ VERSION_SAVEDSTATE="1.5.0-alpha01"
 VERSION_WINDOW="1.6.0-alpha02"
 
 COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW"
+LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 echo "About to publish to mavenLocal with:"
@@ -86,6 +94,7 @@ echo "  libraries      = $LIBRARIES"
 echo "  versions:"
 echo "    COMPOSE=$VERSION_COMPOSE"
 echo "    COMPOSE_MATERIAL3=$VERSION_COMPOSE_MATERIAL3"
+echo "    COMPOSE_MATERIAL3_ADAPTIVE=$VERSION_COMPOSE_MATERIAL3_ADAPTIVE"
 echo "    LIFECYCLE=$VERSION_LIFECYCLE"
 echo "    NAVIGATION=$VERSION_NAVIGATION"
 echo "    NAVIGATION_3=$VERSION_NAVIGATION_3"
@@ -101,6 +110,7 @@ echo "    WINDOW=$VERSION_WINDOW"
         -Pjetbrains.publication.libraries="$LIBRARIES" \
         -Pjetbrains.publication.version.COMPOSE="$VERSION_COMPOSE" \
         -Pjetbrains.publication.version.COMPOSE_MATERIAL3="$VERSION_COMPOSE_MATERIAL3" \
+        -Pjetbrains.publication.version.COMPOSE_MATERIAL3_ADAPTIVE="$VERSION_COMPOSE_MATERIAL3_ADAPTIVE" \
         -Pjetbrains.publication.version.LIFECYCLE="$VERSION_LIFECYCLE" \
         -Pjetbrains.publication.version.NAVIGATION="$VERSION_NAVIGATION" \
         -Pjetbrains.publication.version.NAVIGATION_3="$VERSION_NAVIGATION_3" \
