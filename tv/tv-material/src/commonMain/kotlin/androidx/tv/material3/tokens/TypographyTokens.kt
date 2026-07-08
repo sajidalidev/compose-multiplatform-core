@@ -143,10 +143,11 @@ internal object TypographyTokens {
         )
 }
 
-private const val DefaultIncludeFontPadding = false
+/**
+ * The default [PlatformTextStyle] for tv-material's [TextStyle]s. Android keeps its historical
+ * `includeFontPadding = false` configuration; other platforms have no such legacy font-padding
+ * concept, so they fall back to the platform's own default (`null`).
+ */
+internal expect val DefaultPlatformTextStyle: PlatformTextStyle?
 
-@Suppress("DEPRECATION")
-internal val DefaultTextStyle =
-    TextStyle.Default.copy(
-        platformStyle = PlatformTextStyle(includeFontPadding = DefaultIncludeFontPadding)
-    )
+internal val DefaultTextStyle = TextStyle.Default.copy(platformStyle = DefaultPlatformTextStyle)
