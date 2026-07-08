@@ -614,6 +614,17 @@ includeProject(":window:window-core")
 // *-samples stubs above).
 includeProject(":window:window-core-samples", "mpp/stub-project")
 includeProject(":window:window-testing", "mpp/stub-project")
+// :tv:tv-material (task 23a) follows the same unstubbed pattern as :window:window-core: its
+// androidLibrary target is wrapped in redirect("androidx.tv") { ... } (see
+// tv/tv-material/build.gradle), so it is fork-built for tvOS from this repo's in-tree AOSP
+// copy, while its android target redirects to the real androidx.tv:tv-material artifact.
+// tv-material's own samples() reference was dropped entirely in this task (rather than
+// stubbed) rather than porting :tv:tv-material-samples, which doesn't otherwise exist in
+// this tree; :tv:tv-foundation is NOT included -- tv-material's main source has zero
+// dependency on it (see task-23a-report.md), so its lone androidTestImplementation
+// project(":tv:tv-foundation") reference was dropped along with the rest of the (excluded,
+// not ported in this task) androidTest source set.
+includeProject(":tv:tv-material")
 
 // ---------------------------------------------------------------------
 // --- there should be no includeProject additions after this line -----
