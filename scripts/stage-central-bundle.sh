@@ -103,21 +103,22 @@ VERSION_NAVIGATION_3="1.2.0-alpha04"
 VERSION_NAVIGATION_EVENT="1.1.1"
 VERSION_SAVEDSTATE="1.5.0-alpha01"
 VERSION_WINDOW="1.6.0-alpha02"
+VERSION_TV_MATERIAL="1.1.0-alpha01"
 
 COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW"
+LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW,TV_MATERIAL"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 # NOTE on "8 libraries": this script's own -Pjetbrains.publication.libraries set (above,
-# matching publish-tvos-fork.sh) now covers 9 JetBrainsPublication library keys (COMPOSE_
-# MATERIAL3_ADAPTIVE and WINDOW were added in task 18b/18a respectively, after this note was
-# first written). The `dev.sajidali.compose:compose-gradle-plugin` artifact (the tvOS-patched
-# org.jetbrains.compose Gradle plugin fork, referenced by task-9a/9b and already present in
-# this machine's mavenLocal at 1.12.0-beta01) is built and published from a DIFFERENT
-# repository than this one (compose-multiplatform-core has no compose-gradle-plugin
-# subproject) -- it is NOT something this script can stage. If the task brief's "8 libraries"
-# count is meant to include it, that component needs its own staging script in whichever repo
-# actually builds it; flagged here rather than silently fabricated.
+# matching publish-tvos-fork.sh) now covers 10 JetBrainsPublication library keys (COMPOSE_
+# MATERIAL3_ADAPTIVE and WINDOW were added in task 18b/18a respectively, TV_MATERIAL in task
+# 23a, after this note was first written). The `dev.sajidali.compose:compose-gradle-plugin`
+# artifact (the tvOS-patched org.jetbrains.compose Gradle plugin fork, referenced by
+# task-9a/9b and already present in this machine's mavenLocal at 1.12.0-beta01) is built and
+# published from a DIFFERENT repository than this one (compose-multiplatform-core has no
+# compose-gradle-plugin subproject) -- it is NOT something this script can stage. If the task
+# brief's "8 libraries" count is meant to include it, that component needs its own staging
+# script in whichever repo actually builds it; flagged here rather than silently fabricated.
 
 ## --- Hard refusal: this script NEVER uploads, no matter what flag is passed. ---------
 for arg in "$@"; do
@@ -192,6 +193,7 @@ echo "=== Step 1: signed publish to mavenLocal (real ~/.m2, same task as publish
         -Pjetbrains.publication.version.NAVIGATION_EVENT="$VERSION_NAVIGATION_EVENT" \
         -Pjetbrains.publication.version.SAVEDSTATE="$VERSION_SAVEDSTATE" \
         -Pjetbrains.publication.version.WINDOW="$VERSION_WINDOW" \
+        -Pjetbrains.publication.version.TV_MATERIAL="$VERSION_TV_MATERIAL" \
         ${PUBLISH_SIGNING_KEY:+-Ppublish.signing.key="$PUBLISH_SIGNING_KEY"} \
         ${PUBLISH_SIGNING_PASSWORD:+-Ppublish.signing.password="$PUBLISH_SIGNING_PASSWORD"}
 )
