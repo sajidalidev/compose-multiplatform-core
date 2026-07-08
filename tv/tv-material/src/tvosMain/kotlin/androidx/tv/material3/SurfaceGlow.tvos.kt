@@ -27,10 +27,25 @@ import org.jetbrains.skia.MaskFilter
 // approximate the glow by painting directly in the glow color and applying a blur mask filter.
 // The radius-to-sigma conversion mirrors androidx.compose.ui.graphics.BlurEffect's internal
 // (non-public) helper of the same name.
+//
+// tvOS guard: Skia's native SkMaskFilter::MakeBlur returns null when sigma <= 0 (e.g. when
+// blurRadiusPx is 0, which happens whenever the glow is not currently visible, such as before a
+// Surface/Card gains focus). Skiko's MaskFilter constructor wraps that null native pointer and
+// throws RuntimeException("Can't wrap nullptr"), crashing the first Compose frame. Guard against
+// both a non-positive sigma and a failed/null makeBlur result (defensively, in case tvOS Skia
+// fails to produce a mask filter for other reasons too) by falling back to "no glow" instead of
+// letting the exception propagate; this matches the visually correct behavior since a zero-radius
+// glow renders nothing anyway.
 internal actual fun Paint.applyGlow(blurRadiusPx: Float, shadowColor: Color) {
     val native = skiaPaint
     native.color = shadowColor.toArgb()
-    native.maskFilter = MaskFilter.makeBlur(FilterBlurMode.NORMAL, blurSigmaFromRadius(blurRadiusPx))
+    val sigma = blurSigmaFromRadius(blurRadiusPx)
+    native.maskFilter =
+        if (sigma > 0f) {
+            runCatching { MaskFilter.makeBlur(FilterBlurMode.NORMAL, sigma) }.getOrNull()
+        } else {
+            null
+        }
 }
 
 private fun blurSigmaFromRadius(radius: Float): Float =
