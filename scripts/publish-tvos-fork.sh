@@ -48,11 +48,21 @@ fi
 #   NAVIGATIONEVENT       = "1.1.1"
 #   SAVEDSTATE            = "1.5.0-alpha01"
 #   WINDOW                = "1.6.0-alpha02"
+#   TV_MATERIAL           = "1.1.0-alpha01"
 #
 # NOTE: the -Pjetbrains.publication.version.<LIB> property names below use the library
 # keys registered in JetBrainsPublication.libraryToComponents (buildSrc/public/.../
 # JetBrainsPublication.kt), which use underscores for NAVIGATION_3 and NAVIGATION_EVENT
 # even though the toml keys above (NAVIGATION3 / NAVIGATIONEVENT) do not.
+#
+# TV_MATERIAL (:tv:tv-material) was added in task 23a: its androidLibrary target is wrapped
+# in redirect("androidx.tv") { ... } (see tv/tv-material/build.gradle), so its android variant
+# redirects to the real androidx.tv:tv-material:1.1.0-alpha01 artifact while tvOS is fork-built
+# from this repo's in-tree AOSP copy (androidTest was excluded from this port -- see
+# task-23a-report.md). tv-material has no dependency on :tv:tv-foundation (verified empty
+# grep across its main source; the one androidTestImplementation reference to it was dropped
+# along with the rest of the excluded androidTest source set), so tv-foundation itself was
+# NOT ported and is not part of this library group.
 #
 # WINDOW (:window:window-core) was added in task 18a and is now a PERMANENT part of this
 # release (not a one-off): its androidLibrary target is wrapped in
@@ -82,9 +92,10 @@ VERSION_NAVIGATION_3="1.2.0-alpha04"
 VERSION_NAVIGATION_EVENT="1.1.1"
 VERSION_SAVEDSTATE="1.5.0-alpha01"
 VERSION_WINDOW="1.6.0-alpha02"
+VERSION_TV_MATERIAL="1.1.0-alpha01"
 
 COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW"
+LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW,TV_MATERIAL"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 echo "About to publish to mavenLocal with:"
@@ -101,6 +112,7 @@ echo "    NAVIGATION_3=$VERSION_NAVIGATION_3"
 echo "    NAVIGATION_EVENT=$VERSION_NAVIGATION_EVENT"
 echo "    SAVEDSTATE=$VERSION_SAVEDSTATE"
 echo "    WINDOW=$VERSION_WINDOW"
+echo "    TV_MATERIAL=$VERSION_TV_MATERIAL"
 
 (
     cd "$ROOT_DIR"
@@ -116,5 +128,6 @@ echo "    WINDOW=$VERSION_WINDOW"
         -Pjetbrains.publication.version.NAVIGATION_3="$VERSION_NAVIGATION_3" \
         -Pjetbrains.publication.version.NAVIGATION_EVENT="$VERSION_NAVIGATION_EVENT" \
         -Pjetbrains.publication.version.SAVEDSTATE="$VERSION_SAVEDSTATE" \
-        -Pjetbrains.publication.version.WINDOW="$VERSION_WINDOW"
+        -Pjetbrains.publication.version.WINDOW="$VERSION_WINDOW" \
+        -Pjetbrains.publication.version.TV_MATERIAL="$VERSION_TV_MATERIAL"
 )
