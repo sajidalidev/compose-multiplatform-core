@@ -16,14 +16,6 @@
 
 package androidx.tv.material3
 
-import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.input.key.KeyEventType.Companion.KeyDown
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.nativeKeyCode
-import androidx.compose.ui.input.key.type
+import android.os.Build
 
-/** Checks if the `Back` key is pressed */
-internal fun KeyEvent.isBackPress() = key.nativeKeyCode == android.view.KeyEvent.KEYCODE_BACK
-
-/** Checks if the keyEventType is `KeyDown` */
-internal fun KeyEvent.isTypeKeyDown() = type == KeyDown
+internal actual val API_28_OR_ABOVE: Boolean = Build.VERSION.SDK_INT >= 28

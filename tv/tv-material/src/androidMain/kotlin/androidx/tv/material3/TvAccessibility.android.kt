@@ -16,6 +16,16 @@
 
 package androidx.tv.material3
 
-import android.os.Build
+import android.content.Context
+import android.view.accessibility.AccessibilityManager
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 
-internal val API_28_OR_ABOVE = Build.VERSION.SDK_INT >= 28
+@Composable
+internal actual fun isAccessibilityManagerEnabled(): Boolean {
+    val context = LocalContext.current
+    val accessibilityManager =
+        remember { context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager }
+    return accessibilityManager.isEnabled
+}

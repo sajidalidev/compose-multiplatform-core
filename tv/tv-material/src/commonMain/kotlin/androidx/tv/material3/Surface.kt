@@ -43,8 +43,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.key.NativeKeyEvent
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.debugInspectorInfo
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.onClick
@@ -531,27 +534,27 @@ private fun Modifier.handleDPadEnter(
                 }
             }
             .onKeyEvent { keyEvent ->
-                if (AcceptableKeys.contains(keyEvent.nativeKeyEvent.keyCode)) {
-                    when (keyEvent.nativeKeyEvent.action) {
-                        NativeKeyEvent.ACTION_DOWN -> {
-                            when (keyEvent.nativeKeyEvent.repeatCount) {
-                                0 ->
+                if (AcceptableKeys.contains(keyEvent.key)) {
+                    when (keyEvent.type) {
+                        KeyEventType.KeyDown -> {
+                            if (!keyEvent.isKeyRepeatEvent()) {
+                                coroutineScope.launch { interactionSource.emit(pressInteraction) }
+                            } else if (!isLongClick) {
+                                // Only trigger the long-click once per press-and-hold, on the
+                                // first repeat event (matches the original repeatCount == 1
+                                // Android semantics: later repeats are ignored).
+                                onLongClick?.let {
+                                    isLongClick = true
                                     coroutineScope.launch {
-                                        interactionSource.emit(pressInteraction)
+                                        interactionSource.emit(
+                                            PressInteraction.Release(pressInteraction)
+                                        )
                                     }
-                                1 ->
-                                    onLongClick?.let {
-                                        isLongClick = true
-                                        coroutineScope.launch {
-                                            interactionSource.emit(
-                                                PressInteraction.Release(pressInteraction)
-                                            )
-                                        }
-                                        it.invoke()
-                                    }
+                                    it.invoke()
+                                }
                             }
                         }
-                        NativeKeyEvent.ACTION_UP -> {
+                        KeyEventType.KeyUp -> {
                             if (!isLongClick) {
                                 coroutineScope.launch {
                                     interactionSource.emit(
@@ -614,9 +617,4 @@ internal const val EnabledContentAlpha = 1f
  */
 internal val LocalAbsoluteTonalElevation = compositionLocalOf { 0.dp }
 
-private val AcceptableKeys =
-    intArrayOf(
-        NativeKeyEvent.KEYCODE_DPAD_CENTER,
-        NativeKeyEvent.KEYCODE_ENTER,
-        NativeKeyEvent.KEYCODE_NUMPAD_ENTER
-    )
+private val AcceptableKeys = setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter)
