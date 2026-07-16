@@ -145,5 +145,9 @@ internal fun Project.configureDependencyVerification() {
             }
         )
         task.cacheEvenIfNoOutputs()
+        // The dependency-stability-suffix rule protects official org.jetbrains releases from
+        // depending on less-stable artifacts; custom-root (fork) publishes verbatim-republish
+        // upstream's own pins under a different coordinateRoot, so the rule doesn't apply there.
+        task.onlyIf { JetBrainsPublication.coordinateRoot == "org.jetbrains" }
     }
 }
