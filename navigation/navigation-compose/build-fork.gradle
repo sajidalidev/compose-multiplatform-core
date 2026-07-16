@@ -60,7 +60,7 @@ androidXMultiplatform {
             implementation("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.11.0-beta01")
             implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-savedstate:2.11.0-beta01")
             implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel:2.11.0-beta01")
-            implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0-beta01")
+            implementation(project(":lifecycle:lifecycle-viewmodel-compose"))
             implementation("androidx.savedstate:savedstate:1.4.0")
             implementation("androidx.savedstate:savedstate-compose:1.4.0")
             implementation(libs.kotlinCoroutinesCore)
