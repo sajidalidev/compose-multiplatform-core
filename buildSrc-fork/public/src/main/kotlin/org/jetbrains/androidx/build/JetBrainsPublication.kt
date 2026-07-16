@@ -26,10 +26,26 @@ import org.gradle.api.Project
  */
 object JetBrainsPublication {
     private const val ANDROIDX_GROUP_PREFIX = "androidx."
-    private const val JETBRAINS_COMPOSE_GROUP_PREFIX = "org.jetbrains.compose."
-    private const val JETBRAINS_FORK_GROUP_PREFIX = "org.jetbrains.androidx."
 
-    val libraryToComponents = mapOf(
+    // Root namespace for the fork's published artifacts. Seeded from the Gradle property
+    // `publication.coordinateRoot` at root-plugin apply; defaults to "org.jetbrains" to
+    // preserve the historical org.jetbrains.compose.* / org.jetbrains.androidx.* coordinates.
+    @Volatile
+    var coordinateRoot: String = "org.jetbrains"
+
+    private val JETBRAINS_COMPOSE_GROUP_PREFIX: String get() = "$coordinateRoot.compose."
+    private val JETBRAINS_FORK_GROUP_PREFIX: String get() = "$coordinateRoot.androidx."
+
+    // NOTE: this is a computed property (`get() = ...`), not a stored `val`, and must stay
+    // that way. `coordinateRoot` above is set by JetBrainsAndroidXRootImplPlugin.apply() via
+    // `JetBrainsPublication.coordinateRoot = ...`, but that assignment itself is what first
+    // touches this `object`, which forces Kotlin to run ALL of its property initializers
+    // (including this one) using the *default* "org.jetbrains" value before the assignment
+    // takes effect. A stored `val` here would therefore always see "org.jetbrains" for the
+    // `coordinateRoot`-conditional entries below, regardless of what gets published. Making it
+    // a computed property defers evaluation to each access, all of which happen after
+    // coordinateRoot has its final value.
+    val libraryToComponents: Map<String, List<ComposeComponent>> get() = mapOf(
         "COMPOSE" to listOf(
             ComposeComponent(":compose:animation:animation"),
             ComposeComponent(":compose:animation:animation-core"),
@@ -63,7 +79,7 @@ object JetBrainsPublication {
             ComposeComponent(":compose:ui:ui-tooling-preview"),
             ComposeComponent(
                 ":compose:ui:ui-uikit",
-                supportedPlatforms = ComposePlatforms.IOS
+                supportedPlatforms = ComposePlatforms.IOS + ComposePlatforms.TV_OS
             ),
             ComposeComponent(":compose:ui:ui-unit"),
             ComposeComponent(":compose:ui:ui-util"),
@@ -82,11 +98,20 @@ object JetBrainsPublication {
                 )
             ),
         ),
-        "COMPOSE_MATERIAL3" to listOf(
-            ComposeComponent(":compose:material3:material3"),
-            ComposeComponent(":compose:material3:material3-window-size-class"),
-            ComposeComponent(":compose:material3:material3-adaptive-navigation-suite"),
-        ),
+        "COMPOSE_MATERIAL3" to buildList {
+            add(ComposeComponent(":compose:material3:material3"))
+            add(ComposeComponent(":compose:material3:material3-window-size-class"))
+            // material3-adaptive-navigation-suite has a project dependency on
+            // :compose:material3:adaptive:adaptive (api(project(":compose:material3:adaptive:adaptive")))
+            // which in turn depends on :window:window-core. Both are now fork-built with tvOS
+            // klib variants (task 18a fixed window-core's settings.gradle stub-project
+            // redirect; task 18b confirmed compileKotlinTvosArm64 succeeds for adaptive,
+            // adaptive-layout, adaptive-navigation, adaptive-navigation3, and this
+            // navigation-suite module itself), so the previous custom-root (fork) exclusion is
+            // obsolete and has been removed -- navigation-suite now publishes under custom
+            // roots the same as under org.jetbrains.
+            add(ComposeComponent(":compose:material3:material3-adaptive-navigation-suite"))
+        },
         "COMPOSE_MATERIAL3_ADAPTIVE" to listOf(
             ComposeComponent(":compose:material3:adaptive:adaptive"),
             ComposeComponent(":compose:material3:adaptive:adaptive-layout"),
@@ -126,6 +151,24 @@ object JetBrainsPublication {
         "SAVEDSTATE" to listOf(
             ComposeComponent(":savedstate:savedstate", supportedPlatforms = ComposePlatforms.ALL),
             ComposeComponent(":savedstate:savedstate-compose", supportedPlatforms = ComposePlatforms.ALL),
+        ),
+        // window-core's androidLibrary target is redirected to the real androidx.window:window-core
+        // artifact (see redirect("androidx.window") { ... } in window/window-core/build.gradle); the
+        // other targets, including tvOS, are fork-built from this repo's in-tree AOSP copy (task 18a).
+        "WINDOW" to listOf(
+            ComposeComponent(":window:window-core", supportedPlatforms = ComposePlatforms.ALL),
+        ),
+        // tv-material's androidLibrary target is redirected to the real, already-published
+        // androidx.tv:tv-material artifact (see redirect("androidx.tv") { ... } in
+        // tv/tv-material/build.gradle), same pattern as WINDOW above; only the tvOS klib
+        // variants are fork-built from this repo's in-tree AOSP copy (task 23a), hence the
+        // narrower ANDROID + TV_OS platform set (no desktop/ios/js -- deliberately excluded to
+        // keep this port's surface minimal; see task-23a-report.md).
+        "TV_MATERIAL" to listOf(
+            ComposeComponent(
+                ":tv:tv-material",
+                supportedPlatforms = ComposePlatforms.ANDROID + ComposePlatforms.TV_OS
+            ),
         ),
     )
 
@@ -170,10 +213,13 @@ object JetBrainsPublication {
     fun isJetBrainsForkGroup(group: String): Boolean =
         group.startsWith(JETBRAINS_FORK_GROUP_PREFIX) || group.startsWith(JETBRAINS_COMPOSE_GROUP_PREFIX)
 
-    val projectPathToComponent: Map<String, ComposeComponent> = libraryToComponents.values
+    // Also computed properties (not stored `val`s), for the same reason as
+    // `libraryToComponents` above: they derive from it, so they must be re-evaluated on each
+    // access to reflect the final `coordinateRoot`-conditional membership.
+    val projectPathToComponent: Map<String, ComposeComponent> get() = libraryToComponents.values
         .flatten().associateBy { it.path }
 
-    val projectPathToLibrary: Map<String, String> = libraryToComponents.entries
+    val projectPathToLibrary: Map<String, String> get() = libraryToComponents.entries
         .flatMap { entry -> entry.value.map { entry.key to it  } }
         .associate { it.second.path to it.first }
 
