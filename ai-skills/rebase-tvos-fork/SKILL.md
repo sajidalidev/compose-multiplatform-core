@@ -1,7 +1,7 @@
 ---
 name: rebase-tvos-fork
 description: Use when integrating upstream JetBrains compose-multiplatform-core changes into the tvOS fork — rebasing tvos-main onto upstream/jb-main, syncing the fork after upstream/jb-main moves ahead, or catching the tvOS fork up to upstream. Specific to the tvos-main / upstream jb-main rebase in this repository.
-version: 1.1.0
+version: 1.2.0
 ---
 
 The tvOS fork (`tvos-main`) carries a small set of tvOS-specific commits on top of JetBrains
@@ -69,28 +69,28 @@ tvOS intent on top of it — not the reverse. Typical conflict sites:
 - `compose/ui/ui/src/skikoMain/.../node/RootNodeOwner.skiko.kt` (frame/scene changes).
 - `settings.gradle` (fork's `:demo-tvos` include vs upstream stubs — additive, keep both).
 
-## 4. Re-apply the tvOS wiring to the fork-mode build files (see "Two build modes")
-The rebase only touches the AOSP-mode files (`build.gradle`, `settings.gradle`). The default build
-uses the fork-mode files, so mirror the wiring across. This runs on EVERY rebase, even a clean one.
+## 4. Verify the fork-mode build wiring (see "Two build modes")
+Since the fork commit "[tvOS] Wire tvOS support into fork-mode build files (#3064)", the fork-mode
+wiring (`build-fork.gradle` edits + `settings-fork.gradle` include) is carried as tracked history and
+is replayed by the rebase itself — do NOT blind-copy `build.gradle` over `build-fork.gradle`; since
+upstream's own fork-mode files legitimately diverge from the AOSP-mode files, a copy would clobber
+upstream structure. Instead VERIFY the replayed wiring:
 
 ```bash
-# For each module whose build.gradle the fork modified, mirror it into build-fork.gradle.
-# These build-fork.gradle files have historically been byte-identical to upstream build.gradle,
-# so a straight copy reproduces exactly the fork's tvOS diff — BUT verify identity first; if a
-# build-fork.gradle diverges from upstream build.gradle, hand-apply just the tvOS diff instead.
-for p in $(git diff --name-only upstream/jb-main..tvos-main-rebase-trial -- '**/build.gradle'); do
-  dir=$(dirname "$p"); fork="$dir/build-fork.gradle"
-  if [ -f "$fork" ] && diff <(git show upstream/jb-main:"$p") "$fork" >/dev/null 2>&1; then
-    cp "$dir/build.gradle" "$fork"                       # identical → safe to copy
-  else
-    echo "HAND-MERGE $fork (diverges from upstream build.gradle)"
-  fi
-done
-# Mirror the settings include: add includeProject(":demo-tvos") to settings-fork.gradle,
-# in the same spot as settings.gradle (after :compose:mpp:demo-swiftui).
-grep -q 'includeProject(":demo-tvos")' settings-fork.gradle || echo "ADD :demo-tvos to settings-fork.gradle"
+# The delta vs upstream's fork-mode files must be exactly the tvOS wiring: tvos() targets,
+# tvosMain/tvosTest source sets, uiKitMain intermediates, project-reference pins, :demo-tvos include.
+git diff upstream/jb-main..tvos-main-rebase-trial -- '**/build-fork.gradle' settings-fork.gradle
+grep -q 'includeProject(":demo-tvos")' settings-fork.gradle || echo "MISSING :demo-tvos include"
 ```
-Commit this as its own `[tvOS]` commit on the trial branch.
+
+Watch for upstream DELETING a build-fork.gradle (e.g. #3233 removed `ui-uikit/build-fork.gradle`;
+settings-fork falls back to `build.gradle`, so that module's single build.gradle now serves both
+modes — resolve the modify/delete conflict by accepting the deletion and keeping the tvOS wiring in
+`build.gradle` only).
+
+Also sweep for NEW upstream modules the fork's tvOS deps now reach (e.g. #3126 added
+`:compose:ui:ui-skiko`, an api dep of `:compose:ui:ui`): each needs `tvos()` added to its targets.
+Commit any such additions as their own `[tvOS]` commit on the trial branch.
 
 ## 5. Verify the fork's tvOS logic SURVIVED (do not skip — see Core principle)
 The rebase must not change fork files except where a conflict forced it. Confirm:
@@ -109,6 +109,13 @@ change touched the same area (frame model, key input). Key fork behaviors that m
 squared scene density, `FrameRecomposer` wiring (call site must match upstream's current
 `PlatformLayersComposeScene(frameRecomposer, density, …)` signature), Siri Remote key mappings
 (Menu→Back, D-pad focus), `KeyEvent.isRepeat`.
+
+Also check for NEW per-platform entry-point obligations upstream added since the last rebase: diff
+`ComposeContainer.ios.kt` against the last base and mirror anything init-time into
+`ComposeContainer.tvos.kt`. Example (#3126): every entry point must now call
+`registerSkikoComposeImplementation()` (populates `PlatformGraphicsRegistry`/`PlatformTextRegistry`)
+before scene creation — missing it compiles clean but crashes at launch with "Registered
+implementation is null". This class of break is invisible to steps 5–6 and only surfaces in step 7.
 
 ## 6. Compile-verify on the tvOS simulator target — in FORK MODE (the default)
 Run WITHOUT `EXPECTED_AGP_VERSION` so this exercises the fork-mode build files you fixed in step 4:
