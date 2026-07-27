@@ -1,7 +1,7 @@
 ---
 name: publish-tvos-fork
 description: Use when publishing the tvOS fork's Compose Multiplatform artifacts (dev.sajidali.* coordinate root) — mavenLocal smoke-testing, the mandatory closure audit, staging a signed Maven Central Portal bundle, or diagnosing a publish failure on the `tvos-publishing` branch. Specific to the dev.sajidali coordinate-root publish flow in this repository.
-version: 1.0.0
+version: 1.1.0
 ---
 
 This skill publishes the tvOS fork's `dev.sajidali.*`-coordinate Compose Multiplatform
@@ -46,23 +46,23 @@ property set —
   `org.jetbrains.androidx.*` group roots to `dev.sajidali.*`; everything after the root
   segment is untouched).
 - `-Pcompose.platforms=KotlinMultiplatform,TvosArm64,TvosSimulatorArm64`.
-- `-Pjetbrains.publication.libraries=COMPOSE,COMPOSE_MATERIAL3,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE`
-  (7 libraries; see "The 8th library" below).
+- `-Pjetbrains.publication.libraries=COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW,TV_MATERIAL`
+  (10 libraries; see "The 11th library" below).
 - A per-library `-Pjetbrains.publication.version.<LIB>=<version>` pin, hardcoded in the
-  script and manually kept in sync with `libraryversions.toml`.
+  script and manually kept in sync with `libraryversions.toml`. The script's header comments
+  are the authoritative per-library rationale — read them when the set looks surprising.
 
-**The library set and the adaptive exclusion.** `COMPOSE_MATERIAL3_ADAPTIVE` is deliberately
-**not** in the libraries list, and `material3-adaptive-navigation-suite` is trimmed out of
-`COMPOSE_MATERIAL3`'s component list (see `buildSrc/public/.../JetBrainsPublication.kt`).
-Reason: `compose:material3:adaptive:adaptive` imports
-`androidx.window.core.layout.WindowSizeClass` from upstream `androidx.window:window-core`,
-which publishes **no Kotlin/Native klib variant at all** — a genuine upstream gap, not a fork
-regression. Simply dropping `COMPOSE_MATERIAL3_ADAPTIVE` from the libraries list is not
-suffient on its own: `material3-adaptive-navigation-suite` (part of `COMPOSE_MATERIAL3`) has
-its own `api(project(":compose:material3:adaptive:adaptive"))` project dependency, so Gradle
-still needs to build `adaptive`'s outputs unless that consumer is also excluded. Revisit this
-exclusion only once upstream `androidx.window` ships a tvOS target (or a decision is made to
-stub/vendor `window-core`).
+**The library set.** `COMPOSE_MATERIAL3_ADAPTIVE` was originally excluded (its `adaptive`
+module imports `androidx.window.core.layout.WindowSizeClass`, and upstream
+`androidx.window:window-core` publishes no Kotlin/Native klib), but task 18a made
+`:window:window-core` fork-buildable with real tvOS klib variants — its android variant wraps
+in `redirect("androidx.window") { ... }` so Android still resolves to the real androidx
+artifact — and task 18b re-included `COMPOSE_MATERIAL3_ADAPTIVE` and lifted the
+`material3-adaptive-navigation-suite` trim from `COMPOSE_MATERIAL3`'s component list.
+`WINDOW` must therefore always be published alongside adaptive (the
+`project(":window:window-core")` reference depends on it). `TV_MATERIAL` (task 23a) publishes
+the in-tree `androidx.tv:tv-material` port the same redirect-wrapped way; `tv-foundation` was
+deliberately not ported (tv-material does not depend on it).
 
 **The stability-gate behavior.** `JetBrainsVerifyDependencyVersionsTask` (AndroidX's
 "a beta artifact may not depend on an alpha artifact" rule) fails by default here, because
@@ -80,7 +80,7 @@ skipped only when `-Ppublication.coordinateRoot` overrides the root. Expect to s
 `jbVerifyDependencyVersions SKIPPED` lines in the log — that is this gate working as intended,
 not a problem.
 
-**The 8th library.** `dev.sajidali.compose:compose-gradle-plugin` (the tvOS-patched
+**The 11th library.** `dev.sajidali.compose:compose-gradle-plugin` (the tvOS-patched
 `org.jetbrains.compose` Gradle plugin fork that `compose-tvos-redirect`'s plugin-marker
 interception substitutes to) is built and published from a **different** repository — this
 one (`compose-multiplatform-core`) has no `compose-gradle-plugin` subproject. Do not expect
@@ -182,26 +182,42 @@ and should get its own clean-session run before being trusted for an actual Cent
 
 `rebase-tvos-fork`'s procedure rebases `tvos-main` via a throwaway
 `tvos-main-rebase-trial` branch, then promotes it (`git branch -f tvos-main
-tvos-main-rebase-trial`). `tvos-publishing`'s buildSrc changes —
-`buildSrc/private/.../JetBrainsAndroidXRootImplPlugin.kt`,
-`buildSrc/private/.../JetBrainsVerifyDependencyVersionsTask.kt`,
-`buildSrc/private/.../MavenUploadHelper.kt`, `buildSrc/public/.../JetBrainsPublication.kt`
-(see `git diff --stat tvos-main..tvos-publishing -- buildSrc`) — live on a branch built off
-the **old** `tvos-main`, not on `tvos-main` itself. Once a rebase promotes a new `tvos-main`,
-`tvos-publishing` needs its own rebase onto it, and these four buildSrc files are exactly
-where an upstream restructure is most likely to produce a silent, clean-but-wrong merge (per
-`rebase-tvos-fork`'s own "Core principle") — re-diff each of them against the pre-rebase
-`tvos-publishing` after rebasing, don't just trust a clean `git rebase` exit code. Then re-run
-Stage 1 + Stage 2 (mandatory audit) before trusting the result.
+tvos-main-rebase-trial`). Once a rebase promotes a new `tvos-main`, `tvos-publishing` needs
+its own rebase onto it. Two hard-won specifics (2026-07 rebase):
+
+- **Always use `--onto` with the OLD `tvos-main` tip as the cut point.** Promoting rewrites
+  every `tvos-main` commit hash, so `merge-base(tvos-publishing, tvos-main)` falls back to
+  the old *upstream* base and a plain `git rebase tvos-main` replays ALL fork commits (not
+  just the publishing ones) against themselves — conflicts everywhere. Recover the old tip
+  from the force-push log line (`+ <old>...<new> tvos-main -> tvos-main`), then:
+  ```bash
+  git branch tvos-publishing-rebase-trial tvos-publishing
+  git rebase --onto tvos-main <old-tvos-main-tip> tvos-publishing-rebase-trial
+  ```
+- **Verify the four buildSrc publish files with their REAL paths** — they are exactly where
+  an upstream restructure is most likely to produce a silent, clean-but-wrong merge (per
+  `rebase-tvos-fork`'s own "Core principle"):
+  `buildSrc/private/src/main/kotlin/org/jetbrains/androidx/build/{JetBrainsAndroidXRootImplPlugin,JetBrainsVerifyDependencyVersionsTask,MavenUploadHelper}.kt`
+  and `buildSrc/public/src/main/kotlin/org/jetbrains/androidx/build/JetBrainsPublication.kt`.
+  (Note the `org/jetbrains/androidx/build` package — an `androidx/build/MavenUploadHelper.kt`
+  twin also exists but carries no publishing delta. A pathspec guess that matches nothing
+  makes the diff-comparison vacuously pass, so confirm each side's diff is NON-EMPTY, e.g.
+  `git diff tvos-main..trial -- <file> | grep -c '^[+-]'` before comparing old vs new.)
+  Also confirm the stability-gate guard survived:
+  `grep 'coordinateRoot == "org.jetbrains"' .../JetBrainsVerifyDependencyVersionsTask.kt`.
+
+Then re-run Stage 1 + Stage 2 (mandatory audit) before trusting the result, and keep a dated
+backup of the old branch tip (`git branch tvos-publishing-old-YYYYMMDD tvos-publishing`)
+before promoting.
 
 # Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
 | `jbVerifyDependencyVersions` fails: "Project with version X may not take a dependency on less-stable artifact Y" | The stability gate is firing for an `org.jetbrains`-root publish (expected — do NOT scope it off further), or the `onlyIf { JetBrainsPublication.coordinateRoot == "org.jetbrains" }` guard in `JetBrainsVerifyDependencyVersionsTask.kt` was lost in a merge/rebase. Confirm with `grep -c "jbVerifyDependencyVersions SKIPPED"` in the publish log — should be non-zero for a `dev.sajidali` publish. |
-| `compose:material3:adaptive:adaptive:compileCommonMainKotlinMetadata` fails: `Unresolved reference 'window'` | Expected if `COMPOSE_MATERIAL3_ADAPTIVE` was re-added to `-Pjetbrains.publication.libraries` — `androidx.window:window-core` has no tvOS klib. Keep the exclusion (see Stage 1 above) until upstream ships one. |
+| `compose:material3:adaptive:adaptive:compileCommonMainKotlinMetadata` fails: `Unresolved reference 'window'` | The fork-built `:window:window-core` (task 18a) is missing or lost its tvOS wiring — adaptive resolves `WindowSizeClass` from it, not from upstream `androidx.window` (which still has no tvOS klib). Check `window/window-core/build.gradle` still has tvos targets and `WINDOW` is still in the libraries list. |
 | The `org.jetbrains.compose:org.jetbrains.compose.gradle.plugin` marker publication ends up depending on a `dev.sajidali.compose:compose-gradle-plugin` coordinate | This is the plugin-marker-suppression issue from the `compose-gradle-plugin` fork build (a **different** repo than this one — `gradle-plugins/` doesn't exist here). `java-gradle-plugin`'s auto-generated marker publication is keyed off the plugin-id string, not `project.group`, so a coordinate-root override on the implementation artifact does NOT automatically move the marker — it must be explicitly suppressed (`onlyIf` on tasks matching `*PluginMarkerMavenPublication*`, gated behind the same coordinate/group-override property check) in that other repo's `gradle-plugins/build.gradle.kts`. `compose-tvos-redirect`'s settings plugin relies on this marker staying under `org.jetbrains` and does its own substitution via `pluginManagement.resolutionStrategy.eachPlugin` — never on this marker pointing at the fork directly. |
-| Publish looks successful but a `dev.sajidali` artifact you expect is missing from `~/.m2` | Check `-Pjetbrains.publication.libraries` actually lists it (7 libraries by default here — see "The 8th library" above), and re-run the closure audit; a `FAIL` finding will name the exact missing coordinate. |
+| Publish looks successful but a `dev.sajidali` artifact you expect is missing from `~/.m2` | Check `-Pjetbrains.publication.libraries` actually lists it (10 libraries by default here — see "The 11th library" above), and re-run the closure audit; a `FAIL` finding will name the exact missing coordinate. |
 | Closure audit reports many `WARN` entries | Expected and informational — these are version-mismatch findings (the twin exists locally, just at a different version than requested) that should feed `compose-tvos-redirect/manifest/compose-tvos-versions.json`'s `mappings`, not something to "fix" in this repo. |
 | `stage-central-bundle.sh` reports missing `.asc` signatures | Expected when `PUBLISH_SIGNING_KEY` is unset (unsigned dry-run mode) — re-run with real signing credentials before treating the bundle as upload-ready. |
 | `stage-central-bundle.sh`'s Step 1 fails partway through with klib/runtime version errors | See "The known issue" above — retry in a clean session (`./gradlew --stop` + clear configuration-cache dirs) before assuming a real regression. |
