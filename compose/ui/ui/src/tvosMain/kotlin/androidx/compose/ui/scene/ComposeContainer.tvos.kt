@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.FrameRecomposer
 import androidx.compose.ui.platform.MotionDurationScaleImpl
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.PlatformWindowContext
+import androidx.compose.ui.platform.registerSkikoComposeImplementation
 import androidx.compose.ui.uikit.ComposeContainerConfiguration
 import androidx.compose.ui.uikit.InterfaceOrientation
 import androidx.compose.ui.uikit.LocalUIViewController
@@ -76,6 +77,11 @@ internal class ComposeContainer(
     private val coroutineContext: CoroutineContext,
     private val lifecycleDelegate: ComposeContainerLifecycleDelegate
 ) {
+    // Register before any property initializer / scene setup below touches the Skiko backend, so
+    // every tvOS entry point is covered. Mirrors ComposeContainer.ios.kt.
+    init {
+        registerSkikoComposeImplementation()
+    }
 
     val view = ComposeContainerView(
         transparentForTouches = false,
