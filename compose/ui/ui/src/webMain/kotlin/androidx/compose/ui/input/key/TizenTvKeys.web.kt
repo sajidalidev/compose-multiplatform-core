@@ -18,13 +18,17 @@ package androidx.compose.ui.input.key
 
 /**
  * The Samsung Smart Remote delivers its TV-specific buttons as plain `keydown`/`keyup` events, but
- * only [org.w3c.dom.events.KeyboardEvent.keyCode] carries the button identity: `key` is `"Unidentified"`
- * and `code` is empty, so the string-based lookup in `KeyEvent.web.kt` cannot resolve them.
+ * only [org.w3c.dom.events.KeyboardEvent.keyCode] carries the button identity. The `key`/`code`
+ * strings are unusable: a real TV aliases each button to the nearest PC keyboard key (Back is
+ * `key "XF86Back"` with `code "Escape"`, the coloured buttons are `"F1"`..`"F4"`), and the
+ * emulator leaves `code` empty — so `KeyEvent.web.kt` resolves this table before its string maps
+ * whenever the Tizen device APIs are present.
  *
  * The four-way pad, OK, and the digits are ordinary keyboard codes (`ArrowUp`, `Enter`, `Digit0`, …)
- * and keep resolving through the string map; only the entries below need the numeric fallback.
+ * with key codes absent from this table, so they keep resolving through the string map.
  *
- * Key codes are the ones published by Samsung for the TV web runtime.
+ * Key codes are the ones published by Samsung for the TV web runtime; the Back and coloured-button
+ * aliases were confirmed against a Tizen 9.0 set (UA43DU7000).
  */
 internal val tizenTvKeyCodes: Map<Int, Key> = mapOf(
     // Navigation.
