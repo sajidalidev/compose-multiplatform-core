@@ -36,6 +36,7 @@ androidXMultiplatform {
         }
     }
     tvos()
+    js()
 
     defaultPlatform(PlatformIdentifier.ANDROID)
 
