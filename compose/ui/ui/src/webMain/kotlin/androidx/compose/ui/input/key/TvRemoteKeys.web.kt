@@ -107,6 +107,41 @@ internal val tizenRegisteredKeyNames: List<String> = listOf(
 )
 
 /**
+ * Key codes of the LG Magic Remote's TV-specific buttons on webOS TV.
+ *
+ * The playback and coloured buttons use the same codes as Tizen — they are the CEA/HTML5 media key
+ * codes — but Back and the channel keys do not, which is the whole reason the table is per-platform.
+ *
+ * Note on channel keys: `33`/`34` are also PageUp/PageDown. When webOS populates `code` for them,
+ * the string map in `KeyEvent.web.kt` resolves them to [Key.PageUp]/[Key.PageDown] first and this
+ * table is never consulted, so an app that cares about the channel keys should accept either.
+ * Overriding the string map instead would break a real PageUp on a USB keyboard.
+ */
+private val webOsKeyCodes: Map<Int, Key> = mapOf(
+    // Navigation.
+    461 to Key.Back,
+
+    // Playback.
+    415 to Key.MediaPlay,
+    19 to Key.MediaPause,
+    413 to Key.MediaStop,
+    412 to Key.MediaRewind,
+    417 to Key.MediaFastForward,
+    416 to Key.MediaRecord,
+
+    // Coloured buttons.
+    403 to Key.ProgramRed,
+    404 to Key.ProgramGreen,
+    405 to Key.ProgramYellow,
+    406 to Key.ProgramBlue,
+
+    // Channel and information.
+    33 to Key.ChannelUp,
+    34 to Key.ChannelDown,
+    457 to Key.Info,
+)
+
+/**
  * Resolves a TV remote button from its numeric key code, for the remote [platform] ships with.
  *
  * Returns `null` when the code is not one of that remote's buttons — including always, off a TV —
@@ -115,5 +150,6 @@ internal val tizenRegisteredKeyNames: List<String> = listOf(
 internal fun tvRemoteKeyFromKeyCode(platform: TvPlatform, keyCode: Int): Key? =
     when (platform) {
         TvPlatform.Tizen -> tizenKeyCodes[keyCode]
+        TvPlatform.WebOs -> webOsKeyCodes[keyCode]
         TvPlatform.None -> null
     }

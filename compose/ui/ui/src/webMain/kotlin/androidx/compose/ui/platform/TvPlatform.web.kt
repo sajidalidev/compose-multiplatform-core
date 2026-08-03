@@ -36,6 +36,9 @@ enum class TvPlatform {
 
     /** Samsung Tizen TV, driven by a Samsung Smart Remote. */
     Tizen,
+
+    /** LG webOS TV, driven by a Magic Remote. */
+    WebOs,
 }
 
 /**
@@ -48,6 +51,7 @@ enum class TvPlatform {
 val currentTvPlatform: TvPlatform by lazy(LazyThreadSafetyMode.NONE) {
     when (detectTvPlatformId()) {
         "tizen" -> TvPlatform.Tizen
+        "webos" -> TvPlatform.WebOs
         else -> TvPlatform.None
     }
 }
@@ -57,7 +61,7 @@ val currentTvPlatform: TvPlatform by lazy(LazyThreadSafetyMode.NONE) {
  * this application instead of acting on them itself.
  *
  * Only Tizen needs this: until `tizen.tvinputdevice.registerKeyBatch` has run, only the four-way
- * pad, OK and Back reach the page.
+ * pad, OK and Back reach the page. webOS delivers the whole remote to the app unconditionally.
  *
  * Safe to call on any platform and more than once.
  *
@@ -66,7 +70,7 @@ val currentTvPlatform: TvPlatform by lazy(LazyThreadSafetyMode.NONE) {
 @ExperimentalComposeUiApi
 fun registerTvRemoteKeys(): Boolean = when (currentTvPlatform) {
     TvPlatform.Tizen -> registerTizenKeyBatch(tizenRegisteredKeyNames.joinToString(","))
-    TvPlatform.None -> false
+    TvPlatform.WebOs, TvPlatform.None -> false
 }
 
 /**
@@ -93,6 +97,9 @@ val tvDensityScale: Float
 fun exitTvApplication() {
     when (currentTvPlatform) {
         TvPlatform.Tizen -> exitTizenApplication()
+        // webOS closes the app's window; `disableBackHistoryAPI` in appinfo.json is what stops the
+        // system from treating Back as history navigation before the app ever sees it.
+        TvPlatform.WebOs -> window.close()
         TvPlatform.None -> Unit
     }
 }
@@ -103,6 +110,13 @@ private fun detectTvPlatformId(): String =
             try {
                 if (typeof tizen !== 'undefined' && typeof tizen.tvinputdevice !== 'undefined') {
                     return 'tizen';
+                }
+                // PalmSystem is injected into every webOS app; the webOS global only exists once
+                // webOSTV.js has been loaded, and the user agent is the fallback for neither.
+                if (typeof PalmSystem !== 'undefined') return 'webos';
+                if (typeof webOS !== 'undefined' && webOS.platform && webOS.platform.tv) return 'webos';
+                if (typeof navigator !== 'undefined' && /web0s/i.test(navigator.userAgent)) {
+                    return 'webos';
                 }
             } catch (e) {
                 // Reading a device API can throw when its privilege is missing. Not that TV, then.
