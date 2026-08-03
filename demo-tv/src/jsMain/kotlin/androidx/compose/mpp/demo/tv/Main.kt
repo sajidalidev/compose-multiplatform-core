@@ -14,15 +14,19 @@
  * limitations under the License.
  */
 
-package androidx.compose.mpp.demo.tizen
+package androidx.compose.mpp.demo.tv
 
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.platform.currentTvPlatform
 import androidx.compose.ui.platform.exitTvApplication
 import androidx.compose.ui.window.ComposeTvViewport
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     ComposeTvViewport(viewportContainerId = "composeTarget") {
-        TizenTvDemoApp(onExit = ::exitTvApplication)
+        TvDemoApp(
+            platformName = currentTvPlatform.name,
+            onExit = ::exitTvApplication,
+        )
     }
 }

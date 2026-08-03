@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package androidx.compose.mpp.demo.tizen
+package androidx.compose.mpp.demo.tv
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -77,7 +77,7 @@ data class DemoTile(
 
 private val demoTiles = listOf(
     DemoTile(1, "Focus", "D-pad traversal", Color(0xFF1E88E5)),
-    DemoTile(2, "Remote", "Smart Remote keys", Color(0xFF43A047)),
+    DemoTile(2, "Remote", "TV remote keys", Color(0xFF43A047)),
     DemoTile(3, "Density", "10-foot scaling", Color(0xFFE53935)),
     DemoTile(4, "Back", "Navigation events", Color(0xFF8E24AA)),
     DemoTile(5, "Repeat", "Held-key handling", Color(0xFFF4511E)),
@@ -88,14 +88,16 @@ private val demoTiles = listOf(
 )
 
 /**
- * Demo app for a Tizen TV, driven entirely by a Samsung Smart Remote: the four-way pad moves focus,
- * OK opens a tile, Back closes it, and Back on the grid quits.
+ * Demo app for a TV, driven entirely by the remote: the four-way pad moves focus, OK opens a tile,
+ * Back closes it, and Back on the grid quits.
  *
+ * @param platformName the detected TV platform, shown in the header so a run on a real set proves
+ * the detection worked. `None` means the app is running in an ordinary browser.
  * @param onExit invoked when Back is pressed on the top-level screen, which a TV user expects to
  * quit the app.
  */
 @Composable
-fun TizenTvDemoApp(onExit: () -> Unit = {}) {
+fun TvDemoApp(platformName: String = "None", onExit: () -> Unit = {}) {
     var openTile by remember { mutableStateOf<DemoTile?>(null) }
     var lastKey by remember { mutableStateOf<PressedKey?>(null) }
     val overlayFocus = remember { FocusRequester() }
@@ -129,7 +131,7 @@ fun TizenTvDemoApp(onExit: () -> Unit = {}) {
                 }
         ) {
             Column(modifier = Modifier.fillMaxSize().padding(32.dp)) {
-                Header()
+                Header(platformName)
                 Spacer(Modifier.height(24.dp))
                 TileGrid(
                     modifier = Modifier.weight(1f),
@@ -150,14 +152,25 @@ fun TizenTvDemoApp(onExit: () -> Unit = {}) {
 }
 
 @Composable
-private fun Header() {
+private fun Header(platformName: String) {
     Column {
-        Text(
-            text = "Compose for Tizen TV",
-            fontSize = 34.sp,
-            color = Color.White,
-            style = MaterialTheme.typography.headlineLarge,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Compose for TV",
+                fontSize = 34.sp,
+                color = Color.White,
+                style = MaterialTheme.typography.headlineLarge,
+            )
+            Spacer(Modifier.size(16.dp))
+            Text(
+                text = platformName,
+                fontSize = 16.sp,
+                color = if (platformName == "None") Color.White.copy(alpha = 0.35f) else Accent,
+                modifier = Modifier
+                    .background(Surface, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             text = "D-pad moves focus · OK opens · BACK closes, or quits from here",

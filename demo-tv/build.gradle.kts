@@ -22,12 +22,13 @@ plugins {
     id("kotlin-multiplatform")
 }
 
-// Tizen TV apps are web apps, and the TV's web engine has no WasmGC: Tizen 8.0 ships Chromium 108,
-// while Kotlin/Wasm needs Chromium 119+. So the demo targets Kotlin/JS, which runs Skiko on WebGL2
-// and is supported all the way back to Tizen 6.0.
+// Tizen and webOS both run applications as web apps, and neither TV's web engine has WasmGC:
+// Tizen 8.0 ships Chromium 108 and webOS 24 ships Chromium 108, while Kotlin/Wasm needs 119+. So
+// the demo targets Kotlin/JS, which runs Skiko on WebGL2 — available from Tizen 6.0 and from
+// webOS 5.0 (Chromium 68); webOS 3.x, on Chromium 38, predates WebGL2 and cannot run it.
 kotlin {
     js {
-        outputModuleName = "compose-tizen-demo"
+        outputModuleName = "compose-tv-demo"
         browser {
             commonWebpackConfig {
                 outputFileName = "demo.js"
@@ -37,7 +38,7 @@ kotlin {
     }
 
     // Single source set: the app targets one platform, and the TV-specific APIs it uses
-    // (KeyEvent.isRepeat, ComposeTizenTvViewport) live in the web/skiko source sets of
+    // (KeyEvent.isRepeat, ComposeTvViewport) live in the web/skiko source sets of
     // :compose:ui:ui, so there is nothing to share with a commonMain here.
     sourceSets {
         val jsMain by getting {
@@ -58,28 +59,40 @@ kotlin {
     targets.withType<KotlinJsIrTarget>().all { configureSkikoWebRuntime(project, this) }
 }
 
-/**
- * The directory holding the unsigned Tizen web app: the webpack bundle, the Skiko runtime, and the
- * `config.xml`/`index.html`/`icon.png` that come from `src/jsMain/resources`.
- */
+// One JS bundle serves both TVs — the platform is detected at runtime — so packaging differs only
+// in the manifest laid next to it: config.xml for Tizen, appinfo.json for webOS. Both come from
+// packaging/<platform>/ rather than src/jsMain/resources, so neither ends up inside the other's
+// package.
 val tizenAppDir = layout.buildDirectory.dir("tizen/app")
+val webOsAppDir = layout.buildDirectory.dir("webos/app")
 
 val assembleTizenApp by tasks.registering(Copy::class) {
-    group = "tizen"
+    group = "tv"
     description = "Assembles the unsigned Tizen web app directory."
     from(tasks.named("jsBrowserDistribution"))
+    from("packaging/tizen")
     into(tizenAppDir)
 }
 
 val packageTizenApp by tasks.registering(Zip::class) {
-    group = "tizen"
+    group = "tv"
     description = "Packs the Tizen web app into an unsigned .wgt archive. " +
         "Installing on a real TV needs a signature: run `tizen package -t wgt -s <profile>` " +
         "on the output of assembleTizenApp instead. See README.md."
     dependsOn(assembleTizenApp)
     from(tizenAppDir)
-    archiveFileName.set("ComposeTizenDemo.wgt")
+    archiveFileName.set("ComposeTvDemo.wgt")
     destinationDirectory.set(layout.buildDirectory.dir("tizen"))
+}
+
+val assembleWebOsApp by tasks.registering(Copy::class) {
+    group = "tv"
+    description = "Assembles the webOS web app directory. Turn it into an .ipk with " +
+        "`ares-package` from the webOS TV SDK — an .ipk is an ar archive, not a zip, so Gradle " +
+        "cannot stand in for it. See README.md."
+    from(tasks.named("jsBrowserDistribution"))
+    from("packaging/webos")
+    into(webOsAppDir)
 }
 
 /**

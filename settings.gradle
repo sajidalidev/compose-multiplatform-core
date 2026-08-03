@@ -442,7 +442,7 @@ includeProject(":compose:desktop:desktop:desktop-samples", "compose/desktop/desk
 includeProject(":compose:mpp")
 includeProject(":compose:mpp:demo")
 includeProject(":compose:mpp:demo-swiftui")
-includeProject(":demo-tizen")
+includeProject(":demo-tv")
 
 includeProject(":compose:foundation")
 includeProject(":compose:foundation:foundation")

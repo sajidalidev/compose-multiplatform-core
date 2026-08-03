@@ -1,0 +1,14 @@
+{
+  "id": "org.jetbrains.compose.demo.tv",
+  "version": "1.0.0",
+  "vendor": "JetBrains",
+  "type": "web",
+  "main": "index.html",
+  "title": "Compose TV Demo",
+  "icon": "icon.png",
+  "largeIcon": "icon.png",
+  "bgColor": "#101014",
+  "iconColor": "#7AC7FF",
+  "disableBackHistoryAPI": true,
+  "supportPortraitMode": false
+}
