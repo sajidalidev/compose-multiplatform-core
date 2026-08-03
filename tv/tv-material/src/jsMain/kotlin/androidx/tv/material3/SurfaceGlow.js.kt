@@ -18,37 +18,29 @@ package androidx.tv.material3
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.skiaPaint
-import androidx.compose.ui.graphics.toArgb
-import org.jetbrains.skia.FilterBlurMode
-import org.jetbrains.skia.MaskFilter
+import androidx.compose.ui.graphics.PaintingStyle
 
-// org.jetbrains.skia.Paint has no direct equivalent of android.graphics.Paint#setShadowLayer;
-// approximate the glow by painting directly in the glow color and applying a blur mask filter.
-// The radius-to-sigma conversion mirrors androidx.compose.ui.graphics.BlurEffect's internal
-// (non-public) helper of the same name.
+// The tvOS/Android implementations approximate a shadow layer with a Gaussian blur
+// (MaskFilter.makeBlur / setShadowLayer) run on the Paint every time SurfaceGlowNode.draw() is
+// invoked - which, for the focused card, is every animation frame while its elevation is
+// changing. That blur is a per-pixel filter over the (blurred) glow shape, and it's expensive
+// enough on lower-end (e.g. Mali-class) TV GPUs commonly found in smart TVs to be a measurable
+// chunk of frame time during focus-move animations.
 //
-// JS guard: Skia's native SkMaskFilter::MakeBlur returns null when sigma <= 0 (e.g. when
-// blurRadiusPx is 0, which happens whenever the glow is not currently visible, such as before a
-// Surface/Card gains focus). Skiko's MaskFilter constructor wraps that null native pointer and
-// throws RuntimeException("Can't wrap nullptr"), crashing the first Compose frame. Guard against
-// both a non-positive sigma and a failed/null makeBlur result (defensively, in case Skia
-// fails to produce a mask filter for other reasons too) by falling back to "no glow" instead of
-// letting the exception propagate; this matches the visually correct behavior since a zero-radius
-// glow renders nothing anyway.
+// A blurred *fill* is only ever visible where it extends past the surface's own bounds anyway:
+// SurfaceGlowNode.draw() paints the glow shape at the exact same bounds and outline the surface
+// itself is drawn at (see draw() calling drawContent() right after), so a non-blurred fill would
+// be entirely hidden underneath the surface's own content. We approximate the visible sliver -
+// the blur's bleed past the shape's edge - with a plain translucent *stroke* straddling that
+// edge instead: no mask filter, so no per-frame blur cost, at the cost of a harder-edged halo
+// than a true Gaussian blur would produce.
 internal actual fun Paint.applyGlow(blurRadiusPx: Float, shadowColor: Color) {
-    val native = skiaPaint
-    native.color = shadowColor.toArgb()
-    val sigma = blurSigmaFromRadius(blurRadiusPx)
-    native.maskFilter =
-        if (sigma > 0f) {
-            runCatching { MaskFilter.makeBlur(FilterBlurMode.NORMAL, sigma) }.getOrNull()
-        } else {
-            null
-        }
+    color = shadowColor
+    style = PaintingStyle.Stroke
+    strokeWidth = blurRadiusPx
+    // Skia treats strokeWidth == 0f as a 1px hairline, not "invisible" - unlike the tvOS/Android
+    // implementations, which rely on MaskFilter.makeBlur/setShadowLayer producing no visible
+    // effect for a non-positive radius. Force the same "zero radius means no glow" behavior
+    // explicitly, since that's the state the surface rests in before it is ever focused.
+    alpha = if (blurRadiusPx > 0f) 1f else 0f
 }
-
-private fun blurSigmaFromRadius(radius: Float): Float =
-    if (radius > 0) BlurSigmaScale * radius + 0.5f else 0f
-
-private const val BlurSigmaScale = 0.57735f
