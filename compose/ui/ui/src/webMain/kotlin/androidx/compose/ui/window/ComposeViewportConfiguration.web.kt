@@ -101,6 +101,37 @@ class ComposeViewportConfiguration internal constructor() {
         }
 
     /**
+     * Multiplies the resolution of the canvas' backing store, i.e. the raster resolution Skia
+     * rasterizes into, without changing the dp space the scene lays out in or the canvas'
+     * on-screen (CSS) size: the `<canvas>` element is styled `width: 100%; height: 100%` of its
+     * container (see [ComposeViewport]), so a backing store smaller than that box is simply
+     * upscaled by the browser, the same way it would upscale a low-resolution `<img>`.
+     *
+     * This is a raw performance lever for a GPU-constrained TV: GPU cost scales with the number
+     * of backing pixels rasterized every frame, and a couch-distance 10-foot UI on a 43"+ set
+     * does not need every physical pixel of a 1080p (or higher) panel to look sharp. Rendering at
+     * a reduced backing resolution - e.g. 720p on a 1080p screen - and letting CSS stretch the
+     * canvas back up can meaningfully cut per-frame GPU work on lower-end (e.g. Mali-class) TV
+     * GPUs. See [androidx.compose.ui.platform.tizenTvBackingScale] for a suggested TV value.
+     *
+     * Defaults to `1`, i.e. the backing store is rasterized at native resolution, which is the
+     * behaviour of a plain [ComposeViewport]. Values less than `1` render fewer backing pixels
+     * than the canvas' CSS box and get upscaled; values greater than `1` (supersampling) are also
+     * allowed but rarely useful on a TV.
+     *
+     * Note: like [densityScale], drag-and-drop and [enableBrowserWindowInsets] still measure in
+     * CSS pixels and are not corrected for this scale.
+     *
+     * Note: This API is experimental and subject to change in the future.
+     */
+    @ExperimentalComposeUiApi
+    var backingScale: Float = 1f
+        set(value) {
+            require(value > 0f) { "backingScale must be positive, but was $value" }
+            field = value
+        }
+
+    /**
      * Focuses the viewport's `<canvas>` as soon as it is attached, so that key events reach Compose
      * without the user clicking the page first.
      *

@@ -214,20 +214,36 @@ internal class ComposeWindow(
 
     /**
      * The browser's device pixel ratio: the factor between CSS pixels (what DOM events and element
-     * boxes are measured in) and the backing pixels the scene is rasterized into. It is *not* the
-     * scene's density, which [ComposeViewportConfiguration.densityScale] may scale up for a 10-foot
-     * TV UI, and it is what every CSS-pixel <-> scene-pixel conversion must use.
+     * boxes are measured in) and the backing pixels a *native-resolution* scene would rasterize
+     * into. It is *not* the scene's density, which [ComposeViewportConfiguration.densityScale] may
+     * scale up for a 10-foot TV UI and [ComposeViewportConfiguration.backingScale] may scale down
+     * to cut rasterization cost, and it is not, by itself, what CSS-pixel <-> scene-pixel
+     * conversions should use - see [cssDensity].
      */
     private val contentScale: Float = actualDensity.toFloat()
 
+    /**
+     * The density the scene lays out and rasterizes with: `1.dp` covers
+     * [ComposeViewportConfiguration.densityScale] times as many CSS pixels (the "10-foot UI"
+     * lever), and the backing store holds [ComposeViewportConfiguration.backingScale] times as
+     * many pixels per dp (the rasterization-resolution lever). The two are independent: scaling
+     * [ComposeViewportConfiguration.backingScale] down alone shrinks the backing pixel count
+     * without changing the dp space the scene lays out in - see [cssDensity] and [resize].
+     */
     private val density: Density = Density(
-        density = contentScale * configuration.densityScale,
+        density = contentScale * configuration.densityScale * configuration.backingScale,
         fontScale = 1f
     )
 
-    /** [contentScale] as a [Density], for converting CSS pixels to and from scene pixels. */
+    /**
+     * [contentScale] adjusted by [ComposeViewportConfiguration.backingScale], for converting CSS
+     * pixels to and from scene/backing pixels. Deliberately excludes
+     * [ComposeViewportConfiguration.densityScale]: that scale only affects the dp space the scene
+     * lays out in (via [density]), not the CSS-pixel <-> backing-pixel relationship, which is
+     * governed purely by the browser's device pixel ratio and [backingScale].
+     */
     private val cssDensity: Density = Density(
-        density = contentScale,
+        density = contentScale * configuration.backingScale,
         fontScale = 1f
     )
 
@@ -654,10 +670,17 @@ internal class ComposeWindow(
     // boxSize carries the container's CSS-pixel box (IntSize was exposed to the public API with
     // the meaning of DPs, which only holds while densityScale is 1).
     private fun resize(boxSize: DpSize) {
+        // sizeInPx is the backing store resolution: CSS pixels times the device pixel ratio,
+        // scaled down (or up) by ComposeViewportConfiguration.backingScale. It intentionally does
+        // NOT factor in densityScale - that lever changes the dp space, not the pixel count.
         val sizeInPx = boxSize.toSize(cssDensity).toIntSize()
 
         // we need to scale canvas both via CSS styling and HTML attributes
         // https://www.khronos.org/webgl/wiki/HandlingHighDPI
+        // The canvas is styled `width: 100%; height: 100%` of its container (see
+        // ComposeWindow.web.kt), so when backingScale < 1 makes sizeInPx smaller than that CSS
+        // box, the browser upscales the rasterized backing store to fill it - the same way it
+        // upscales a low-resolution <img>.
         canvas.width = sizeInPx.width
         canvas.height = sizeInPx.height
 
@@ -950,10 +973,12 @@ internal class ComposeWindow(
         }
     }
 
+    // Uses cssDensity (not contentScale) so that a scaled-down backing store (backingScale < 1)
+    // still receives pointer positions in the same scene/backing-pixel space it renders into.
     private val MouseEvent.offset
         get() = Offset(
-            x = offsetX.toFloat() * contentScale,
-            y = offsetY.toFloat() * contentScale
+            x = offsetX.toFloat() * cssDensity.density,
+            y = offsetY.toFloat() * cssDensity.density
         )
 
     companion object {

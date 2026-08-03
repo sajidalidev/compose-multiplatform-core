@@ -64,6 +64,30 @@ val tizenTvDensityScale: Float
     }
 
 /**
+ * A suggested [androidx.compose.ui.window.ComposeViewportConfiguration.backingScale] for a TV:
+ * renders the canvas' backing store at (at most) 720p tall and lets CSS upscale it to the full
+ * screen, instead of rasterizing every physical pixel of a 1080p (or higher) panel.
+ *
+ * Lower-end (e.g. Mali-class) TV GPUs pay for every backing pixel rasterized every frame, and a
+ * couch-distance 10-foot UI doesn't need native resolution to look sharp - the upscale is
+ * essentially free (the browser already does it via CSS), while the GPU work saved from
+ * rasterizing fewer pixels is not.
+ *
+ * `720f / window.screen.height`, coerced to at most `1` so this is never an upscale on a screen
+ * shorter than 720p.
+ *
+ * This is *not* applied by [androidx.compose.ui.window.ComposeTizenTvViewport] automatically -
+ * unlike [tizenTvDensityScale], trading rasterization resolution for performance is a
+ * per-app decision. Opt in explicitly:
+ * ```
+ * ComposeTizenTvViewport(configure = { backingScale = tizenTvBackingScale }) { ... }
+ * ```
+ */
+@ExperimentalComposeUiApi
+val tizenTvBackingScale: Float
+    get() = (720f / window.screen.height).coerceAtMost(1f)
+
+/**
  * Quits the application, the behaviour a TV user expects from Back on the top-level screen (and
  * what the platform certification requires). A no-op outside a Tizen TV.
  */
