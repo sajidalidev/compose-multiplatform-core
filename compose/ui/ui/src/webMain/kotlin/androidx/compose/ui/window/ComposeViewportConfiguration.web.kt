@@ -73,4 +73,43 @@ class ComposeViewportConfiguration internal constructor() {
      */
     @ExperimentalComposeUiApi
     var enableBrowserWindowInsets: Boolean = false
+
+    /**
+     * Multiplies the density the scene lays out with, without changing the rasterization
+     * resolution: `1.dp` covers [densityScale] times as many CSS pixels, and the viewport reports
+     * proportionally fewer dp of space.
+     *
+     * This is what makes a "10-foot" UI possible on a TV, where the browser reports a device pixel
+     * ratio of `1` for a 1080p screen and a Compose UI authored at phone scale ends up unreadable
+     * from across the room. A scale of `2` gives a 1920x1080 TV a 960x540 dp viewport, matching the
+     * dp space an Android TV app is laid out in. See [ComposeTizenTvViewport], which sets it from
+     * the screen resolution.
+     *
+     * Defaults to `1`, i.e. `1.dp` == 1 CSS pixel, which is the behaviour of a plain
+     * [ComposeViewport].
+     *
+     * Note: drag-and-drop and [enableBrowserWindowInsets] still measure in CSS pixels and are not
+     * corrected for this scale. Neither applies to a TV, which is what the option exists for.
+     *
+     * Note: This API is experimental and subject to change in the future.
+     */
+    @ExperimentalComposeUiApi
+    var densityScale: Float = 1f
+        set(value) {
+            require(value > 0f) { "densityScale must be positive, but was $value" }
+            field = value
+        }
+
+    /**
+     * Focuses the viewport's `<canvas>` as soon as it is attached, so that key events reach Compose
+     * without the user clicking the page first.
+     *
+     * A TV has no pointer to click with: unless the canvas holds DOM focus, every remote button
+     * press goes to `<body>` and the app looks frozen. Defaults to `false` to leave the focus
+     * behaviour of pages that embed Compose alongside other content untouched.
+     *
+     * Note: This API is experimental and subject to change in the future.
+     */
+    @ExperimentalComposeUiApi
+    var requestFocusOnStart: Boolean = false
 }
