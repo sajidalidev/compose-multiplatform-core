@@ -212,8 +212,22 @@ internal class ComposeWindow(
 
     private var actualActivePointerButtons: PointerButtons = PointerButtons()
 
+    /**
+     * The browser's device pixel ratio: the factor between CSS pixels (what DOM events and element
+     * boxes are measured in) and the backing pixels the scene is rasterized into. It is *not* the
+     * scene's density, which [ComposeViewportConfiguration.densityScale] may scale up for a 10-foot
+     * TV UI, and it is what every CSS-pixel <-> scene-pixel conversion must use.
+     */
+    private val contentScale: Float = actualDensity.toFloat()
+
     private val density: Density = Density(
-        density = actualDensity.toFloat(),
+        density = contentScale * configuration.densityScale,
+        fontScale = 1f
+    )
+
+    /** [contentScale] as a [Density], for converting CSS pixels to and from scene pixels. */
+    private val cssDensity: Density = Density(
+        density = contentScale,
         fontScale = 1f
     )
 
@@ -324,7 +338,7 @@ internal class ComposeWindow(
                         get() = layerRoot
 
                     override fun getNewGeometryForBackingInput(rect: Rect): DpRect {
-                        val dpRect = rect.toDpRect(density)
+                        val dpRect = rect.toDpRect(cssDensity)
                         val left = dpRect.left.value
                         val top = dpRect.top.value
 
@@ -576,6 +590,12 @@ internal class ComposeWindow(
         initEvents(canvas)
         state.init()
 
+        if (configuration.requestFocusOnStart && !canvas.isFocused()) {
+            // Without DOM focus on the canvas the keydown listener installed above never fires,
+            // which on a TV means the remote does nothing at all.
+            canvas.focus()
+        }
+
 
         scene.density = density
         archComponentsOwner.enableSavedStateHandles()
@@ -631,8 +651,10 @@ internal class ComposeWindow(
             .navigationEventDispatcher.addInput(navigationEventInput)
     }
 
+    // boxSize carries the container's CSS-pixel box (IntSize was exposed to the public API with
+    // the meaning of DPs, which only holds while densityScale is 1).
     private fun resize(boxSize: DpSize) {
-        val sizeInPx = boxSize.toSize(density).toIntSize()
+        val sizeInPx = boxSize.toSize(cssDensity).toIntSize()
 
         // we need to scale canvas both via CSS styling and HTML attributes
         // https://www.khronos.org/webgl/wiki/HandlingHighDPI
@@ -644,7 +666,7 @@ internal class ComposeWindow(
         // the wasm2js boundary. See ComposeViewport for the setup.
 
         _windowInfo.containerSize = sizeInPx
-        _windowInfo.containerDpSize = boxSize
+        _windowInfo.containerDpSize = with(density) { sizeInPx.toSize().toDpSize() }
 
         // TODO: Align with Container/Mediator architecture
         skiaLayer.attachTo(canvas)
@@ -684,7 +706,7 @@ internal class ComposeWindow(
         val event: PointerEvent,
         val containerOffset: Offset
     ) {
-        val composePointer = event.toScenePointerEvent(containerOffset, density)
+        val composePointer = event.toScenePointerEvent(containerOffset, cssDensity)
 
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -834,7 +856,7 @@ internal class ComposeWindow(
 
                 coalescedEvents.fastForEach { coalescedEvent ->
                     val coalescedEventType = coalescedEvent.getPointerEventType()
-                    val sceneEvent = coalescedEvent.toScenePointerEvent(current.containerOffset, density)
+                    val sceneEvent = coalescedEvent.toScenePointerEvent(current.containerOffset, cssDensity)
                     pointers[indexOfCurrentPointer] = sceneEvent
                     result = scene.sendPointerEvent(
                         eventType = coalescedEventType,
@@ -930,8 +952,8 @@ internal class ComposeWindow(
 
     private val MouseEvent.offset
         get() = Offset(
-            x = offsetX.toFloat() * density.density,
-            y = offsetY.toFloat() * density.density
+            x = offsetX.toFloat() * contentScale,
+            y = offsetY.toFloat() * contentScale
         )
 
     companion object {
