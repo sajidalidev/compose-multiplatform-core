@@ -16,7 +16,9 @@
 
 package androidx.tv.material3
 
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.isRepeat
 
+@OptIn(ExperimentalComposeUiApi::class)
 internal actual fun KeyEvent.isKeyRepeatEvent(): Boolean = isRepeat
