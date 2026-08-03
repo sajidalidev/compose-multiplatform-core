@@ -19,6 +19,7 @@
 
 package androidx.compose.ui.input.key
 
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.isAltGraphPressed
@@ -37,7 +38,8 @@ internal data class InternalKeyEvent(
     val codePoint: Int,
     val modifiers: PointerKeyboardModifiers, // Reuse pointer modifiers
 
-    val nativeEvent: Any? = null
+    val nativeEvent: Any? = null,
+    val isRepeat: Boolean = false
 )
 
 internal val KeyEvent.internal: InternalKeyEvent
@@ -64,6 +66,15 @@ actual val KeyEvent.isMetaPressed: Boolean
 actual val KeyEvent.isShiftPressed: Boolean
     get() = internal.modifiers.isShiftPressed
 
+/**
+ * True if this is a key-repeat event, i.e. the key has been held down past the platform's initial
+ * repeat delay. TV remotes auto-repeat aggressively, so long-press handling needs to tell the first
+ * press apart from the repeats it generates.
+ */
+@ExperimentalComposeUiApi
+val KeyEvent.isRepeat: Boolean
+    get() = internal.isRepeat
+
 @InternalComposeUiApi
 fun KeyEvent(
     key: Key,
@@ -73,7 +84,8 @@ fun KeyEvent(
     isMetaPressed: Boolean = false,
     isAltPressed: Boolean = false,
     isShiftPressed: Boolean = false,
-    nativeEvent: Any? = null
+    nativeEvent: Any? = null,
+    isRepeat: Boolean = false
 ) = KeyEvent(
     nativeKeyEvent = InternalKeyEvent(
         key = key,
@@ -85,7 +97,8 @@ fun KeyEvent(
             isAltPressed = isAltPressed,
             isShiftPressed = isShiftPressed
         ),
-        nativeEvent = nativeEvent
+        nativeEvent = nativeEvent,
+        isRepeat = isRepeat
     )
 )
 
@@ -94,13 +107,15 @@ internal fun KeyEvent.copy(
     type: KeyEventType = this.internal.type,
     codePoint: Int = this.internal.codePoint,
     modifiers: PointerKeyboardModifiers = this.internal.modifiers,
-    nativeEvent: Any? = this.internal.nativeEvent
+    nativeEvent: Any? = this.internal.nativeEvent,
+    isRepeat: Boolean = this.internal.isRepeat
 ) = KeyEvent(
     nativeKeyEvent = InternalKeyEvent(
         key = key,
         type = type,
         codePoint = codePoint,
         modifiers = modifiers,
-        nativeEvent = nativeEvent
+        nativeEvent = nativeEvent,
+        isRepeat = isRepeat
     )
 )

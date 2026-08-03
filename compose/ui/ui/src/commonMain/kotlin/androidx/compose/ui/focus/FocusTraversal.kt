@@ -129,8 +129,11 @@ internal fun FocusTargetNode.focusSearch(
                     Rtl -> Left
                     Ltr -> Right
                 }
-            findActiveFocusNode()
-                ?.twoDimensionalFocusSearch(direction, previouslyFocusedRect, onFound)
+            // On a TV the first D-pad press arrives before anything is focused, so
+            // findActiveFocusNode() is null and the search never starts. Fall back to this node
+            // as the starting point so the initial press can enter the hierarchy.
+            (findActiveFocusNode() ?: this)
+                .twoDimensionalFocusSearch(direction, previouslyFocusedRect, onFound)
         }
         Exit ->
             findActiveFocusNode()?.findNonDeactivatedParent().let {
