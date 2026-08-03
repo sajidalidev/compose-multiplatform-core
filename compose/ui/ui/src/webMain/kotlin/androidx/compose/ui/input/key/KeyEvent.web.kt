@@ -17,6 +17,7 @@
 package androidx.compose.ui.input.key
 
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
+import androidx.compose.ui.platform.isTizenTv
 import org.w3c.dom.events.KeyboardEvent
 
 private fun KeyboardEvent.toInputModifiers(): PointerKeyboardModifiers {
@@ -40,7 +41,8 @@ internal fun KeyboardEvent.toComposeEvent(): KeyEvent {
             },
             codePoint = if (key.firstOrNull()?.toString() == key) key.codePointAt(0) else composeKey.keyCode.toInt(),
             modifiers = toInputModifiers(),
-            nativeEvent = this
+            nativeEvent = this,
+            isRepeat = repeat
         )
     )
 }
@@ -194,5 +196,15 @@ private fun KeyboardEvent.toKey(): Key {
         codeMap[code]
     }
 
-    return keyResolved ?: Key.Unknown
+    if (keyResolved != null) return keyResolved
+
+    // The TV-specific buttons of a Samsung Smart Remote carry no usable `key`/`code`, only a
+    // numeric key code. Consult the remote's table before giving up, but only on a TV, so a
+    // desktop browser keeps reporting Unknown for the codes it shares with the remote (e.g. 19,
+    // the PC "Pause" key).
+    if (isTizenTv) {
+        tizenTvKeyFromKeyCode(keyCode)?.let { return it }
+    }
+
+    return Key.Unknown
 }
