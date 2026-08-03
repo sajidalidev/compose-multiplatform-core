@@ -18,35 +18,37 @@ package androidx.compose.ui.window
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.platform.registerTizenTvRemoteKeys
-import androidx.compose.ui.platform.tizenTvDensityScale
+import androidx.compose.ui.platform.registerTvRemoteKeys
+import androidx.compose.ui.platform.tvDensityScale
 import org.w3c.dom.Element
 
 /**
  * EXPERIMENTAL! Might be deleted or changed in the future!
  *
- * Creates a Compose viewport set up for a Tizen TV application: a "10-foot" density scale, the
- * Samsung Smart Remote's TV buttons routed to the app, and DOM focus on the canvas so the remote
- * reaches Compose without a pointer to click with.
+ * Creates a Compose viewport set up for a TV application: a "10-foot" density scale, the remote's
+ * TV buttons routed to the app, and DOM focus on the canvas so the remote reaches Compose without
+ * a pointer to click with.
+ *
+ * The TV it is running on is detected at runtime
+ * ([androidx.compose.ui.platform.currentTvPlatform]), so one build serves every supported platform.
  *
  * It is otherwise a [ComposeViewport] and takes the same [ComposeViewportConfiguration], so any of
  * the defaults below can be overridden from [configure]:
  * - [ComposeViewportConfiguration.densityScale] is set from the screen resolution
- *   ([tizenTvDensityScale]), giving a 1080p TV a 960x540 dp viewport — the dp space an Android TV
- *   app is laid out in.
+ *   ([androidx.compose.ui.platform.tvDensityScale]), giving a 1080p TV a 960x540 dp viewport — the
+ *   dp space an Android TV app is laid out in.
  * - [ComposeViewportConfiguration.requestFocusOnStart] is enabled.
  * - [ComposeViewportConfiguration.isClearFocusOnMouseDownEnabled] is disabled: losing focus to a
  *   stray pointer event would leave the remote with nothing to move focus from.
  *
- * Outside a Tizen TV (a desktop browser, the emulator's browser preview) the remote key
- * registration is skipped and the rest still applies, so the app can be developed in Chrome and
- * look the same.
+ * Off a TV (a desktop browser, an emulator's browser preview) the remote key registration is
+ * skipped and the rest still applies, so the app can be developed in Chrome and look the same.
  *
  * Focus is what drives a TV UI, so make the content focusable and give it an initial focus target
  * with `Modifier.focusRequester(…)`. The four-way pad then moves focus, OK activates
  * `Modifier.clickable`, and Back is dispatched through the navigation event dispatcher (so
  * `BackHandler`/`NavHost` handle it) — see
- * [androidx.compose.ui.platform.exitTizenTvApplication] for quitting on the top-level
+ * [androidx.compose.ui.platform.exitTvApplication] for quitting on the top-level
  * screen, which a TV user expects Back to do.
  *
  * @param viewportContainerId The id of an HTML element which would host the Compose Viewport.
@@ -55,16 +57,16 @@ import org.w3c.dom.Element
  * @param content The Composable content to be rendered on the `<canvas>` element.
  */
 @ExperimentalComposeUiApi
-fun ComposeTizenTvViewport(
+fun ComposeTvViewport(
     viewportContainerId: String? = null,
     configure: ComposeViewportConfiguration.() -> Unit = {},
     content: @Composable () -> Unit = { }
 ) {
-    registerTizenTvRemoteKeys()
+    registerTvRemoteKeys()
     ComposeViewport(
         viewportContainerId = viewportContainerId,
         configure = {
-            applyTizenTvDefaults()
+            applyTvDefaults()
             configure.invoke(this)
         },
         content = content
@@ -74,19 +76,19 @@ fun ComposeTizenTvViewport(
 /**
  * EXPERIMENTAL! Might be deleted or changed in the future!
  *
- * [ComposeTizenTvViewport] hosted in the given [viewportContainer] element.
+ * [ComposeTvViewport] hosted in the given [viewportContainer] element.
  */
 @ExperimentalComposeUiApi
-fun ComposeTizenTvViewport(
+fun ComposeTvViewport(
     viewportContainer: Element,
     configure: ComposeViewportConfiguration.() -> Unit = {},
     content: @Composable () -> Unit = { }
 ) {
-    registerTizenTvRemoteKeys()
+    registerTvRemoteKeys()
     ComposeViewport(
         viewportContainer = viewportContainer,
         configure = {
-            applyTizenTvDefaults()
+            applyTvDefaults()
             configure.invoke(this)
         },
         content = content
@@ -94,8 +96,8 @@ fun ComposeTizenTvViewport(
 }
 
 @ExperimentalComposeUiApi
-private fun ComposeViewportConfiguration.applyTizenTvDefaults() {
-    densityScale = tizenTvDensityScale
+private fun ComposeViewportConfiguration.applyTvDefaults() {
+    densityScale = tvDensityScale
     requestFocusOnStart = true
     isClearFocusOnMouseDownEnabled = false
 }

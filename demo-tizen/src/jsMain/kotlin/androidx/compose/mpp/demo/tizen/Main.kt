@@ -17,12 +17,12 @@
 package androidx.compose.mpp.demo.tizen
 
 import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.platform.exitTizenTvApplication
-import androidx.compose.ui.window.ComposeTizenTvViewport
+import androidx.compose.ui.platform.exitTvApplication
+import androidx.compose.ui.window.ComposeTvViewport
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
-    ComposeTizenTvViewport(viewportContainerId = "composeTarget") {
-        TizenTvDemoApp(onExit = ::exitTizenTvApplication)
+    ComposeTvViewport(viewportContainerId = "composeTarget") {
+        TizenTvDemoApp(onExit = ::exitTvApplication)
     }
 }

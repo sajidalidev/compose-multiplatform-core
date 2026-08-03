@@ -16,21 +16,24 @@
 
 package androidx.compose.ui.input.key
 
-/**
- * The Samsung Smart Remote delivers its TV-specific buttons as plain `keydown`/`keyup` events, but
- * only [org.w3c.dom.events.KeyboardEvent.keyCode] carries the button identity. The `key`/`code`
- * strings are unusable: a real TV aliases each button to the nearest PC keyboard key (Back is
- * `key "XF86Back"` with `code "Escape"`, the coloured buttons are `"F1"`..`"F4"`), and the
- * emulator leaves `code` empty — so `KeyEvent.web.kt` resolves this table before its string maps
- * whenever the Tizen device APIs are present.
+import androidx.compose.ui.platform.TvPlatform
+
+/*
+ * A TV remote delivers its TV-specific buttons as plain `keydown`/`keyup` events, but only
+ * KeyboardEvent.keyCode carries the button identity. The `key`/`code` strings are unusable: a real
+ * TV aliases each button to the nearest PC keyboard key (on Tizen, Back is `key "XF86Back"` with
+ * `code "Escape"`, and the coloured buttons are `"F1"`..`"F4"`), while an emulator leaves `code`
+ * empty — so `KeyEvent.web.kt` resolves these tables before its string maps whenever it is running
+ * on a TV.
  *
- * The four-way pad, OK, and the digits are ordinary keyboard codes (`ArrowUp`, `Enter`, `Digit0`, …)
- * with key codes absent from this table, so they keep resolving through the string map.
- *
- * Key codes are the ones published by Samsung for the TV web runtime; the Back and coloured-button
- * aliases were confirmed against a Tizen 9.0 set (UA43DU7000).
+ * The four-way pad, OK, and the digits are ordinary keyboard codes (`ArrowUp`, `Enter`, `Digit0`,
+ * …) whose key codes are absent from the Tizen table, so they keep resolving through the string
+ * map. Each table holds the codes its vendor publishes for its TV web runtime; the Tizen Back and
+ * coloured-button aliases were confirmed against a Tizen 9.0 set (UA43DU7000).
  */
-internal val tizenTvKeyCodes: Map<Int, Key> = mapOf(
+
+/** Key codes of the Samsung Smart Remote's TV-specific buttons on Tizen TV. */
+private val tizenKeyCodes: Map<Int, Key> = mapOf(
     // Navigation.
     10009 to Key.Back,
     10182 to Key.MediaClose, // "Exit" — quits the application on a real TV.
@@ -71,14 +74,14 @@ internal val tizenTvKeyCodes: Map<Int, Key> = mapOf(
 )
 
 /**
- * Names understood by `tizen.tvinputdevice.registerKeyBatch`. A TV only routes a remote button to
- * the application after it has been registered, so this list must stay in sync with
- * [tizenTvKeyCodes].
+ * Names understood by `tizen.tvinputdevice.registerKeyBatch`. A Tizen TV only routes a remote
+ * button to the application after it has been registered, so this list must stay in sync with
+ * the Tizen half of [tvRemoteKeyFromKeyCode].
  *
  * `Exit`, the volume keys, and the power key are deliberately absent: Tizen reserves them for the
  * system and rejects an attempt to register them.
  */
-internal val tizenTvRegisteredKeyNames: List<String> = listOf(
+internal val tizenRegisteredKeyNames: List<String> = listOf(
     "MediaPlay",
     "MediaPause",
     "MediaPlayPause",
@@ -104,9 +107,13 @@ internal val tizenTvRegisteredKeyNames: List<String> = listOf(
 )
 
 /**
- * Resolves a Samsung Smart Remote button from its numeric key code.
+ * Resolves a TV remote button from its numeric key code, for the remote [platform] ships with.
  *
- * Returns `null` when the code is not a TV remote button, so the caller can fall back to the
- * regular string-based mapping.
+ * Returns `null` when the code is not one of that remote's buttons — including always, off a TV —
+ * so the caller keeps the result of the regular string-based mapping.
  */
-internal fun tizenTvKeyFromKeyCode(keyCode: Int): Key? = tizenTvKeyCodes[keyCode]
+internal fun tvRemoteKeyFromKeyCode(platform: TvPlatform, keyCode: Int): Key? =
+    when (platform) {
+        TvPlatform.Tizen -> tizenKeyCodes[keyCode]
+        TvPlatform.None -> null
+    }

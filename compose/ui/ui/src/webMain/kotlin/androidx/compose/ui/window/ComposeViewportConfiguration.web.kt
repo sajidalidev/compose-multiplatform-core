@@ -82,7 +82,7 @@ class ComposeViewportConfiguration internal constructor() {
      * This is what makes a "10-foot" UI possible on a TV, where the browser reports a device pixel
      * ratio of `1` for a 1080p screen and a Compose UI authored at phone scale ends up unreadable
      * from across the room. A scale of `2` gives a 1920x1080 TV a 960x540 dp viewport, matching the
-     * dp space an Android TV app is laid out in. See [ComposeTizenTvViewport], which sets it from
+     * dp space an Android TV app is laid out in. See [ComposeTvViewport], which sets it from
      * the screen resolution.
      *
      * Defaults to `1`, i.e. `1.dp` == 1 CSS pixel, which is the behaviour of a plain
