@@ -112,10 +112,14 @@ internal val tizenRegisteredKeyNames: List<String> = listOf(
  * The playback and coloured buttons use the same codes as Tizen — they are the CEA/HTML5 media key
  * codes — but Back and the channel keys do not, which is the whole reason the table is per-platform.
  *
- * Note on channel keys: `33`/`34` are also PageUp/PageDown. When webOS populates `code` for them,
- * the string map in `KeyEvent.web.kt` resolves them to [Key.PageUp]/[Key.PageDown] first and this
- * table is never consulted, so an app that cares about the channel keys should accept either.
- * Overriding the string map instead would break a real PageUp on a USB keyboard.
+ * Note on channel keys: `33`/`34` are also PageUp/PageDown, and this table is consulted before the
+ * string maps, so on a webOS TV a USB keyboard's PageUp/PageDown report [Key.ChannelUp] and
+ * [Key.ChannelDown]. That is the one place a TV table shadows a real keyboard key — the remote
+ * wins deliberately, since it is the input a TV app is built for. Tizen has no such collision.
+ *
+ * Unlike the Tizen table these codes have not been checked against real hardware; if a webOS set
+ * turns out not to alias its buttons to keyboard strings the way Tizen does, only the ordering
+ * matters here, not the codes themselves.
  */
 private val webOsKeyCodes: Map<Int, Key> = mapOf(
     // Navigation.

@@ -47,7 +47,7 @@ shared, so **a change that only fixes one platform is a sign it belongs somewher
 | --- | --- | --- |
 | Detection | `tizen.tvinputdevice` | `PalmSystem`, `webOS.platform.tv`, `Web0S` UA |
 | Back key code | `10009` | `461` |
-| Channel keys | `427`/`428` | `33`/`34` (also PageUp/PageDown — see the note in `TvRemoteKeys.web.kt`) |
+| Channel keys | `427`/`428` | `33`/`34`, which shadow a keyboard's PageUp/PageDown — see `TvRemoteKeys.web.kt` |
 | Claiming remote keys | required (`registerKeyBatch`) | not needed |
 | Quitting | `tizen.application…exit()` | `window.close()` |
 | Manifest | `config.xml`, needs signing | `appinfo.json`, needs `disableBackHistoryAPI` |
@@ -118,6 +118,14 @@ path, it will have been written against `density` and needs the same treatment.
 
 Known gaps, deliberately left on `density`: `WebDragAndDropManager` and `WebWindowInsetsManager`.
 Neither applies to a TV. If a rebase makes one of them reachable on TV, fix it then.
+
+**Key resolution order is load-bearing.** A TV aliases each remote button to the nearest PC
+keyboard key in `key`/`code` — on Tizen, Back arrives as `code "Escape"` and the coloured buttons as
+`"F1".."F4"` — so `toKey()` must consult the remote's numeric table **before** the string maps.
+Resolving the string maps first silently shadows every aliased button (Back stops working
+entirely), and it does so only on real hardware: an emulator leaves `code` empty, so both orderings
+look identical there. Verified on a Tizen 9.0 UA43DU7000. If a rebase reorders that function, put
+the table lookup back on top.
 
 ## 5. Verify the rest of the fork logic is still on the live path
 ```bash
@@ -198,4 +206,5 @@ git switch <tv-branch> && git branch -D tv-rebase-trial
 | Fixing only `settings.gradle` and not `settings-fork.gradle` | The default `./gradlew` uses fork mode and would lose `:demo-tv`. |
 | Targeting Kotlin/Wasm instead of Kotlin/JS | Kotlin/Wasm needs WasmGC (Chromium 119+); Tizen 8.0 and webOS 24 both ship Chromium 108. It will not load on any shipping TV. |
 | Adding a platform branch for something both TVs share | Only detection, key codes, key claiming and exit differ. Anything else belongs in the shared path. |
+| Letting the string maps resolve before the remote's key table | A TV aliases Back to "Escape" and the coloured buttons to "F1".."F4". String-first shadows them all, and only on real hardware — an emulator leaves `code` empty and looks fine either way. |
 | Compiling only — never running | Compile != renders, and focus bugs are only visible when a remote is driving. |
