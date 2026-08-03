@@ -1,12 +1,12 @@
 ---
-name: rebase-tizen-fork
-description: Use when integrating upstream JetBrains compose-multiplatform-core changes into the Tizen TV fork — rebasing the Tizen branch onto upstream/jb-main, syncing after upstream moves ahead, or catching the Tizen fork up to upstream. Specific to the Tizen TV branch / upstream jb-main rebase in this repository.
+name: rebase-tv-fork
+description: Use when integrating upstream JetBrains compose-multiplatform-core changes into the TV fork (Samsung Tizen and LG webOS) — rebasing the TV branch onto upstream/jb-main, syncing after upstream moves ahead, or catching the TV fork up to upstream. Specific to the TV branch / upstream jb-main rebase in this repository.
 version: 1.0.0
 ---
 
-The Tizen TV fork carries a small set of commits on top of JetBrains `upstream/jb-main` that make
-Compose usable from a Samsung Smart Remote on a Tizen TV. Periodically upstream moves ahead and the
-fork must be rebased onto it.
+The TV fork carries a small set of commits on top of JetBrains `upstream/jb-main` that make Compose
+usable from a TV remote on **Samsung Tizen** and **LG webOS**. Periodically upstream moves ahead and
+the fork must be rebased onto it.
 
 # Core principle — a clean rebase is NOT proof of correctness
 
@@ -19,10 +19,11 @@ skill.
 
 # What the fork actually changes
 
-Unlike the tvOS fork, this one adds **no new Kotlin target**. A Tizen TV runs applications in its
-web engine, so the app is the existing `js` target packaged as a Tizen web app. That means no
-per-module `build.gradle` / `build-fork.gradle` source-set wiring to maintain — the whole surface is
-five behavioural edits plus a demo module:
+Unlike the tvOS fork, this one adds **no new Kotlin target**. Both TVs run applications in their web
+engine, so the app is the existing `js` target packaged as a web app (`.wgt` for Tizen, `.ipk` for
+webOS) — one bundle for both, with the platform detected at runtime. That means no per-module
+`build.gradle` / `build-fork.gradle` source-set wiring to maintain — the whole surface is a handful
+of behavioural edits plus a demo module:
 
 | Area | File | What it does |
 | --- | --- | --- |
@@ -31,11 +32,25 @@ five behavioural edits plus a demo module:
 | Back | `compose/ui/ui/src/skikoMain/…/navigationevent/BackNavigationEventInput.kt` | `Key.Back` dispatches back, like `Key.Escape` |
 | Key repeat | `compose/ui/ui/src/skikoMain/…/input/key/KeyEvent.skiko.kt` | `InternalKeyEvent.isRepeat` + the public `KeyEvent.isRepeat` |
 | Scene focus | `compose/ui/ui/src/skikoMain/…/scene/ComposeSceneFocusManager.skiko.kt` | `moveFocus` |
-| Remote keys | `compose/ui/ui/src/webMain/…/input/key/TizenTvKeys.web.kt`, `KeyEvent.web.kt` | numeric `keyCode` fallback for the remote's TV buttons |
-| Device APIs | `compose/ui/ui/src/webMain/…/platform/TizenTv.web.kt` | `isTizenTv`, `registerTizenTvRemoteKeys`, `tizenTvDensityScale`, `exitTizenTvApplication` |
+| Remote keys | `compose/ui/ui/src/webMain/…/input/key/TvRemoteKeys.web.kt`, `KeyEvent.web.kt` | per-platform numeric `keyCode` fallback for each remote's TV buttons |
+| Device APIs | `compose/ui/ui/src/webMain/…/platform/TvPlatform.web.kt` | `TvPlatform`, `currentTvPlatform`, `registerTvRemoteKeys`, `tvDensityScale`, `exitTvApplication` |
 | 10-foot scale | `compose/ui/ui/src/webMain/…/window/ComposeWindowInternal.web.kt`, `ComposeViewportConfiguration.web.kt` | `densityScale` / `requestFocusOnStart`, and the `contentScale` vs `density` split |
-| Entry point | `compose/ui/ui/src/webMain/…/window/ComposeTizenTvViewport.web.kt` | TV defaults on top of `ComposeViewport` |
-| Demo | `demo-tizen/`, `settings.gradle`, `settings-fork.gradle` | Kotlin/JS app + `.wgt` packaging |
+| Entry point | `compose/ui/ui/src/webMain/…/window/ComposeTvViewport.web.kt` | TV defaults on top of `ComposeViewport` |
+| Demo | `demo-tv/`, `settings.gradle`, `settings-fork.gradle` | Kotlin/JS app + Tizen/webOS packaging |
+
+## What differs between the two TVs
+
+Only three things, all behind `TvPlatform`. Everything else — density, focus, Back, key repeat — is
+shared, so **a change that only fixes one platform is a sign it belongs somewhere else**:
+
+| | Tizen | webOS |
+| --- | --- | --- |
+| Detection | `tizen.tvinputdevice` | `PalmSystem`, `webOS.platform.tv`, `Web0S` UA |
+| Back key code | `10009` | `461` |
+| Channel keys | `427`/`428` | `33`/`34` (also PageUp/PageDown — see the note in `TvRemoteKeys.web.kt`) |
+| Claiming remote keys | required (`registerKeyBatch`) | not needed |
+| Quitting | `tizen.application…exit()` | `window.close()` |
+| Manifest | `config.xml`, needs signing | `appinfo.json`, needs `disableBackHistoryAPI` |
 
 # Two build modes (upstream #3064)
 
@@ -45,24 +60,24 @@ The build runs in one of two modes, selected by whether `EXPECTED_AGP_VERSION` i
   into `settings-fork.gradle`, and modules build from `build-fork.gradle`.
 - **AOSP mode** — used when `EXPECTED_AGP_VERSION` is set (`gradlew studio`).
 
-The fork's only build-file edit is the `:demo-tizen` include, which is carried in **both**
-`settings.gradle` and `settings-fork.gradle`. `demo-tizen` itself uses `build.gradle.kts`, which
-fork mode picks up through its build-file fallback, so it needs no `build-fork` counterpart. If a
-rebase drops the `settings-fork.gradle` line, the default `./gradlew` reports `:demo-tizen` as
-"project not found" while AOSP mode still works.
+The fork's only build-file edit is the `:demo-tv` include, which is carried in **both**
+`settings.gradle` and `settings-fork.gradle`. `demo-tv` itself uses `build.gradle.kts`, which fork
+mode picks up through its build-file fallback, so it needs no `build-fork` counterpart. If a rebase
+drops the `settings-fork.gradle` line, the default `./gradlew` reports `:demo-tv` as "project not
+found" while AOSP mode still works.
 
 # Procedure — perform steps exactly in order
 
 ## 1. Fetch and inspect the gap
 ```bash
 git fetch upstream jb-main
-git rev-list --left-right --count <tizen-branch>...upstream/jb-main   # left=fork-only, right=upstream-only
+git rev-list --left-right --count <tv-branch>...upstream/jb-main   # left=fork-only, right=upstream-only
 ```
 
-## 2. Rebase in a THROWAWAY branch — never on the Tizen branch directly
+## 2. Rebase in a THROWAWAY branch — never on the TV branch directly
 ```bash
-git branch tizen-rebase-trial <tizen-branch>
-git switch tizen-rebase-trial
+git branch tv-rebase-trial <tv-branch>
+git switch tv-rebase-trial
 git rebase upstream/jb-main
 ```
 If it goes wrong: `git rebase --abort`. The real branch stays untouched the entire time.
@@ -113,9 +128,9 @@ grep -n 'Key.Back' \
   compose/ui/ui/src/skikoMain/kotlin/androidx/compose/ui/navigationevent/BackNavigationEventInput.kt
 grep -n 'isRepeat = repeat' \
   compose/ui/ui/src/webMain/kotlin/androidx/compose/ui/input/key/KeyEvent.web.kt
-grep -n 'tizenTvKeyFromKeyCode' \
+grep -n 'tvRemoteKeyFromKeyCode' \
   compose/ui/ui/src/webMain/kotlin/androidx/compose/ui/input/key/KeyEvent.web.kt
-grep -n 'includeProject(":demo-tizen")' settings.gradle settings-fork.gradle
+grep -n 'includeProject(":demo-tv")' settings.gradle settings-fork.gradle
 ```
 
 Also check whether upstream added a new obligation to the web entry point: diff
@@ -136,34 +151,39 @@ export JAVA_HOME="$(/usr/libexec/java_home -v 21)"   # macOS; the build requires
 export ANDROIDX_JDK21="$JAVA_HOME"
 unset EXPECTED_AGP_VERSION
 
-./gradlew --console=plain :demo-tizen:compileKotlinJs
+./gradlew --console=plain :demo-tv:compileKotlinJs
 ```
-`:demo-tizen` transitively pulls foundation/material3/ui-graphics/text/unit/util, so it is the
+`:demo-tv` transitively pulls foundation/material3/ui-graphics/text/unit/util, so it is the
 broadest single coverage check. Warnings are fine; errors are not.
 
 ## 8. Run it (compiling is not rendering)
 Fastest loop, and enough for focus, Back and density:
 ```bash
-./gradlew :demo-tizen:jsBrowserDevelopmentRun   # arrow keys and Enter stand in for the D-pad and OK
+./gradlew :demo-tv:jsBrowserDevelopmentRun   # arrow keys and Enter stand in for the D-pad and OK
 ```
-The remote's TV-specific buttons have no keyboard equivalent, so confirming those needs the Tizen TV
-emulator or a real set:
+The remote's TV-specific buttons have no keyboard equivalent, and neither does platform detection,
+so **both** TVs have to be exercised on an emulator or a real set before promoting a rebase:
 ```bash
-./gradlew :demo-tizen:assembleTizenApp
-cd demo-tizen/build/tizen/app
-tizen package -t wgt -s <certificate-profile> -- .
-tizen install -n ComposeTizenDemo.wgt -t <emulator-or-device-id>
+./gradlew :demo-tv:assembleTizenApp
+cd demo-tv/build/tizen/app && tizen package -t wgt -s <certificate-profile> -- . \
+  && tizen install -n ComposeTvDemo.wgt -t <emulator-or-device-id>
+
+./gradlew :demo-tv:assembleWebOsApp
+ares-package demo-tv/build/webos/app -o demo-tv/build/webos
+ares-install demo-tv/build/webos/org.jetbrains.compose.demo.tv_1.0.0_all.ipk -d <device>
 ```
-Watch the readout at the bottom of the demo: it names the last remote button that reached Compose,
-so an unmapped button shows up as "unmapped" instead of failing silently. See `demo-tizen/README.md`.
+Two readouts in the demo tell you what happened without a debugger: the badge next to the title
+names the detected platform (`None` means detection failed and every TV key will be Unknown), and
+the strip along the bottom names the last remote button that reached Compose, so an unmapped button
+shows up as "unmapped" instead of failing silently. See `demo-tv/README.md`.
 
 ## 9. Promote or discard
 ```bash
-git branch -f <tizen-branch> tizen-rebase-trial && git branch -D tizen-rebase-trial
-# then: git push --force-with-lease origin <tizen-branch>
+git branch -f <tv-branch> tv-rebase-trial && git branch -D tv-rebase-trial
+# then: git push --force-with-lease origin <tv-branch>
 
 # or discard:
-git switch <tizen-branch> && git branch -D tizen-rebase-trial
+git switch <tv-branch> && git branch -D tv-rebase-trial
 ```
 
 # Common mistakes
@@ -171,10 +191,11 @@ git switch <tizen-branch> && git branch -D tizen-rebase-trial
 | Mistake | Why it's wrong |
 |---|---|
 | `git pull` / merging instead of rebasing | The fork is a rebased history; merging creates duplicate-commit garbage. Always rebase. |
-| Rebasing the Tizen branch directly | If it goes wrong you've corrupted the branch. Always use the throwaway branch. |
+| Rebasing the TV branch directly | If it goes wrong you've corrupted the branch. Always use the throwaway branch. |
 | Trusting "rebase succeeded" / "BUILD SUCCESSFUL" | Neither proves the TV behaviour survived an upstream rewrite. Run steps 4-5 every time. |
 | Accepting a new `density` use in `ComposeWindowInternal.web.kt` without classifying it | At `densityScale = 1` the wrong choice is invisible everywhere except on a TV. |
 | Adding a public declaration without an experimental/internal marker | `jbApiCheck` fails, and the fork starts contributing to the public ABI. |
-| Fixing only `settings.gradle` and not `settings-fork.gradle` | The default `./gradlew` uses fork mode and would lose `:demo-tizen`. |
-| Targeting Kotlin/Wasm instead of Kotlin/JS | Kotlin/Wasm needs WasmGC (Chromium 119+); Tizen 8.0 ships Chromium 108. It will not load on any shipping TV. |
+| Fixing only `settings.gradle` and not `settings-fork.gradle` | The default `./gradlew` uses fork mode and would lose `:demo-tv`. |
+| Targeting Kotlin/Wasm instead of Kotlin/JS | Kotlin/Wasm needs WasmGC (Chromium 119+); Tizen 8.0 and webOS 24 both ship Chromium 108. It will not load on any shipping TV. |
+| Adding a platform branch for something both TVs share | Only detection, key codes, key claiming and exit differ. Anything else belongs in the shared path. |
 | Compiling only — never running | Compile != renders, and focus bugs are only visible when a remote is driving. |
