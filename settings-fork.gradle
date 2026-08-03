@@ -362,6 +362,7 @@ includeProject(":compose:mpp")
 includeProject(":compose:mpp:demo")
 includeProject(":compose:mpp:demo-swiftui")
 includeProject(":demo-tvos")
+includeProject(":demo-tizen")
 
 includeProject(":compose:foundation")
 includeProject(":compose:foundation:foundation")
