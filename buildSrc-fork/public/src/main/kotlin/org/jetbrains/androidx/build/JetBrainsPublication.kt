@@ -163,12 +163,14 @@ object JetBrainsPublication {
         // androidx.tv:tv-material artifact (see redirect("androidx.tv") { ... } in
         // tv/tv-material/build.gradle), same pattern as WINDOW above; only the tvOS klib
         // variants are fork-built from this repo's in-tree AOSP copy (task 23a), hence the
-        // narrower ANDROID + TV_OS platform set (no desktop/ios/js -- deliberately excluded to
-        // keep this port's surface minimal; see task-23a-report.md).
+        // narrower ANDROID + TV_OS platform set (no desktop/ios -- deliberately excluded to
+        // keep this port's surface minimal; see task-23a-report.md). WEB was added on top for
+        // the Tizen web target (js() target added to tv/tv-material/build.gradle) so this
+        // component's Js publication (tv-material-js) actually gets generated.
         "TV_MATERIAL" to listOf(
             ComposeComponent(
                 ":tv:tv-material",
-                supportedPlatforms = ComposePlatforms.ANDROID + ComposePlatforms.TV_OS
+                supportedPlatforms = ComposePlatforms.ANDROID + ComposePlatforms.TV_OS + ComposePlatforms.WEB
             ),
         ),
     )
