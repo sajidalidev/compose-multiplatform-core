@@ -370,8 +370,9 @@ internal class RootNodeOwner(
             Key.Tab -> if (keyEvent.isShiftPressed) FocusDirection.Previous else FocusDirection.Next
             Key.DirectionCenter -> FocusDirection.Enter
             Key.Back -> FocusDirection.Exit
-            Key.DirectionDown -> FocusDirection.Down
+            // D-pad traversal: the only way to move focus with a TV remote.
             Key.DirectionUp -> FocusDirection.Up
+            Key.DirectionDown -> FocusDirection.Down
             Key.DirectionLeft -> FocusDirection.Left
             Key.DirectionRight -> FocusDirection.Right
             else -> null

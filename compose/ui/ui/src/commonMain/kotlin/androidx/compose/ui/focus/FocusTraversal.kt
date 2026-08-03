@@ -129,8 +129,9 @@ internal fun FocusTargetNode.focusSearch(
                     Rtl -> Left
                     Ltr -> Right
                 }
-            // Initial findActiveFocusNode is null which prevents the focus
-            // To work around this, we use the current node as the starting point
+            // On a TV the first D-pad press arrives before anything is focused, so
+            // findActiveFocusNode() is null and the search never starts. Fall back to this node
+            // as the starting point so the initial press can enter the hierarchy.
             (findActiveFocusNode() ?: this)
                 .twoDimensionalFocusSearch(direction, previouslyFocusedRect, onFound)
         }

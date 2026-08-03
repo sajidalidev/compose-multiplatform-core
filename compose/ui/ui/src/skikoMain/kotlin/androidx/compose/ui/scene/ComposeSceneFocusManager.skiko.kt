@@ -66,7 +66,10 @@ class ComposeSceneFocusManager internal constructor(
     }
 
     /**
-     * Move focus within [ComposeScene] in the specified [focusDirection].
+     * Move focus inside [ComposeScene] in the specified [focusDirection].
+     *
+     * Unlike [takeFocus] this moves focus that the scene already holds, which is what a D-pad
+     * press on a TV remote does.
      *
      * Returns `true` if focus was moved successfully.
      */

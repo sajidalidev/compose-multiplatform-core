@@ -19,6 +19,7 @@
 
 package androidx.compose.ui.input.key
 
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.isAltGraphPressed
@@ -65,7 +66,12 @@ actual val KeyEvent.isMetaPressed: Boolean
 actual val KeyEvent.isShiftPressed: Boolean
     get() = internal.modifiers.isShiftPressed
 
-/** True if this is a key-repeat event (the key has been held past the initial repeat delay). */
+/**
+ * True if this is a key-repeat event, i.e. the key has been held down past the platform's initial
+ * repeat delay. TV remotes auto-repeat aggressively, so long-press handling needs to tell the first
+ * press apart from the repeats it generates.
+ */
+@ExperimentalComposeUiApi
 val KeyEvent.isRepeat: Boolean
     get() = internal.isRepeat
 
@@ -78,7 +84,8 @@ fun KeyEvent(
     isMetaPressed: Boolean = false,
     isAltPressed: Boolean = false,
     isShiftPressed: Boolean = false,
-    nativeEvent: Any? = null
+    nativeEvent: Any? = null,
+    isRepeat: Boolean = false
 ) = KeyEvent(
     nativeKeyEvent = InternalKeyEvent(
         key = key,
@@ -90,7 +97,8 @@ fun KeyEvent(
             isAltPressed = isAltPressed,
             isShiftPressed = isShiftPressed
         ),
-        nativeEvent = nativeEvent
+        nativeEvent = nativeEvent,
+        isRepeat = isRepeat
     )
 )
 
