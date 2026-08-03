@@ -42,7 +42,7 @@ androidXMultiplatform {
 
     sourceSets {
         commonMain.dependencies {
-            api("androidx.annotation:annotation:1.8.1")
+            api("androidx.annotation:annotation:1.9.1")
             api(project(":compose:animation:animation"))
             api(project(":compose:foundation:foundation"))
             api(project(":compose:foundation:foundation-layout"))
