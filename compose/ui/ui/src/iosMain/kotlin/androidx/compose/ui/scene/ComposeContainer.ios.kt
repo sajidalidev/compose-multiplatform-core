@@ -56,19 +56,11 @@ import androidx.lifecycle.enableSavedStateHandles
 import androidx.savedstate.SavedState
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
-import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.CPointed
 import kotlinx.cinterop.CPointer
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.IntVar
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.nativeHeap
-import kotlinx.cinterop.ptr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.job
-import kotlinx.coroutines.launch
 import org.jetbrains.skiko.SystemTheme
 import platform.Foundation.NSKeyValueObservingOptionNew
 import platform.Foundation.addObserver
@@ -83,9 +75,6 @@ import platform.UIKit.UIUserInterfaceStyle
 import platform.UIKit.UIViewController
 import platform.UIKit.UIWindow
 import platform.UIKit.UIWindowScene
-import platform.objc.OBJC_ASSOCIATION_RETAIN
-import platform.objc.objc_getAssociatedObject
-import platform.objc.objc_setAssociatedObject
 
 /**
  * The class represents a common part of Compose integration for all iOS containers.
@@ -570,70 +559,4 @@ private fun UIUserInterfaceLayoutDirection.asLayoutDirection(): LayoutDirection 
         println("ComposeContainer: unexpected UIUserInterfaceLayoutDirection=$this, falling back to Ltr")
         LayoutDirection.Ltr
     }
-}
-
-/**
- * Prevent cases where invalidate layout may be called during the rendering process,
- * which lead to another frame rendering during the same frame.
- */
-internal class LayoutInvalidationHandler(
-    coroutineContext: CoroutineContext,
-    private var doInvalidateLayout: () -> Unit
-) {
-    private var invalidationPostponed = false
-    private var hasInvalidations = false
-    private val scope = CoroutineScope(coroutineContext)
-
-    init {
-        coroutineContext.job.invokeOnCompletion {
-            doInvalidateLayout = {}
-        }
-    }
-
-    fun invalidateLayoutIfNeeded() {
-        if (invalidationPostponed) {
-            hasInvalidations = true
-            return
-        }
-        doInvalidateLayout()
-        hasInvalidations = false
-    }
-
-    fun postponeLayoutInvalidationCalls(block: () -> Unit) {
-        assert(!invalidationPostponed)
-        invalidationPostponed = true
-        try {
-            block()
-        } finally {
-            invalidationPostponed = false
-        }
-        if (hasInvalidations) {
-            scope.launch {
-                invalidateLayoutIfNeeded()
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalForeignApi::class)
-private val compositionContextAssociationKey: COpaquePointer = nativeHeap.alloc<IntVar>().ptr
-
-@OptIn(ExperimentalForeignApi::class)
-internal var UIResponder.attachedCompositionContext: CompositionContext?
-    get() = objc_getAssociatedObject(this, compositionContextAssociationKey) as? CompositionContext
-    set(value) {
-        objc_setAssociatedObject(this, compositionContextAssociationKey, value, OBJC_ASSOCIATION_RETAIN)
-    }
-
-internal fun UIResponder.findParentCompositionContext(): CompositionContext {
-    if (this is UIWindow) {
-        return FrameChoreographer.choreographerForScene(
-            scene = windowScene ?: error("Window scene is null")
-        ).frameRecomposer.compositionContext
-    }
-    this.attachedCompositionContext?.let {
-        return it
-    }
-    return nextResponder?.findParentCompositionContext()
-        ?: error("Unable to find parent composition context")
 }
