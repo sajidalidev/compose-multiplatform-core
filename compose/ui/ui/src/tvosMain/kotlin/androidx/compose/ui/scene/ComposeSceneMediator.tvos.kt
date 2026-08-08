@@ -17,6 +17,7 @@
 package androidx.compose.ui.scene
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
@@ -50,7 +51,7 @@ import androidx.compose.ui.navigationevent.BackNavigationEventInput
 import androidx.compose.ui.platform.AccessibilityMediator
 import androidx.compose.ui.platform.CUPERTINO_TOUCH_SLOP
 import androidx.compose.ui.platform.DefaultInputModeManager
-import androidx.compose.ui.platform.FrameRecomposer
+import androidx.compose.ui.platform.FrameChoreographer
 import androidx.compose.ui.platform.PlatformArchitectureComponentsOwner
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.PlatformScreenReader
@@ -85,7 +86,7 @@ import androidx.compose.ui.viewinterop.TrackInteropPlacementContainer
 import androidx.compose.ui.viewinterop.UIKitInteropContainer
 import androidx.compose.ui.viewinterop.UIKitInteropTransaction
 import androidx.compose.ui.window.FocusedViewsList
-import androidx.compose.ui.window.MetalRedrawer
+import androidx.compose.ui.window.PlatformPrefetchSchedulerImpl
 import kotlin.coroutines.CoroutineContext
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.readValue
@@ -99,6 +100,7 @@ import kotlinx.coroutines.launch
 import platform.CoreGraphics.CGPoint
 import platform.CoreGraphics.CGRectIsEmpty
 import platform.CoreGraphics.CGRectZero
+import platform.Foundation.NSTimeInterval
 import platform.QuartzCore.CACurrentMediaTime
 import platform.UIKit.UIEvent
 import platform.UIKit.UIEventButtonMaskPrimary
@@ -357,20 +359,16 @@ private class TvBackgroundInputView(
 }
 
 internal class ComposeSceneMediator(
+    private val frameChoreographer: FrameChoreographer,
     private val onFocusBehavior: OnFocusBehavior,
     private val isClearFocusOnMouseDownEnabled: Boolean,
     private val focusedViewsList: FocusedViewsList?,
     private val windowContext: PlatformWindowContext,
     private val architectureComponentsOwner: PlatformArchitectureComponentsOwner,
-    private val coroutineContext: CoroutineContext,
-    private val redrawer: MetalRedrawer,
+    val coroutineContext: CoroutineContext,
     private val navigationEventInput: BackNavigationEventInput,
     interfaceOrientationState: State<InterfaceOrientation>,
-    composeSceneFactory: (
-        invalidate: () -> Unit,
-        platformContext: PlatformContext,
-        frameRecomposer: FrameRecomposer,
-    ) -> ComposeScene
+    composeSceneFactory: (platformContext: PlatformContext) -> ComposeScene,
 ) {
     private var onPreviewKeyEvent: (KeyEvent) -> Boolean = { false }
     private var onKeyEvent: (KeyEvent) -> Boolean = { false }
@@ -389,11 +387,49 @@ internal class ComposeSceneMediator(
     private val keyRepeatIntervalMs = 50L
     // Minimum swipe distance (dp) on the Siri Remote trackpad to trigger a focus move.
     private val INDIRECT_SWIPE_THRESHOLD_DP = 40f
-    private var platformScreenReader = object : PlatformScreenReader {
+    private val platformScreenReader = object : PlatformScreenReader {
         override var isActive by mutableStateOf(false)
     }
+    private val activitiesHandler = frameChoreographer.createActivitiesHandler()
 
     private val isActive get() = coroutineContext.isActive
+
+    private var isPrefetchVoteActive: Boolean = false // TODO CMP-10587: Move inside the PlatformPrefetchSchedulerImpl
+    private val prefetchScheduler = PlatformPrefetchSchedulerImpl(
+        onHasWorkScheduled = { hasWork ->
+            if (hasWork != isPrefetchVoteActive) {
+                isPrefetchVoteActive = hasWork
+                if (hasWork) {
+                    activitiesHandler.onActivitiesStarted()
+                } else {
+                    activitiesHandler.onActivitiesEnded()
+                }
+            }
+        }
+    )
+
+    /**
+     * Indicates that a draw happened in the current display-link interval so the prefetch scheduler
+     * can tell whether the draw loop was idle when [FrameChoreographer.Listener.onOutOfFrame]
+     * runs.
+     */
+    private var didDrawSinceDisplayLink = false
+    private val frameChoreographerListener = object : FrameChoreographer.Listener {
+        override fun onDisplayLinkTick() {
+            didDrawSinceDisplayLink = false
+        }
+
+        override fun onOutOfFrame(
+            lastFrameTimestamp: NSTimeInterval,
+            targetTimestamp: NSTimeInterval
+        ) {
+            prefetchScheduler.execute(
+                lastFrameTimestamp = lastFrameTimestamp,
+                targetTimestamp = targetTimestamp,
+                didDraw = didDrawSinceDisplayLink,
+            )
+        }
+    }
 
     private val viewConfiguration: ViewConfiguration =
         object : ViewConfiguration by PlatformContext.DefaultViewConfiguration {
@@ -403,18 +439,8 @@ internal class ComposeSceneMediator(
                 }
         }
 
-    // TODO: It must be shared between Compose instances.
-    //  It's supposed to be stored in platform's root view or window.
-    val frameRecomposer = FrameRecomposer(coroutineContext, redrawer::setNeedsRedraw)
-
-    private val sceneRenderingScope = SingleComposeSceneRenderingScope(redrawer::setNeedsRedraw)
-
     private val scene: ComposeScene by lazy {
-        composeSceneFactory(
-            sceneRenderingScope::onSceneInvalidation,
-            PlatformContextImpl(),
-            frameRecomposer,
-        )
+        composeSceneFactory(PlatformContextImpl())
     }
 
     private var composeSceneSize: IntSize?
@@ -502,7 +528,7 @@ internal class ComposeSceneMediator(
     private val interopContainer = UIKitInteropContainer(
         overlayContainer = _overlayView,
         backgroundContainer = _backgroundView,
-        requestRedraw = redrawer::setNeedsRedraw
+        requestRedraw = frameChoreographer::requestFrame
     )
 
     private val windowInsetsManager = UIKitWindowInsetsManager(
@@ -551,14 +577,16 @@ internal class ComposeSceneMediator(
             }
         }
 
-    val hasInvalidations: Boolean
-        get() = frameRecomposer.hasPendingWork() ||
-            scene.hasInvalidations() ||
+    val hasInvalidations: Boolean get() {
+        return scene.hasInvalidations() ||
+            frameChoreographer.frameRecomposer.hasPendingWork() ||
             isLayoutTransitionAnimating ||
             semanticsOwnerListener.hasInvalidations
+    }
 
     init {
         coroutineContext.job.invokeOnCompletion { dispose() }
+        frameChoreographer.addListener(frameChoreographerListener)
     }
 
     private fun hitTestInteropView(point: CValue<CGPoint>): UIView? =
@@ -573,7 +601,7 @@ internal class ComposeSceneMediator(
         }
 
     private fun onCancelAllTouches(touches: Set<*>) {
-        redrawer.ongoingInteractionEventsCount -= touches.count()
+        activitiesHandler.onActivitiesEnded(touches.count())
         indirectTouchStartPositions.clear()
         selectPressedDuringIndirectTouch = false
         scene.cancelPointerInput()
@@ -591,8 +619,8 @@ internal class ComposeSceneMediator(
         eventKind: TouchesEventKind
     ): PointerEventResult {
         when (eventKind) {
-            TouchesEventKind.BEGAN -> redrawer.ongoingInteractionEventsCount += touches.count()
-            TouchesEventKind.ENDED -> redrawer.ongoingInteractionEventsCount -= touches.count()
+            TouchesEventKind.BEGAN -> activitiesHandler.onActivitiesStarted(touches.count())
+            TouchesEventKind.ENDED -> activitiesHandler.onActivitiesEnded(touches.count())
             TouchesEventKind.MOVED -> {}
         }
 
@@ -700,9 +728,12 @@ internal class ComposeSceneMediator(
     var isInterceptingOutsideEvents: Boolean by _overlayView::isInterceptingOutsideEvents
     var interactionBounds = IntRect.Zero
 
-    fun setContent(content: @Composable () -> Unit) {
+    fun setContent(
+        parentCompositionContext: CompositionContext,
+        content: @Composable () -> Unit
+    ) {
         _backgroundView.runOnceOnAppeared {
-            scene.setContent {
+            scene.setContent(parentCompositionContext) {
                 ProvideComposeSceneMediatorCompositionLocals {
                     interopContainer.TrackInteropPlacementContainer(content = content)
                 }
@@ -737,10 +768,13 @@ internal class ComposeSceneMediator(
         }
     }
 
-    fun render(canvas: Canvas, nanoTime: Long) {
-        with(sceneRenderingScope) {
-            scene.render(frameRecomposer, canvas, nanoTime)
-        }
+    fun measureAndLayout() {
+        scene.measureAndLayout()
+    }
+
+    fun draw(canvas: Canvas) {
+        didDrawSinceDisplayLink = true
+        scene.draw(canvas)
     }
 
     fun retrieveInteropTransaction(): UIKitInteropTransaction =
@@ -763,6 +797,10 @@ internal class ComposeSceneMediator(
         onPreviewKeyEvent = { false }
         onKeyEvent = { false }
 
+        frameChoreographer.removeListener(frameChoreographerListener)
+        prefetchScheduler.dispose()
+        activitiesHandler.dispose()
+
         _overlayView.dispose()
         _backgroundView.dispose()
 
@@ -770,7 +808,6 @@ internal class ComposeSceneMediator(
         _backgroundView.removeFromSuperview()
 
         scene.close()
-        frameRecomposer.close()
         interopContainer.dispose()
         semanticsOwnerListener.dispose()
     }
@@ -797,7 +834,6 @@ internal class ComposeSceneMediator(
 
     fun sceneDidAppear() {
         focusedViewsList?.addAndFocus(_overlayView)
-        redrawer.setNeedsRedraw()
     }
 
     fun sceneWillDisappear() {
@@ -965,7 +1001,8 @@ internal class ComposeSceneMediator(
         }
         override val semanticsOwnerListener get() = this@ComposeSceneMediator.semanticsOwnerListener
         override val windowInsets get() = this@ComposeSceneMediator.windowInsetsManager.windowInsets
-        override val outOfFrameExecutor get() = this@ComposeSceneMediator.redrawer.outOfFrameExecutor
+        override val outOfFrameExecutor get() = this@ComposeSceneMediator.frameChoreographer.outOfFrameExecutor
+        override val prefetchScheduler get() = this@ComposeSceneMediator.prefetchScheduler
         // On tvOS, Siri Remote touches are UITouchTypeIndirect which map to PointerType.Mouse.
         // Clearing focus on mouse-down would lose Compose focus on every remote swipe.
         override val isClearFocusOnMouseDownEnabled: Boolean get() = false
@@ -975,7 +1012,7 @@ internal class ComposeSceneMediator(
             set(value) { UIKitIdleTimerManager.setIdleTimerState(this@ComposeSceneMediator, value) }
 
         override fun voteFrameRate(frameRate: Float, frameRateCategory: Float) {
-            redrawer.voteFrameRate(frameRate, frameRateCategory)
+            frameChoreographer.voteFrameRate(frameRate, frameRateCategory)
         }
 
         override suspend fun startInputMethod(request: PlatformTextInputMethodRequest): Nothing {

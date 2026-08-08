@@ -27,7 +27,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.navigationevent.BackNavigationEventInput
-import androidx.compose.ui.platform.FrameRecomposer
+import androidx.compose.ui.platform.FrameChoreographer
 import androidx.compose.ui.platform.PlatformArchitectureComponentsOwner
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.uikit.ComposeContainerConfiguration
@@ -49,12 +49,9 @@ import platform.UIKit.UIView
 import platform.UIKit.UIWindow
 
 internal class UIKitComposeSceneLayer(
+    private val frameChoreographer: FrameChoreographer,
     private val onClosed: (UIKitComposeSceneLayer) -> Unit,
     private val createComposeSceneContext: (PlatformContext) -> ComposeSceneContext,
-
-    // FIXME: Remove it. All locals should be available from the composition context
-    private val hostCompositionLocals: @Composable (@Composable () -> Unit) -> Unit,
-
     private val layersViewController: ComposeLayersViewController,
     private val initialLayoutDirection: LayoutDirection,
     private val onFocusConditionsChanged: () -> Unit,
@@ -64,6 +61,8 @@ internal class UIKitComposeSceneLayer(
     parentCoroutineContext: CoroutineContext,
     private val ownerProvider: PlatformArchitectureComponentsOwner,
     private val interfaceOrientationState: State<InterfaceOrientation>,
+    private var invalidateLayout: () -> Unit,
+    private var invalidateDraw: () -> Unit,
 ) : ComposeSceneLayer {
     private val layerJob = Job()
     private val layerCoroutineContext = parentCoroutineContext + layerJob
@@ -98,13 +97,13 @@ internal class UIKitComposeSceneLayer(
         .also { navigationEventDispatcher.addInput(it) }
 
     private val mediator = ComposeSceneMediator(
+        frameChoreographer = frameChoreographer,
         onFocusBehavior = configuration.onFocusBehavior,
         isClearFocusOnMouseDownEnabled = configuration.isClearFocusOnMouseDownEnabled,
         focusedViewsList = focusedViewsList,
         windowContext = layersViewController.windowContext,
         architectureComponentsOwner = ownerProvider,
         coroutineContext = layerCoroutineContext,
-        redrawer = layersViewController.metalView.redrawer,
         navigationEventInput = navigationEventInput,
         composeSceneFactory = ::createComposeScene,
         interfaceOrientationState = interfaceOrientationState
@@ -113,23 +112,20 @@ internal class UIKitComposeSceneLayer(
         it.isInterceptingOutsideEvents = consumePointerInputOutside
     }
 
-    private fun createComposeScene(
-        invalidate: () -> Unit,
-        platformContext: PlatformContext,
-        frameRecomposer: FrameRecomposer,
-    ): ComposeScene {
+    private fun createComposeScene(platformContext: PlatformContext): ComposeScene {
+        // tvOS reports UIScreen density 1.0, but 10-foot UIs expect the Android TV
+        // scale where a 1080p screen has density 2.0 — square the density to match.
         val screenDensity = mediator.screenDensity
-        val computed = Density(
-            density = screenDensity.density * screenDensity.density,
-            fontScale = screenDensity.fontScale
-        )
         return PlatformLayersComposeScene(
-            frameRecomposer = frameRecomposer,
-            density = computed,
+            frameRecomposer = frameChoreographer.frameRecomposer,
+            density = Density(
+                density = screenDensity.density * screenDensity.density,
+                fontScale = screenDensity.fontScale
+            ),
             layoutDirection = initialLayoutDirection,
             composeSceneContext = createComposeSceneContext(platformContext),
-            invalidateLayout = invalidate,
-            invalidateDraw = invalidate,
+            invalidateLayout = invalidateLayout,
+            invalidateDraw = invalidateDraw,
         )
     }
 
@@ -167,7 +163,9 @@ internal class UIKitComposeSceneLayer(
         }
     }
 
-    fun render(canvas: Canvas, nanoTime: Long) {
+    fun doMeasureAndLayout() = mediator.measureAndLayout()
+
+    fun draw(canvas: Canvas) {
         if (scrimColor != null) {
             val density = layersViewController.metalView.view.density
             val rect = layersViewController.metalView.view.bounds.toDpRect().toRect(density)
@@ -175,7 +173,7 @@ internal class UIKitComposeSceneLayer(
             canvas.drawRect(rect, scrimPaint)
         }
 
-        mediator.render(canvas, nanoTime)
+        mediator.draw(canvas)
     }
 
     fun retrieveInteropTransaction() = mediator.retrieveInteropTransaction()
@@ -198,6 +196,8 @@ internal class UIKitComposeSceneLayer(
         interactionView.removeFromSuperview()
         interactionView.dispose()
         layerJob.cancel()
+        invalidateLayout = {}
+        invalidateDraw = {}
     }
 
     @Composable
@@ -212,11 +212,8 @@ internal class UIKitComposeSceneLayer(
         parentCompositionContext: CompositionContext,
         content: @Composable () -> Unit,
     ) {
-        // TODO: pass [parentCompositionContext] once a shared [Recomposer] exists.
-        mediator.setContent {
-            hostCompositionLocals {
-                ProvideComposeSceneLayerCompositionLocals(content)
-            }
+        mediator.setContent(parentCompositionContext) {
+            ProvideComposeSceneLayerCompositionLocals(content)
         }
     }
 
