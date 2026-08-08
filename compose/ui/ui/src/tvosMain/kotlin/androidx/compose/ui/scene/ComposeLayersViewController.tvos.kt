@@ -63,19 +63,10 @@ internal class ComposeLayersViewController(
     val metalView: MetalViewHolder = MetalView(
         retrieveInteropTransaction = ::retrieveAndMergeInteropTransactions,
         useSeparateRenderThreadWhenPossible = useSeparateRenderThreadWhenPossible,
-        render = ::render
+        draw = ::draw
     ).apply {
         canBeOpaque = false
     }
-
-    enum class AppearanceTransitionState {
-        Appearing,
-        Appeared,
-        Disappearing,
-        Disappeared
-    }
-
-    private var transitionState: AppearanceTransitionState = AppearanceTransitionState.Disappeared
 
     private val composeContainerView = ComposeContainerView(
         useOpaqueConfiguration = false,
@@ -84,14 +75,28 @@ internal class ComposeLayersViewController(
         updateMetalView(
             metalView = metalView,
             onWillMoveToWindow = { beginAppearanceTransition(it != null, animated = false) },
-            onDidMoveToWindow = { endAppearanceTransition() }
+            onDidMoveToWindow = { endAppearanceTransition() },
+            onLayoutSubviews = ::measureAndLayoutLayers,
         )
+    }
+
+    private val layoutInvalidationHandler = LayoutInvalidationHandler(coroutineContext) {
+        composeContainerView.setNeedsLayout()
+        composeContainerView.invalidateIntrinsicContentSize()
     }
 
     init {
         coroutineContext.job.invokeOnCompletion {
             dispose()
         }
+    }
+
+    fun invalidateLayout() {
+        layoutInvalidationHandler.invalidateLayoutIfNeeded()
+    }
+
+    fun invalidateDraw() {
+        composeContainerView.setNeedsDisplay()
     }
 
     override fun viewDidLayoutSubviews() {
@@ -150,6 +155,10 @@ internal class ComposeLayersViewController(
                 sizeTransitionScope.launch { animation.invoke() }
             }.joinAll()
         }
+    }
+
+    private fun measureAndLayoutLayers() = layersCache.withCopy { layers ->
+        layers.fastForEach { it.doMeasureAndLayout() }
     }
 
     fun withLayers(block: (List<UIKitComposeSceneLayer>) -> Unit) = layersCache.withCopy(block)
@@ -234,6 +243,7 @@ internal class ComposeLayersViewController(
         if (hasViewAppeared) {
             layer.sceneDidAppear()
         }
+        invalidateDraw()
     }
 
     fun detach(layer: UIKitComposeSceneLayer) {
@@ -256,7 +266,7 @@ internal class ComposeLayersViewController(
             removedLayersTransactions.add(transaction)
 
             // Redraw content with layer removed
-            metalView.redrawer.setNeedsRedraw()
+            invalidateDraw()
         }
     }
 
@@ -267,6 +277,7 @@ internal class ComposeLayersViewController(
         this.layers.fastForEach {
             it.sceneDidAppear()
         }
+        invalidateDraw()
     }
 
     override fun viewWillDisappear(animated: Boolean) {
@@ -307,14 +318,16 @@ internal class ComposeLayersViewController(
         )
     }
 
-    private fun render(canvas: Canvas, nanoTime: Long) {
-        val composeCanvas = canvas.asComposeCanvas()
+    private fun draw(canvas: Canvas) {
+        layoutInvalidationHandler.postponeLayoutInvalidationCalls {
+            val composeCanvas = canvas.asComposeCanvas()
 
-        // Some layers may be removed during rendering, because recomposition will happen in the
-        // process, so we need to make a temporary copy of the list
-        layersCache.withCopy { layers ->
-            layers.fastForEach {
-                it.render(composeCanvas, nanoTime)
+            // Some layers may be removed during rendering, because recomposition will happen in the
+            // process, so we need to make a temporary copy of the list
+            layersCache.withCopy { layers ->
+                layers.fastForEach {
+                    it.draw(composeCanvas)
+                }
             }
         }
     }
