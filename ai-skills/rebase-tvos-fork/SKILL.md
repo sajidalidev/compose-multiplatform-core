@@ -117,6 +117,33 @@ Also check for NEW per-platform entry-point obligations upstream added since the
 before scene creation — missing it compiles clean but crashes at launch with "Registered
 implementation is null". This class of break is invisible to steps 5–6 and only surfaces in step 7.
 
+### 5b. When upstream REWRITES the iOS scene architecture: port via per-file 3-way merge
+When an upstream PR restructures the iosMain scene stack (as #3212 did — per-UIWindowScene
+`FrameChoreographer` replacing the per-mediator `FrameRecomposer`/`MetalRedrawer` render loop),
+the tvosMain fork copies won't compile against the changed uiKitMain APIs. Do NOT hand-port
+file by file. Replay upstream's own transformation onto each tvOS copy with a 3-way merge:
+```bash
+# base   = the iOS counterpart BEFORE the rebase (old tvos-main)
+# theirs = the iOS counterpart at the rebased HEAD (carries the upstream rewrite)
+# ours   = the tvOS fork copy
+git show tvos-main:$ios > base; git show HEAD:$ios > theirs
+git merge-file -p --diff3 tvosfile base theirs > merged
+```
+Conflicts then mark exactly the genuine tvOS deltas (BackNavigationEventInput, Tv*InputView,
+squared density, dropped keyboard/text-input machinery) — resolve each by taking upstream's new
+structure and re-applying the tvOS intent on top. After resolving, sweep tvosMain for stale
+removed-API references that sat in ours-only regions (`grep -rE 'redrawer|setNeedsRedraw|...'`).
+
+Post-#3212 state: `FrameChoreographer.ios.kt`, `LayoutInvalidationHandler.ios.kt` and
+`CompositionContextAttachment.ios.kt` live in `uiKitMain` (fork commit "[tvOS] Hoist
+FrameChoreographer and scene helpers to uiKitMain") because tvosMain and the shared interop
+views need them. Future upstream edits to these symbols (upstream keeps FrameChoreographer in
+iosMain and the helpers inline in ComposeContainer.ios.kt) will surface as modify/delete or
+add/add conflicts against the hoist commit — resolve by keeping the uiKitMain location with
+upstream's new content. Same class of break to watch for: upstream adding a symbol in iosMain
+that fork-shared uiKitMain files reference (that's what forced the hoist of
+`attachedCompositionContext`).
+
 ## 6. Compile-verify on the tvOS simulator target — in FORK MODE (the default)
 Run WITHOUT `EXPECTED_AGP_VERSION` so this exercises the fork-mode build files you fixed in step 4:
 ```bash
