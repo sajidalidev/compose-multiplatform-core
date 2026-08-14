@@ -58,10 +58,10 @@ public actual object DefaultNavTransitions {
     public actual fun popEnterTransition(
         enterTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition
     ): AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition =
-        DefaultNavTransitions.enterTransition
+        enterTransition
 
     public actual fun popExitTransition(
         exitTransition: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition
     ): AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition =
-        DefaultNavTransitions.exitTransition
+        exitTransition
 }
