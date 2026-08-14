@@ -117,6 +117,21 @@ Also check for NEW per-platform entry-point obligations upstream added since the
 before scene creation — missing it compiles clean but crashes at launch with "Registered
 implementation is null". This class of break is invisible to steps 5–6 and only surfaces in step 7.
 
+Also sweep tvOS counterpart files that are NOT content mirrors of their iOS siblings but must still
+track their *behavioral contract* — an upstream change to the iOS file lands with no conflict and no
+tvOS file change, so nothing in steps 5–6 flags it. Known case:
+`navigation/navigation-compose/src/tvosMain/.../DefaultNavTransitions.tvos.kt` deliberately uses
+TV-style fade/scale transitions (not iOS slides), but its `popEnterTransition`/`popExitTransition`
+must follow the platform contract. Example (#3292): upstream made the iOS pop methods respect
+user-overridden transitions; the tvOS copy still returned the hardcoded defaults, silently dropping
+custom NavHost transitions. On tvOS the pop defaults equal the enter/exit defaults, so the correct
+form is the Android/desktop one — return the parameter. Rule: whenever an upstream commit in the
+rebase window touches an iosMain file that has a tvosMain counterpart (find them with
+`git diff --name-only <old-base>..upstream/jb-main -- '*iosMain*'` cross-checked against
+`git ls-tree -r tvos-main --name-only | grep tvosMain`), read the upstream change and decide whether
+it is iOS *styling* (ignore) or a *contract/behavior* change (mirror the intent into the tvOS copy
+as its own `[tvOS]` commit).
+
 ### 5b. When upstream REWRITES the iOS scene architecture: port via per-file 3-way merge
 When an upstream PR restructures the iosMain scene stack (as #3212 did — per-UIWindowScene
 `FrameChoreographer` replacing the per-mediator `FrameRecomposer`/`MetalRedrawer` render loop),
