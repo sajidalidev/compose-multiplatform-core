@@ -94,7 +94,7 @@ BUNDLE_ZIP="$ROOT_DIR/build/central-bundle.zip"
 
 # Same version pins as scripts/publish-tvos-fork.sh (kept in sync manually -- see that
 # script's own header comment for the libraryversions.toml provenance note).
-VERSION_COMPOSE="1.12.0-beta01"
+VERSION_COMPOSE="1.12.0"
 VERSION_COMPOSE_MATERIAL3="1.5.0-alpha22"
 VERSION_COMPOSE_MATERIAL3_ADAPTIVE="1.3.0-beta02"
 VERSION_LIFECYCLE="2.11.0"
@@ -106,7 +106,7 @@ VERSION_WINDOW="1.6.0-alpha02"
 VERSION_TV_MATERIAL="1.1.0-alpha01"
 
 COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW,TV_MATERIAL"
+LIBRARIES="${TVOS_PUBLISH_LIBRARIES:-COMPOSE}"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 # NOTE on "8 libraries": this script's own -Pjetbrains.publication.libraries set (above,
@@ -203,7 +203,23 @@ M2_REPO="${HOME}/.m2/repository"
 echo "  from: $M2_REPO/dev/sajidali"
 echo "  to:   $STAGING_REPO_DIR/dev/sajidali"
 mkdir -p "$STAGING_REPO_DIR/dev"
-cp -R "$M2_REPO/dev/sajidali" "$STAGING_REPO_DIR/dev/sajidali"
+# Scope the copy to the versions actually published by THIS run (one version directory
+# per library in $LIBRARIES). ~/.m2/dev/sajidali also holds every previously released
+# version (1.12.0-beta01 set, koin, coil3, tv-material, ...) and Central rejects a bundle
+# that re-uploads any already-published coordinate, so a blanket copy is never correct.
+staged_versions=""
+for lib in ${LIBRARIES//,/ }; do
+    eval "v=\${VERSION_$lib}"
+    staged_versions="$staged_versions $v"
+done
+echo "  versions in scope:$staged_versions"
+for v in $staged_versions; do
+    while IFS= read -r -d '' vdir; do
+        rel="${vdir#$M2_REPO/}"
+        mkdir -p "$STAGING_REPO_DIR/$(dirname "$rel")"
+        cp -R "$vdir" "$STAGING_REPO_DIR/$rel"
+    done < <(find "$M2_REPO/dev/sajidali" -type d -name "$v" -print0)
+done
 
 echo "=== Step 2: validate bundle completeness (+ generate stub javadoc jars) ==="
 missing_sources=0
