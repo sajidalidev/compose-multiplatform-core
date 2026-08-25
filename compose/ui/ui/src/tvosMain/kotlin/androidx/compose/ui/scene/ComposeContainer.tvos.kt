@@ -28,7 +28,7 @@ import androidx.compose.ui.platform.DefaultArchitectureComponentsOwner
 import androidx.compose.ui.platform.FrameChoreographer
 import androidx.compose.ui.platform.MotionDurationScaleImpl
 import androidx.compose.ui.platform.PlatformContext
-import androidx.compose.ui.platform.PlatformWindowContext
+import androidx.compose.ui.platform.WindowContext
 import androidx.compose.ui.platform.registerSkikoComposeImplementation
 import androidx.compose.ui.uikit.ComposeContainerConfiguration
 import androidx.compose.ui.uikit.InterfaceOrientation
@@ -39,9 +39,10 @@ import androidx.compose.ui.uikit.embedSubview
 import androidx.compose.ui.uikit.utils.CMPKeyValueObserver
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.util.fastForEachReversed
-import androidx.compose.ui.viewinterop.UIKitInteropAction
-import androidx.compose.ui.viewinterop.UIKitInteropTransaction
+import androidx.compose.ui.viewinterop.InteropSyncAction
+import androidx.compose.ui.viewinterop.InteropSyncTransaction
 import androidx.compose.ui.window.ComposeContainerLifecycleDelegate
 import androidx.compose.ui.window.ComposeContainerView
 import androidx.compose.ui.window.FocusedViewsList
@@ -92,7 +93,7 @@ internal class ComposeContainer(
         get() = view.window?.windowScene?.let { FrameChoreographer.choreographerForScene(it) }
 
     private var mediator: ComposeSceneMediator? = null
-    private val windowContext = PlatformWindowContext()
+    private val windowContext = WindowContext()
     private var layersHolder: ComposeLayersHolder? = null
     private val layoutDirection get() = getApplicationLayoutDirection()
     private val motionDurationScale = MotionDurationScaleImpl()
@@ -113,6 +114,10 @@ internal class ComposeContainer(
     }
     private val navigationEventInput = BackNavigationEventInput()
     private var layoutInvalidationHandler: LayoutInvalidationHandler? = null
+    private val fontScaleProvider = FontScaleProvider(
+        view = view,
+        onFontScaleChanged = ::onFontScaleChanged,
+    )
     val hasInteropViews: Boolean get() = mediator?.hasInteropViews ?: false
 
     fun onKeyboardPresses(presses: Set<*>) {
@@ -217,8 +222,8 @@ internal class ComposeContainer(
 
         val metalView = MetalView(
             retrieveInteropTransaction = {
-                mediator?.retrieveInteropTransaction() ?: object : UIKitInteropTransaction {
-                    override val actions = emptyList<UIKitInteropAction>()
+                mediator?.retrieveInteropTransaction() ?: object : InteropSyncTransaction {
+                    override val actions = emptyList<InteropSyncAction>()
                     override val isInteropActive = false
                 }
             },
@@ -258,8 +263,8 @@ internal class ComposeContainer(
                 PlatformLayersComposeScene(
                     frameRecomposer = frameChoreographer.frameRecomposer,
                     density = Density(
-                        density = screenDensity.density * screenDensity.density,
-                        fontScale = screenDensity.fontScale
+                        density = windowContext.screenScale * windowContext.screenScale,
+                        fontScale = fontScaleProvider.fontScale
                     ),
                     layoutDirection = layoutDirection,
                     composeSceneContext = createComposeSceneContext(
@@ -342,7 +347,7 @@ internal class ComposeContainer(
                 focusable: Boolean,
                 consumePointerInputOutside: Boolean,
             ): ComposeSceneLayer {
-                val layer = UIKitComposeSceneLayer(
+                val layer = IosComposeSceneLayer(
                     frameChoreographer = frameChoreographer,
                     onClosed = {
                         layersHolder.getLayersViewController().detach(it)
@@ -357,6 +362,11 @@ internal class ComposeContainer(
                         )
                     },
                     layersViewController = layersHolder.getLayersViewController(),
+                    initialDensity = Density(
+                        layersHolder.getLayersViewController().windowContext.screenScale *
+                            layersHolder.getLayersViewController().windowContext.screenScale,
+                        fontScaleProvider.fontScale,
+                    ),
                     initialLayoutDirection = layoutDirection,
                     configuration = configuration,
                     onFocusConditionsChanged = ::onFocusConditionsChanged,
@@ -390,6 +400,15 @@ internal class ComposeContainer(
             }
         }
         mediator?.isFocusEnabled = isFocusEnabled
+    }
+
+    private fun onFontScaleChanged(fontScale: Float) {
+        mediator?.setComposeSceneFontScale(fontScale)
+        layersHolder?.layersViewController?.withLayers {
+            it.fastForEach { layer ->
+                layer.setComposeSceneFontScale(fontScale)
+            }
+        }
     }
 
     private val containingViewController: UIViewController get() {
