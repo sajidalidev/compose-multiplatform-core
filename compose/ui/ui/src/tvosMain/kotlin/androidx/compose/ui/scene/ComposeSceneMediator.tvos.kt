@@ -738,8 +738,24 @@ internal class ComposeSceneMediator(
     }
 
     fun render(canvas: Canvas, nanoTime: Long) {
-        with(sceneRenderingScope) {
-            scene.render(frameRecomposer, canvas, nanoTime)
+        withFrameGuard {
+            with(sceneRenderingScope) {
+                scene.render(frameRecomposer, canvas, nanoTime)
+            }
+        }
+    }
+
+    private var isPerformingFrame = false
+    private inline fun withFrameGuard(crossinline block: () -> Unit) {
+        if (isPerformingFrame) {
+            // Fixes issue with reentrant redraws from native text-input edits mid-frame
+            return
+        }
+        isPerformingFrame = true
+        try {
+            block()
+        } finally {
+            isPerformingFrame = false
         }
     }
 
