@@ -24,6 +24,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.annotation.VisibleForTesting
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -56,10 +57,10 @@ import androidx.compose.ui.platform.PlatformArchitectureComponentsOwner
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.PlatformScreenReader
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
-import androidx.compose.ui.platform.PlatformWindowContext
+import androidx.compose.ui.platform.WindowContext
 import androidx.compose.ui.platform.TvOSTextInputService
-import androidx.compose.ui.platform.UIKitIdleTimerManager
-import androidx.compose.ui.platform.UIKitWindowInsetsManager
+import androidx.compose.ui.platform.ApplicationIdleTimer
+import androidx.compose.ui.platform.WindowInsetsManager
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsOwner
@@ -83,10 +84,10 @@ import androidx.compose.ui.unit.toOffset
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.viewinterop.LocalInteropContainer
 import androidx.compose.ui.viewinterop.TrackInteropPlacementContainer
-import androidx.compose.ui.viewinterop.UIKitInteropContainer
-import androidx.compose.ui.viewinterop.UIKitInteropTransaction
+import androidx.compose.ui.viewinterop.IosInteropContainer
+import androidx.compose.ui.viewinterop.InteropSyncTransaction
 import androidx.compose.ui.window.FocusedViewsList
-import androidx.compose.ui.window.PlatformPrefetchSchedulerImpl
+import androidx.compose.ui.window.IosPrefetchScheduler
 import kotlin.coroutines.CoroutineContext
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.readValue
@@ -363,7 +364,7 @@ internal class ComposeSceneMediator(
     private val onFocusBehavior: OnFocusBehavior,
     private val isClearFocusOnMouseDownEnabled: Boolean,
     private val focusedViewsList: FocusedViewsList?,
-    private val windowContext: PlatformWindowContext,
+    private val windowContext: WindowContext,
     private val architectureComponentsOwner: PlatformArchitectureComponentsOwner,
     val coroutineContext: CoroutineContext,
     private val navigationEventInput: BackNavigationEventInput,
@@ -394,8 +395,8 @@ internal class ComposeSceneMediator(
 
     private val isActive get() = coroutineContext.isActive
 
-    private var isPrefetchVoteActive: Boolean = false // TODO CMP-10587: Move inside the PlatformPrefetchSchedulerImpl
-    private val prefetchScheduler = PlatformPrefetchSchedulerImpl(
+    private var isPrefetchVoteActive: Boolean = false // TODO CMP-10587: Move inside the IosPrefetchScheduler
+    private val prefetchScheduler = IosPrefetchScheduler(
         onHasWorkScheduled = { hasWork ->
             if (hasWork != isPrefetchVoteActive) {
                 isPrefetchVoteActive = hasWork
@@ -440,7 +441,7 @@ internal class ComposeSceneMediator(
         }
 
     private val scene: ComposeScene by lazy {
-        composeSceneFactory(PlatformContextImpl())
+        composeSceneFactory(IosPlatformContext())
     }
 
     private var composeSceneSize: IntSize?
@@ -461,13 +462,20 @@ internal class ComposeSceneMediator(
      * composeSceneDensity without regressions (merging [screenDensity] and [composeSceneDensity]
      * into one causes rendering and interaction issues because they are semantically different).
      */
-    var composeSceneDensity: Density
-        get() = scene.density
-        set(value) {
-            if (isActive) {
-                scene.density = value
-            }
+    val composeSceneDensity: Density get() = scene.density
+
+    fun setComposeSceneFontScale(fontScale: Float) {
+        if (isActive) {
+            scene.density = Density(composeSceneDensity.density, fontScale)
         }
+    }
+
+    @VisibleForTesting
+    fun setComposeSceneDensity(density: Density) {
+        if (isActive) {
+            scene.density = density
+        }
+    }
 
     /**
      * Density of the hosting UIKit screen.
@@ -475,7 +483,7 @@ internal class ComposeSceneMediator(
      * This value is intentionally separate from [composeSceneDensity] so we can support setting
      * composeSceneDensity without regressions.
      */
-    val screenDensity: Density get() = _overlayView.density
+    private val screenDensity: Density get() = windowContext.screenDensity
 
     var layoutDirection: LayoutDirection
         get() = scene.layoutDirection
@@ -525,13 +533,13 @@ internal class ComposeSceneMediator(
     /**
      * Container for managing UIKitView and UIKitViewController
      */
-    private val interopContainer = UIKitInteropContainer(
+    private val interopContainer = IosInteropContainer(
         overlayContainer = _overlayView,
         backgroundContainer = _backgroundView,
         requestRedraw = frameChoreographer::requestFrame
     )
 
-    private val windowInsetsManager = UIKitWindowInsetsManager(
+    private val windowInsetsManager = WindowInsetsManager(
         windowInsetsViews = listOf(
             { _overlayView },
             { windowContext.window?.rootViewController?.view },
@@ -777,7 +785,7 @@ internal class ComposeSceneMediator(
         scene.draw(canvas)
     }
 
-    fun retrieveInteropTransaction(): UIKitInteropTransaction =
+    fun retrieveInteropTransaction(): InteropSyncTransaction =
         interopContainer.retrieveTransaction()
 
     @OptIn(InternalComposeUiApi::class)
@@ -973,7 +981,7 @@ internal class ComposeSceneMediator(
         else -> null
     }
 
-    private inner class PlatformContextImpl : PlatformContext {
+    private inner class IosPlatformContext : PlatformContext {
         override val windowInfo: WindowInfo get() = windowContext.windowInfo
         override val architectureComponentsOwner get() = this@ComposeSceneMediator.architectureComponentsOwner
         override val screenReader: PlatformScreenReader get() = platformScreenReader
@@ -1008,8 +1016,8 @@ internal class ComposeSceneMediator(
         override val isClearFocusOnMouseDownEnabled: Boolean get() = false
 
         override var isKeepScreenOnEnabled: Boolean
-            get() = UIKitIdleTimerManager.isIdleTimerDisabled
-            set(value) { UIKitIdleTimerManager.setIdleTimerState(this@ComposeSceneMediator, value) }
+            get() = ApplicationIdleTimer.isDisabled
+            set(value) { ApplicationIdleTimer.setIdleTimerState(this@ComposeSceneMediator, value) }
 
         override fun voteFrameRate(frameRate: Float, frameRateCategory: Float) {
             frameChoreographer.voteFrameRate(frameRate, frameRateCategory)

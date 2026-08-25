@@ -59,7 +59,7 @@ androidXMultiplatform {
             implementation(project(":compose:foundation:foundation"))
             implementation(project(":compose:foundation:foundation-layout"))
             implementation(project(":compose:ui:ui-geometry"))
-            implementation(project(":window:window-core"))
+            implementation("org.jetbrains.androidx.window:window-core:1.5.0")
 
             // jbVerifyForkDependencies: suppress
             api("androidx.collection:collection:1.5.0") // TODO: keep it fork until we bump the foundation version which brings the collections transitively
