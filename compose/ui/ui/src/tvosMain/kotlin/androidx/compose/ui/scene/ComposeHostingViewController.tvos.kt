@@ -16,11 +16,11 @@
 
 package androidx.compose.ui.scene
 
+import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.uikit.ComposeUIViewControllerConfiguration
 import androidx.compose.ui.uikit.utils.CMPViewController
 import androidx.compose.ui.window.ComposeContainerLifecycleDelegate
-import androidx.compose.ui.window.MetalRedrawer
 import kotlin.coroutines.CoroutineContext
 import kotlin.native.runtime.NativeRuntimeApi
 import kotlinx.cinterop.BetaInteropApi
@@ -44,7 +44,7 @@ internal class ComposeHostingViewController(
         lifecycleDelegate = lifecycleDelegate
     )
 
-    val rootRedrawer: MetalRedrawer? get() = container.view.redrawer
+    @VisibleForTesting
     fun hasInvalidations(): Boolean = container.hasInvalidations()
 
     override fun loadView() {

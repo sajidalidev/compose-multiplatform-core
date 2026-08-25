@@ -16,6 +16,7 @@
 
 package androidx.compose.ui.scene
 
+import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.uikit.ComposeUIViewConfiguration
@@ -24,13 +25,10 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dpSize
 import androidx.compose.ui.window.ComposeContainerLifecycleDelegate
 import androidx.compose.ui.window.DisplayLinkListener
-import androidx.compose.ui.window.MetalRedrawer
-import kotlin.coroutines.CoroutineContext
 import kotlin.math.abs
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExportObjCClass
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -50,8 +48,7 @@ internal class ComposeHostingView(
         lifecycleDelegate = lifecycleDelegate
     )
 
-    // Used for testing
-    val rootRedrawer: MetalRedrawer? get() = container.view.redrawer
+    @VisibleForTesting
     fun hasInvalidations(): Boolean = container.hasInvalidations()
 
     init {
