@@ -39,7 +39,7 @@ fi
 
 # Versions extracted from libraryversions.toml at the repo root. That file is the
 # source of truth for these; update the values below if it changes.
-#   COMPOSE               = "1.12.0-beta01"
+#   COMPOSE               = "1.12.0"  (CMP 1.12.0 release; toml still says 1.12.0-beta01)
 #   COMPOSE_MATERIAL3     = "1.5.0-alpha22"
 #   COMPOSE_MATERIAL3_ADAPTIVE = "1.3.0-beta02"
 #   LIFECYCLE             = "2.11.0"
@@ -83,7 +83,7 @@ fi
 # `:compose:material3:material3-adaptive-navigation-suite:compileKotlinTvosArm64` (the
 # COMPOSE_MATERIAL3 consumer of adaptive) succeeds too, so the navigation-suite exclusion in
 # JetBrainsPublication.kt was removed as well.
-VERSION_COMPOSE="1.12.0-beta01"
+VERSION_COMPOSE="1.12.0"
 VERSION_COMPOSE_MATERIAL3="1.5.0-alpha22"
 VERSION_COMPOSE_MATERIAL3_ADAPTIVE="1.3.0-beta02"
 VERSION_LIFECYCLE="2.11.0"
@@ -95,7 +95,7 @@ VERSION_WINDOW="1.6.0-alpha02"
 VERSION_TV_MATERIAL="1.1.0-alpha01"
 
 COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW,TV_MATERIAL"
+LIBRARIES="${TVOS_PUBLISH_LIBRARIES:-COMPOSE}"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 echo "About to publish to mavenLocal with:"
