@@ -69,6 +69,30 @@ tvOS intent on top of it — not the reverse. Typical conflict sites:
 - `compose/ui/ui/src/skikoMain/.../node/RootNodeOwner.skiko.kt` (frame/scene changes).
 - `settings.gradle` (fork's `:demo-tvos` include vs upstream stubs — additive, keep both).
 
+### 3b. When upstream RENAMES the iOS files the fork shares (#3309 "Align iOS naming")
+Fork commit 1 is a pure directory move (`iosMain/**` -> `uiKitCommonMain/**`, later renamed to
+`uiKitMain`) of ~70 files; when upstream renames some of those same files (2026-08-24 #3309 renamed
+20 of them and their classes: `UIKitInteropContainer`->`IosInteropContainer`,
+`UIKitComposeSceneLayer`->`IosComposeSceneLayer`, `PlatformWindowContext`->`WindowContext`,
+`UIKitNativeTextInputContext`->`NativeTextInputContext`, ...) every fork commit that moves them
+hits a rename/rename storm (commits 1, 4, 6, 18 in the 2026-08-25 rebase). Resolution rule:
+**upstream's NEW file name at the fork's location.** Git already stages the right answer as `AU`
+entries at the fork path (directory-rename detection); the old-named `UA`/`DD` entries are dropped
+— but only after proving the fork commit merely moved the file:
+```bash
+# For each UA <path>: identical to the file in the fork commit's own parent => pure move => drop.
+P=$(git rev-parse REBASE_HEAD^); diff -q <(git show "${P}:<old path>") <(git show "REBASE_HEAD:<path>")
+```
+Compare `REBASE_HEAD:<path>` (the fork commit's tree), NOT `:3:<path>` or the worktree file — git
+writes a rename-merged blob into stage 3, so those already contain upstream's renamed content.
+Four `platform/` files land as `AU` under `iosMain/` instead of the fork dir — `mv` them into
+`uiKitMain/` by hand. (zsh gotcha: `"$P:compose/..."` eats the `:c`; write `"${P}:..."`.)
+Commits that only EDIT the moved files apply cleanly afterwards via rename detection. Do NOT fix
+symbol names mid-rebase; after the last commit, sweep tvosMain/uiKitMain/demo-tvos for the old
+identifiers and port the scene copies with the 5b 3-way merge (it renames symbols for free),
+renaming the tvOS files to mirror upstream (`IosComposeSceneLayer.tvos.kt`,
+`ComposeSceneLayerView.tvos.kt`). Commit the whole sweep as one `[tvOS] Adapt ... (#NNNN)` commit.
+
 ## 4. Verify the fork-mode build wiring (see "Two build modes")
 Since the fork commit "[tvOS] Wire tvOS support into fork-mode build files (#3064)", the fork-mode
 wiring (`build-fork.gradle` edits + `settings-fork.gradle` include) is carried as tracked history and
@@ -88,6 +112,14 @@ settings-fork falls back to `build.gradle`, so that module's single build.gradle
 modes — resolve the modify/delete conflict by accepting the deletion and keeping the tvOS wiring in
 `build.gradle` only).
 
+Watch for upstream REMOVING stub includes: #3314 ("Remove AOSP Android projects") deleted the whole
+`mpp/stub-project` block from `settings-fork.gradle`, including `:window:window-core`. The fork's
+adaptive/navigation-suite `build-fork.gradle` files referenced `project(":window:window-core")` and
+fork mode failed at configuration ("Project with path ':window:window-core' could not be found").
+On `tvos-main` use upstream's Maven coordinate (`org.jetbrains.androidx.window:window-core:1.5.0`
+ships tvOS variants); `tvos-publishing` re-adds the real `includeProject(":window:window-core")`
+(+ its samples stub) and `:tv:tv-material` because it fork-builds them.
+
 Also sweep for NEW upstream modules the fork's tvOS deps now reach (e.g. #3126 added
 `:compose:ui:ui-skiko`, an api dep of `:compose:ui:ui`): each needs `tvos()` added to its targets.
 Commit any such additions as their own `[tvOS]` commit on the trial branch.
@@ -96,7 +128,7 @@ Commit any such additions as their own `[tvOS]` commit on the trial branch.
 The rebase must not change fork files except where a conflict forced it. Confirm:
 ```bash
 # The fork scene files should be byte-identical to tvos-main after a clean rebase.
-for f in ComposeContainer ComposeSceneMediator UIKitComposeSceneLayer; do
+for f in ComposeContainer ComposeSceneMediator IosComposeSceneLayer; do
   p="compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/$f.tvos.kt"
   diff <(git show tvos-main:"$p") <(git show tvos-main-rebase-trial:"$p") && echo "OK $f" || echo "CHANGED $f — scrutinize"
 done
@@ -110,7 +142,10 @@ squared scene density, `FrameRecomposer` wiring (call site must match upstream's
 `PlatformLayersComposeScene(frameRecomposer, density, …)` signature), Siri Remote key mappings
 (Menu→Back, D-pad focus), `KeyEvent.isRepeat`.
 
-Also check for NEW per-platform entry-point obligations upstream added since the last rebase: diff
+Also check for NEW per-platform entry-point obligations upstream added since the last rebase
+(#3306 Dynamic Type: `FontScaleProvider` feeds `Density(screenScale, fontScale)`; `FontScale.ios.kt`
+was hoisted to uiKitMain and tvOS keeps `Density(screenScale * screenScale, fontScale)` for the root
+scene AND every layer's `initialDensity` in `ComposeContainer.createComposeSceneLayer`): diff
 `ComposeContainer.ios.kt` against the last base and mirror anything init-time into
 `ComposeContainer.tvos.kt`. Example (#3126): every entry point must now call
 `registerSkikoComposeImplementation()` (populates `PlatformGraphicsRegistry`/`PlatformTextRegistry`)
@@ -192,6 +227,27 @@ git branch -f tvos-main tvos-main-rebase-trial && git branch -D tvos-main-rebase
 git switch tvos-main && git branch -D tvos-main-rebase-trial
 ```
 
+# Cutting a release branch (release-X.Y-tvos) — the 1.11/1.12 pattern
+
+Upstream `release/X.Y` forks from `jb-main` weeks before the tag, so today's `tvos-main` commits are
+usually adapted to upstream changes the release branch never got (1.12: cut 2026-06-29, before
+#3064/#3126/#3212/#3309). Never cherry-pick current `tvos-main` onto a release tag. Instead:
+```bash
+git merge-base upstream/release/X.Y upstream/jb-main          # the fork point, e.g. fca104ce5d4
+# find the fork/publishing backup whose upstream base IS that fork point:
+for b in $(git branch --list 'tvos-publishing-old-*' 'tvos-main-*'); do
+  echo "$b $(git merge-base $b upstream/jb-main)"; done       # 1.12: tvos-publishing-old-20260716
+git branch release-X.Y-tvos-work <backup>; git worktree add ../core-release-X.Y release-X.Y-tvos-work
+git -C ../core-release-X.Y rebase --onto vX.Y.0 <fork point> release-X.Y-tvos-work   # clean if bases match
+```
+Then run steps 5–6 there too, sweep `git diff --name-only <fork point> vX.Y.0 -- '*iosMain*'` for
+tvOS counterparts (1.12: #3243's `withFrameGuard` in ComposeSceneMediator had to be mirrored), bump
+`VERSION_COMPOSE` in `scripts/publish-tvos-fork.sh` + `scripts/stage-central-bundle.sh`, and
+publish only the library groups JetBrains re-released (1.12.0: COMPOSE only — check the `.module`
+files on repo1.maven.org; companions already on Central under dev.sajidali cannot be re-uploaded).
+Use `tvos-publishing`'s own `--onto` procedure (see `publish-tvos-fork` skill) to catch it up after
+`tvos-main` is promoted; keep dated backups (`tvos-main-old-YYYYMMDD`, `tvos-publishing-old-YYYYMMDD`).
+
 # Common mistakes
 
 | Mistake | Why it's wrong |
@@ -204,3 +260,4 @@ git switch tvos-main && git branch -D tvos-main-rebase-trial
 | Compiling with JDK 17 | Build needs JDK 21 via `ANDROIDX_JDK21`. Sync/compile fails otherwise. |
 | Compiling only — never running | Compile ≠ renders. Run the demo (step 7) for real integration proof. |
 | Keeping the fork's old call site verbatim after upstream changed an API | A clean patch can keep stale calls that bind to a deprecated overload. Adapt the call to upstream's new signature while preserving fork intent (e.g. squared density). |
+| Comparing `:3:<path>` / the worktree file to detect a "pure move" during a rename storm | Stage 3 is already rename-merged with upstream content; compare `REBASE_HEAD:<path>` to the fork parent instead. |
