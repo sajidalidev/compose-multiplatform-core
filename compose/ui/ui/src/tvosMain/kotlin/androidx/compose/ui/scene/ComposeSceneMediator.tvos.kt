@@ -378,17 +378,26 @@ internal class ComposeSceneMediator(
     // Key repeat state: repeatedly dispatch KeyDown while a key is held
     private val repeatingKeys = mutableMapOf<Long, Job>()
 
-    // Tracks the start position of each Siri Remote indirect touch for swipe-to-focus fallback.
-    private val indirectTouchStartPositions = mutableMapOf<Int, Offset>()
-    // True when a Select press fired while at least one indirect touch was in flight. The
-    // Siri Remote trackpad is itself the Select button; clicking it produces both a UIPress
-    // and a UITouch whose ENDED position can drift several dp from where it began. Without
-    // this flag, that drift is misread as a swipe.
-    private var selectPressedDuringIndirectTouch = false
+    // Tracks the start of each Siri Remote indirect touch for swipe-to-focus fallback.
+    private class IndirectTouchStart(val position: Offset, val timestamp: Double)
+    private val indirectTouchStarts = mutableMapOf<Int, IndirectTouchStart>()
+    // Timestamp (seconds since boot, same timebase as UITouch.timestamp) of the last clickpad
+    // press. The Siri Remote trackpad is itself a button (Select in the middle, arrow presses
+    // on the outer ring of 2nd-gen remotes): clicking it delivers a UIPress alongside an
+    // indirect UITouch whose ENDED position can drift several dp from where it began, so any
+    // touch whose lifetime overlaps a clickpad press is click contact, not a swipe. Both
+    // timestamps are hardware event times rather than delivery times, so comparing them is
+    // immune to UIKit delivering the press and touch callbacks of one click out of order.
+    private var lastClickpadPressTimestamp = Double.NEGATIVE_INFINITY
     private val keyRepeatInitialDelayMs = 500L
     private val keyRepeatIntervalMs = 50L
     // Minimum swipe distance (dp) on the Siri Remote trackpad to trigger a focus move.
     private val INDIRECT_SWIPE_THRESHOLD_DP = 40f
+    // Finger contact physically precedes the click's switch closing, but the two sensors may
+    // stamp their events a few ms apart; this only needs to absorb that jitter. It must stay
+    // well below the time it takes to lift after a click and start a new touch, so a swipe
+    // immediately following a click is never falsely suppressed.
+    private val PRESS_TOUCH_TIMESTAMP_JITTER_SECONDS = 0.05
     private var platformScreenReader = object : PlatformScreenReader {
         override var isActive by mutableStateOf(false)
     }
@@ -574,8 +583,7 @@ internal class ComposeSceneMediator(
 
     private fun onCancelAllTouches(touches: Set<*>) {
         redrawer.ongoingInteractionEventsCount -= touches.count()
-        indirectTouchStartPositions.clear()
-        selectPressedDuringIndirectTouch = false
+        indirectTouchStarts.clear()
         scene.cancelPointerInput()
     }
 
@@ -605,20 +613,20 @@ internal class ComposeSceneMediator(
                 val position = touch.offsetInView(_backgroundView, screenDensity.density)
                 when (eventKind) {
                     TouchesEventKind.BEGAN -> {
-                        if (indirectTouchStartPositions.isEmpty()) {
-                            selectPressedDuringIndirectTouch = false
-                        }
-                        indirectTouchStartPositions[touch.hashCode()] = position
+                        indirectTouchStarts[touch.hashCode()] =
+                            IndirectTouchStart(position, touch.timestamp)
                     }
                     TouchesEventKind.ENDED -> {
-                        val startPos = indirectTouchStartPositions.remove(touch.hashCode())
-                        val suppressSwipe = selectPressedDuringIndirectTouch
-                        if (indirectTouchStartPositions.isEmpty()) {
-                            selectPressedDuringIndirectTouch = false
+                        val start = indirectTouchStarts.remove(touch.hashCode()) ?: continue
+                        // A clickpad press during this touch's lifetime means the drift is
+                        // from a click, not a swipe.
+                        if (lastClickpadPressTimestamp >=
+                            start.timestamp - PRESS_TOUCH_TIMESTAMP_JITTER_SECONDS
+                        ) {
+                            continue
                         }
-                        if (startPos == null || suppressSwipe) continue
-                        val dx = position.x - startPos.x
-                        val dy = position.y - startPos.y
+                        val dx = position.x - start.position.x
+                        val dy = position.y - start.position.y
                         val threshold = with(screenDensity) { INDIRECT_SWIPE_THRESHOLD_DP.dp.toPx() }
                         if (dx * dx + dy * dy >= threshold * threshold) {
                             val key = if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) {
@@ -872,15 +880,18 @@ internal class ComposeSceneMediator(
             val event = if (rawEvent.key == Key.Menu) rawEvent.copy(key = Key.Back) else rawEvent
             val keyId = press.key?.keyCode?.toLong() ?: -(press.type.toLong() + 1L)
 
-            // The Siri Remote trackpad doubles as the Select button: clicking it produces
-            // a Select press alongside an indirect touch whose end position can drift
-            // enough to look like a swipe. Mark the in-flight touch so its ENDED branch
-            // doesn't dispatch a directional key.
-            if (event.key == Key.DirectionCenter &&
-                press.phase == UIPressPhase.UIPressPhaseBegan &&
-                indirectTouchStartPositions.isNotEmpty()
+            // The Siri Remote trackpad doubles as its buttons (Select in the middle, arrows
+            // on the outer ring): clicking it produces a press alongside an indirect touch
+            // whose end position can drift enough to look like a swipe. Record the press time
+            // so the touch's ENDED branch doesn't also dispatch a phantom directional key.
+            if (press.phase == UIPressPhase.UIPressPhaseBegan &&
+                when (event.key) {
+                    Key.DirectionCenter, Key.DirectionUp, Key.DirectionDown,
+                    Key.DirectionLeft, Key.DirectionRight -> true
+                    else -> false
+                }
             ) {
-                selectPressedDuringIndirectTouch = true
+                lastClickpadPressTimestamp = press.timestamp
             }
 
             when (press.phase) {
