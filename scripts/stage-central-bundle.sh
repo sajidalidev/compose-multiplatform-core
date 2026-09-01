@@ -180,7 +180,18 @@ mkdir -p "$STAGING_REPO_DIR" "$JAVADOC_STAGING_DIR"
 echo "=== Step 1: signed publish to mavenLocal (real ~/.m2, same task as publish-tvos-fork.sh) ==="
 (
     cd "$ROOT_DIR"
-    ./gradlew -p mpp publishComposeJbToMavenLocal \
+    # --no-configuration-cache is REQUIRED here, not an optimisation. Several fork-mode
+    # publishing decisions live in mutable state on Kotlin `object`s that is assigned during
+    # configuration -- JetBrainsPublication.coordinateRoot most importantly, which
+    # jbVerifyDependencyVersions reads from an execution-time onlyIf. A build that REUSES a
+    # configuration cache entry in a fresh daemon never re-runs configuration, so those objects
+    # hold their defaults ("org.jetbrains") and the publish fails with e.g.
+    #   Project with version 1.12.0 may not take a dependency on less-stable artifact
+    #   dev.sajidali.androidx.navigation:navigation-compose:2.10.0-alpha05
+    # which is exactly the verbatim upstream pin a fork republish is meant to carry. A warm
+    # daemon hides it (the object still holds the previously configured value), so this only
+    # bites on the first publish after a daemon restart. Reproduced and confirmed 2026-09-01.
+    ./gradlew -p mpp publishComposeJbToMavenLocal --no-configuration-cache \
         -Ppublication.coordinateRoot="$COORDINATE_ROOT" \
         "-Pcompose.platforms=$PLATFORMS" \
         -Pjetbrains.publication.libraries="$LIBRARIES" \
