@@ -213,13 +213,25 @@ for lib in ${LIBRARIES//,/ }; do
     staged_versions="$staged_versions $v"
 done
 echo "  versions in scope:$staged_versions"
+# Artifacts this repository does NOT build must never be swept into this bundle even when
+# they share a version directory name: `dev.sajidali.compose.components:components-resources*`
+# and `dev.sajidali.compose:compose-gradle-plugin` are built and staged by the SEPARATE
+# compose-multiplatform repo (its own scripts/stage-central-bundle.sh). Both bundles are
+# uploaded to Central independently, and Central rejects a coordinate that a previous bundle
+# already published -- so a module appearing in both bundles breaks the second upload.
+skipped_foreign=0
 for v in $staged_versions; do
     while IFS= read -r -d '' vdir; do
         rel="${vdir#$M2_REPO/}"
+        case "$rel" in
+            dev/sajidali/compose/components/*|dev/sajidali/compose/compose-gradle-plugin/*)
+                skipped_foreign=$((skipped_foreign + 1)); continue ;;
+        esac
         mkdir -p "$STAGING_REPO_DIR/$(dirname "$rel")"
         cp -R "$vdir" "$STAGING_REPO_DIR/$rel"
     done < <(find "$M2_REPO/dev/sajidali" -type d -name "$v" -print0)
 done
+echo "  module dirs skipped (built by the compose-multiplatform repo): $skipped_foreign"
 
 echo "=== Step 2: validate bundle completeness (+ generate stub javadoc jars) ==="
 missing_sources=0
