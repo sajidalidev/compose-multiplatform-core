@@ -424,6 +424,12 @@ includeBuild("placeholder-fork")
 
 includeProject(":mpp")
 
+// :window:window-core and :tv:tv-material are fork-built (tasks 18a/23a): their androidLibrary
+// targets are wrapped in redirect("androidx.window") / redirect("androidx.tv") so Android still
+// resolves the real artifacts while tvOS/iOS/etc. build from the in-tree AOSP copies.
+includeProject(":window:window-core")
+includeProject(":window:window-core-samples", "mpp/stub-project")
+includeProject(":tv:tv-material")
 // ---------------------------------------------------------------------
 // --- there should be no includeProject additions after this line -----
 // ---------------------------------------------------------------------

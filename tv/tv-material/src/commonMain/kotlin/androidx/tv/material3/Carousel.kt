@@ -16,8 +16,6 @@
 
 package androidx.tv.material3
 
-import android.content.Context
-import android.view.accessibility.AccessibilityManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -64,7 +62,6 @@ import androidx.compose.ui.input.key.KeyEventType.Companion.KeyUp
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.CollectionInfo
@@ -76,7 +73,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import java.lang.Math.floorMod
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.yield
@@ -128,16 +124,13 @@ fun Carousel(
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val carouselOuterBoxFocusRequester = remember { FocusRequester() }
     var isAutoScrollActive by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val accessibilityManager = remember {
-        context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-    }
+    val isAccessibilityManagerEnabled = isAccessibilityManagerEnabled()
 
     AutoScrollSideEffect(
         autoScrollDurationMillis = autoScrollDurationMillis,
         itemCount = itemCount,
         carouselState = carouselState,
-        doAutoScroll = shouldPerformAutoScroll(focusState, accessibilityManager),
+        doAutoScroll = shouldPerformAutoScroll(focusState, isAccessibilityManagerEnabled),
         onAutoScrollChange = { isAutoScrollActive = it }
     )
 
@@ -177,7 +170,7 @@ fun Carousel(
             label = "CarouselAnimation"
         ) { activeItemIndex ->
             LaunchedEffect(Unit) {
-                if (accessibilityManager.isEnabled) {
+                if (isAccessibilityManagerEnabled) {
                     carouselOuterBoxFocusRequester.requestFocus()
                 }
                 this@AnimatedContent.onAnimationCompletion {
@@ -203,13 +196,13 @@ fun Carousel(
 @Composable
 private fun shouldPerformAutoScroll(
     focusState: FocusState?,
-    accessibilityManager: AccessibilityManager
+    isAccessibilityManagerEnabled: Boolean
 ): Boolean {
     val carouselIsFocused = focusState?.isFocused ?: false
     val carouselHasFocus = focusState?.hasFocus ?: false
 
     // Disable auto scroll when accessibility mode is enabled or the carousel is focused
-    return !accessibilityManager.isEnabled && !(carouselIsFocused || carouselHasFocus)
+    return !isAccessibilityManagerEnabled && !(carouselIsFocused || carouselHasFocus)
 }
 
 // @OptIn(ExperimentalAnimationApi::class)
@@ -280,7 +273,7 @@ private fun Modifier.handleKeyEvents(
 
             fun handledHorizontalFocusMove(direction: FocusDirection): Boolean =
                 when {
-                    it.nativeKeyEvent.repeatCount > 0 ->
+                    it.isKeyRepeatEvent() ->
                         // Ignore long press key event for manual scrolling
                         KeyEventPropagation.StopPropagation
                     currentCarouselBoxFocusState()?.isFocused == true ->
@@ -559,4 +552,14 @@ internal fun Modifier.carouselSemantics(itemCount: Int, state: CarouselState): M
             }
         }
     )
+}
+
+/**
+ * Multiplatform equivalent of `java.lang.Math.floorMod(Int, Int)`: the remainder of flooring
+ * division, always non-negative for a positive [y] (unlike Kotlin's `%`, which follows the sign
+ * of the dividend).
+ */
+private fun floorMod(x: Int, y: Int): Int {
+    val remainder = x % y
+    return if (remainder < 0) remainder + y else remainder
 }
