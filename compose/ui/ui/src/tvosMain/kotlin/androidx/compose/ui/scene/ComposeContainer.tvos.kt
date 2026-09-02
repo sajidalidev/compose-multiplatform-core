@@ -21,6 +21,7 @@ import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.LocalSystemTheme
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.navigationevent.BackNavigationEventInput
@@ -31,6 +32,7 @@ import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowContext
 import androidx.compose.ui.platform.registerSkikoComposeImplementation
 import androidx.compose.ui.uikit.ComposeContainerConfiguration
+import androidx.compose.ui.uikit.PreferredSizeReportingStrategy
 import androidx.compose.ui.uikit.InterfaceOrientation
 import androidx.compose.ui.uikit.LocalUIViewController
 import androidx.compose.ui.uikit.PlistSanityCheck
@@ -41,13 +43,13 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.util.fastForEachReversed
-import androidx.compose.ui.viewinterop.InteropSyncAction
 import androidx.compose.ui.viewinterop.InteropSyncTransaction
 import androidx.compose.ui.window.ComposeContainerLifecycleDelegate
 import androidx.compose.ui.window.ComposeContainerView
 import androidx.compose.ui.window.FocusedViewsList
 import androidx.compose.ui.window.MetalView
 import androidx.compose.ui.window.SceneActiveStateListener
+import androidx.compose.ui.window.onDraw
 import androidx.lifecycle.enableSavedStateHandles
 import androidx.savedstate.SavedState
 import kotlin.coroutines.CoroutineContext
@@ -57,6 +59,7 @@ import kotlinx.cinterop.CPointer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import org.jetbrains.skia.Canvas
 import org.jetbrains.skiko.SystemTheme
 import platform.Foundation.NSKeyValueObservingOptionNew
 import platform.Foundation.addObserver
@@ -76,7 +79,7 @@ import platform.UIKit.UIWindowScene
 internal class ComposeContainer(
     private val configuration: ComposeContainerConfiguration,
     private val content: @Composable () -> Unit,
-    private val lifecycleDelegate: ComposeContainerLifecycleDelegate
+    private val lifecycleDelegate: ComposeContainerLifecycleDelegate,
 ) {
     // Register before any property initializer / scene setup below touches the Skiko backend, so
     // every tvOS entry point is covered. Mirrors ComposeContainer.ios.kt.
@@ -93,6 +96,23 @@ internal class ComposeContainer(
         get() = view.window?.windowScene?.let { FrameChoreographer.choreographerForScene(it) }
 
     private var mediator: ComposeSceneMediator? = null
+
+    @OptIn(InternalComposeUiApi::class)
+    var rootForTestListener: PlatformContext.RootForTestListener? = null
+        set(value) {
+            field = value
+            mediator?.rootForTestListener = value
+            layersHolder?.layersViewController?.withLayers { layers ->
+                layers.forEach { it.rootForTestListener = value }
+            }
+        }
+
+    private val sceneSizing = ComposeSceneSizing(
+        view = view,
+        measureSceneSize = { constraints -> mediator?.measureSceneSize(constraints) },
+        usesIntrinsicContentSize =
+            configuration.preferredSizeReportingStrategy == PreferredSizeReportingStrategy.IntrinsicContentSize,
+    )
     private val windowContext = WindowContext()
     private var layersHolder: ComposeLayersHolder? = null
     private val layoutDirection get() = getApplicationLayoutDirection()
@@ -140,6 +160,9 @@ internal class ComposeContainer(
     private val focusedViewsList = FocusedViewsList()
 
     init {
+        view.onSizeThatFits = sceneSizing::sizeThatFits
+        view.onIntrinsicContentSize = sceneSizing::intrinsicContentSize
+
         if (configuration.enforceStrictPlistSanityCheck) {
             PlistSanityCheck.performIfNeeded()
         }
@@ -173,6 +196,7 @@ internal class ComposeContainer(
         windowContext.updateWindowContainerSize()
 
         mediator?.measureAndLayout()
+        sceneSizing.onLayout()
     }
 
     private fun onDidMoveToWindow(window: UIWindow?) {
@@ -221,12 +245,7 @@ internal class ComposeContainer(
         this.layoutInvalidationHandler = layoutInvalidationHandler
 
         val metalView = MetalView(
-            retrieveInteropTransaction = {
-                mediator?.retrieveInteropTransaction() ?: object : InteropSyncTransaction {
-                    override val actions = emptyList<InteropSyncAction>()
-                    override val isInteropActive = false
-                }
-            },
+            retrieveInteropTransaction = { mediator?.retrieveInteropTransaction() ?: InteropSyncTransaction.Empty },
             useSeparateRenderThreadWhenPossible = configuration.parallelRendering,
             draw = { canvas ->
                 layoutInvalidationHandler.postponeLayoutInvalidationCalls {
@@ -282,12 +301,22 @@ internal class ComposeContainer(
                 )
             },
             interfaceOrientationState = interfaceOrientationState,
+            schedulePendingInteropViewUpdates = view::setNeedsDisplay,
         ).also { mediator ->
+            mediator.rootForTestListener = rootForTestListener
             view.embedSubview(mediator.backgroundView)
             view.updateMetalView(
                 metalView = metalView,
                 onDidMoveToWindow = ::onDidMoveToWindow,
-                onLayoutSubviews = ::onLayoutSubviews
+                onLayoutSubviews = ::onLayoutSubviews,
+                onDraw = { needsSynchronousDraw ->
+                    metalView.redrawer.onDraw(
+                        needsSynchronousDraw = needsSynchronousDraw,
+                        needsComposeSceneDraw = mediator.needsComposeSceneDraw,
+                        retrievePendingViewUpdatesInteropTransaction =
+                            mediator::retrievePendingViewUpdatesInteropTransaction,
+                    )
+                },
             )
             view.embedSubview(mediator.overlayView)
 
@@ -379,6 +408,7 @@ internal class ComposeContainer(
                     invalidateDraw = { layersHolder.getLayersViewController().invalidateDraw() },
                 )
 
+                layer.rootForTestListener = rootForTestListener
                 layersHolder.getLayersViewController().attach(layer)
                 onFocusConditionsChanged()
 
