@@ -116,9 +116,10 @@ Watch for upstream REMOVING stub includes: #3314 ("Remove AOSP Android projects"
 `mpp/stub-project` block from `settings-fork.gradle`, including `:window:window-core`. The fork's
 adaptive/navigation-suite `build-fork.gradle` files referenced `project(":window:window-core")` and
 fork mode failed at configuration ("Project with path ':window:window-core' could not be found").
-On `tvos-main` use upstream's Maven coordinate (`org.jetbrains.androidx.window:window-core:1.5.0`
-ships tvOS variants); `tvos-publishing` re-adds the real `includeProject(":window:window-core")`
-(+ its samples stub) and `:tv:tv-material` because it fork-builds them.
+`tvos-main` therefore carries the real `includeProject(":window:window-core")` (+ its samples
+stub) and `:tv:tv-material` because fork mode builds them (upstream's
+`org.jetbrains.androidx.window:window-core:1.5.0` coordinate would ship tvOS variants, but the
+fork publishes its own `dev.sajidali.androidx.window:window-core`).
 
 Also sweep for NEW upstream modules the fork's tvOS deps now reach (e.g. #3126 added
 `:compose:ui:ui-skiko`, an api dep of `:compose:ui:ui`): each needs `tvos()` added to its targets.
@@ -234,8 +235,8 @@ usually adapted to upstream changes the release branch never got (1.12: cut 2026
 #3064/#3126/#3212/#3309). Never cherry-pick current `tvos-main` onto a release tag. Instead:
 ```bash
 git merge-base upstream/release/X.Y upstream/jb-main          # the fork point, e.g. fca104ce5d4
-# find the fork/publishing backup whose upstream base IS that fork point:
-for b in $(git branch --list 'tvos-publishing-old-*' 'tvos-main-*'); do
+# find the tvos-main backup whose upstream base IS that fork point:
+for b in $(git branch --list 'tvos-main-old-*' 'tvos-publishing-old-*'); do
   echo "$b $(git merge-base $b upstream/jb-main)"; done       # 1.12: tvos-publishing-old-20260716
 git branch release-X.Y-tvos-work <backup>; git worktree add ../core-release-X.Y release-X.Y-tvos-work
 git -C ../core-release-X.Y rebase --onto vX.Y.0 <fork point> release-X.Y-tvos-work   # clean if bases match
@@ -245,8 +246,8 @@ tvOS counterparts (1.12: #3243's `withFrameGuard` in ComposeSceneMediator had to
 `VERSION_COMPOSE` in `scripts/publish-tvos-fork.sh` + `scripts/stage-central-bundle.sh`, and
 publish only the library groups JetBrains re-released (1.12.0: COMPOSE only — check the `.module`
 files on repo1.maven.org; companions already on Central under dev.sajidali cannot be re-uploaded).
-Use `tvos-publishing`'s own `--onto` procedure (see `publish-tvos-fork` skill) to catch it up after
-`tvos-main` is promoted; keep dated backups (`tvos-main-old-YYYYMMDD`, `tvos-publishing-old-YYYYMMDD`).
+Keep dated backups (`tvos-main-old-YYYYMMDD`) before promoting — the publishing commits are part of
+`tvos-main` since 2026-09, so there is no separate branch to catch up.
 
 # Common mistakes
 
