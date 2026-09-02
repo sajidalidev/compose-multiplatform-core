@@ -28,23 +28,46 @@ code path after every rebase. That verification is the whole point of this skill
 - tvOS Kotlin targets are `tvosArm64` / `tvosSimulatorArm64` → compile task suffix
   `compileKotlinTvosSimulatorArm64`.
 
-# Two build modes (upstream #3064) — the fork wiring lives in TWO places
+# Build modes (upstream #3064, #3265) — the tvOS wiring lives in the FORK-MODE files only
 
 Since upstream PR #3064 ("Use a separate build structure for maintaining fork") the build runs
 in one of two modes, selected by whether the `EXPECTED_AGP_VERSION` env var is set:
 
 - **fork mode** — the DEFAULT for a plain `./gradlew` (and IntelliJ). `settings.gradle` early-returns
-  into `settings-fork.gradle`, and every module builds from **`build-fork.gradle`** (not `build.gradle`).
+  into `settings-fork.gradle`, and every module builds from the first of `build-fork.gradle.kts`,
+  `build-fork.gradle`, `build.gradle.kts`, `build.gradle` that exists in its directory.
 - **AOSP mode** — used when `EXPECTED_AGP_VERSION` is set (i.e. `gradlew studio`). Uses the original
-  `settings.gradle` + `build.gradle` files. (Both AGP-version checks are commented out in this fork,
-  so the value is just a routing toggle; `EXPECTED_AGP_VERSION=8.12.0` works.)
+  `settings.gradle` + `build.gradle` files. Since upstream #3265 (2026-08-26, "Reset build.gradle to
+  AOSP state") those files are byte-for-byte AOSP: no `JetBrainsAndroidXPlugin`, no `ios()`/`desktop()`
+  targets, no redirects. AOSP mode builds NO multiplatform targets any more.
 
-Consequence for the fork: the tvOS wiring must exist in **both** sets of build files. The fork's
-history edits the AOSP-mode files (`build.gradle`, `settings.gradle`); after every rebase you must
-also mirror that wiring into the fork-mode files (`build-fork.gradle`, `settings-fork.gradle`) —
-see step 4 — or the default `./gradlew` build silently loses tvOS (`:demo-tvos` "project not found",
-no `tvos()` target). `demo-tvos` and `compose/mpp/demo` use `build.gradle.kts`, which fork mode picks
-up via a build-file fallback, so they need no `build-fork` counterpart.
+Consequence for the fork: ALL tvOS wiring lives in fork-mode files — `build-fork.gradle`,
+`settings-fork.gradle`, `buildSrc-fork/` — plus the handful of JetBrains-owned `build.gradle` files
+that have no `build-fork` counterpart and were deliberately NOT reset by #3265
+(`compose/ui/ui-uikit`, `compose/ui/ui-skiko`, `compose/ui/ui-backhandler`, `compose/desktop/**`).
+Fork-only modules follow the same split: `window/window-core/build-fork.gradle` and
+`tv/tv-material/build-fork.gradle` carry the fork wiring, their `build.gradle` is upstream's AOSP file.
+`settings.gradle` (AOSP mode) must equal upstream's. Never add tvOS wiring to a reset `build.gradle`:
+it is dead in fork mode and guarantees a conflict on the next rebase. `demo-tvos` and
+`compose/mpp/demo` use `build.gradle.kts`, which fork mode picks up via the fallback list above.
+
+History note: fork commits older than 2026-09-02 still edit AOSP-mode `build.gradle` files. When they
+replay onto a base that includes #3265 they conflict on every one of them; the resolution is always
+"take upstream". Automate it for the duration of the rebase with a scoped merge driver:
+```bash
+git config merge.ours.driver true            # "ours" during a rebase = the upstream side
+cat > .git/info/attributes <<'EOF'
+**/build.gradle merge=ours
+compose/ui/ui-uikit/build.gradle merge=text
+compose/ui/ui-skiko/build.gradle merge=text
+compose/ui/ui-backhandler/build.gradle merge=text
+compose/desktop/**/build.gradle merge=text
+EOF
+# ... rebase ...
+rm .git/info/attributes; git config --unset merge.ours.driver   # ALWAYS remove afterwards
+```
+The 2026-09-02 rebase went from ~10 expected build.gradle conflict stops to zero with this in place;
+modify/delete and add/add conflicts still stop the rebase as usual. Verify the result in step 4.
 
 # Procedure — perform steps exactly in order
 
@@ -65,7 +88,7 @@ If it goes wrong: `git rebase --abort`. `tvos-main` stays untouched the entire t
 ## 3. Resolve conflicts: keep upstream's structure, graft the tvOS additions on top
 Resolution rule: take upstream's restructured/version-bumped code, then re-apply the fork's
 tvOS intent on top of it — not the reverse. Typical conflict sites:
-- `build.gradle` of compose modules (fork source-set additions + `uiKitMain` wiring vs upstream version bumps) — keep upstream deps, re-add the tvos/`uiKitMain` wiring.
+- `**/build-fork.gradle` (fork `tvos()` targets, `uiKitMain` wiring and project-reference pins vs upstream version bumps) — keep upstream deps, re-add the tvOS wiring. A conflict in a reset AOSP-mode `build.gradle` is resolved by taking upstream (see "Build modes").
 - `compose/ui/ui/src/skikoMain/.../node/RootNodeOwner.skiko.kt` (frame/scene changes).
 - `settings.gradle` (fork's `:demo-tvos` include vs upstream stubs — additive, keep both).
 
@@ -93,33 +116,48 @@ identifiers and port the scene copies with the 5b 3-way merge (it renames symbol
 renaming the tvOS files to mirror upstream (`IosComposeSceneLayer.tvos.kt`,
 `ComposeSceneLayerView.tvos.kt`). Commit the whole sweep as one `[tvOS] Adapt ... (#NNNN)` commit.
 
-## 4. Verify the fork-mode build wiring (see "Two build modes")
-Since the fork commit "[tvOS] Wire tvOS support into fork-mode build files (#3064)", the fork-mode
-wiring (`build-fork.gradle` edits + `settings-fork.gradle` include) is carried as tracked history and
-is replayed by the rebase itself — do NOT blind-copy `build.gradle` over `build-fork.gradle`; since
-upstream's own fork-mode files legitimately diverge from the AOSP-mode files, a copy would clobber
-upstream structure. Instead VERIFY the replayed wiring:
+## 4. Verify the fork-mode build wiring (see "Build modes")
+The fork-mode wiring (`build-fork.gradle` edits + `settings-fork.gradle` includes) is tracked history
+and is replayed by the rebase itself — do NOT blind-copy files around. VERIFY the replayed wiring:
 
 ```bash
-# The delta vs upstream's fork-mode files must be exactly the tvOS wiring: tvos() targets,
-# tvosMain/tvosTest source sets, uiKitMain intermediates, project-reference pins, :demo-tvos include.
+# 1. AOSP-mode files: the only build.gradle deltas allowed are the un-reset JetBrains files.
+git diff --stat upstream/jb-main..tvos-main-rebase-trial -- '**/build.gradle' settings.gradle
+#    expected: compose/ui/ui-{uikit,skiko,backhandler}/build.gradle only. Anything else => restore
+#    it with `git checkout upstream/jb-main -- <file>` (move genuine fork wiring to build-fork.gradle).
+# 2. Fork-mode files: the delta must be exactly the tvOS wiring — tvos() targets, tvosMain/tvosTest
+#    source sets, uiKitMain intermediates, project-reference pins, the fork's own includes.
 git diff upstream/jb-main..tvos-main-rebase-trial -- '**/build-fork.gradle' settings-fork.gradle
 grep -q 'includeProject(":demo-tvos")' settings-fork.gradle || echo "MISSING :demo-tvos include"
+# 3. No project reference may point at a module fork mode no longer includes:
+grep -rn 'project(":lifecycle\|project(":savedstate\|project(":navigationevent' \
+  --include='build-fork.gradle' . | grep -v '^\(\./\)\?\(lifecycle\|savedstate\|navigationevent\)/'
+#    (fork-mode files only; the AOSP build.gradle copies under navigationevent/ and */samples/ are inert)
 ```
 
-Watch for upstream DELETING a build-fork.gradle (e.g. #3233 removed `ui-uikit/build-fork.gradle`;
-settings-fork falls back to `build.gradle`, so that module's single build.gradle now serves both
-modes — resolve the modify/delete conflict by accepting the deletion and keeping the tvOS wiring in
-`build.gradle` only).
+Watch for upstream DELETING a build-fork.gradle (e.g. #3233 removed `ui-uikit/build-fork.gradle`,
+2026-08 removed `ui-backhandler/build-fork.gradle`): settings-fork falls back to `build.gradle`, so
+that module's single `build.gradle` serves fork mode — resolve the modify/delete conflict by accepting
+the deletion and keeping the tvOS wiring in `build.gradle` only.
 
-Watch for upstream REMOVING stub includes: #3314 ("Remove AOSP Android projects") deleted the whole
-`mpp/stub-project` block from `settings-fork.gradle`, including `:window:window-core`. The fork's
-adaptive/navigation-suite `build-fork.gradle` files referenced `project(":window:window-core")` and
-fork mode failed at configuration ("Project with path ':window:window-core' could not be found").
-`tvos-main` therefore carries the real `includeProject(":window:window-core")` (+ its samples
-stub) and `:tv:tv-material` because fork mode builds them (upstream's
-`org.jetbrains.androidx.window:window-core:1.5.0` coordinate would ship tvOS variants, but the
-fork publishes its own `dev.sajidali.androidx.window:window-core`).
+Watch for upstream REMOVING includes from `settings-fork.gradle`:
+- #3314 ("Remove AOSP Android projects") deleted the `mpp/stub-project` block incl. `:window:window-core`;
+  the fork re-adds the real `includeProject(":window:window-core")` (+ samples stub) and `:tv:tv-material`
+  because it fork-builds them.
+- #3357 ("Remove lifecycle, savedstate, navigationevent", 2026-08-31) removed every `:lifecycle:*`,
+  `:savedstate:*` and `:navigationevent:*` include and their publication groups. The fork FOLLOWS
+  upstream here (do not re-add them): `org.jetbrains.androidx.lifecycle:*:2.11.0`, `androidx.savedstate:*`
+  and Google's `androidx.navigationevent:navigationevent-compose:1.1.1` all ship tvOS klibs, so the
+  Maven pins resolve for tvOS. The one pin that does NOT is
+  `org.jetbrains.androidx.navigationevent:navigationevent-compose:1.1.0` (no tvOS variants) — the fork
+  replaces it with `"androidx.navigationevent:navigationevent-compose:$navigationEventVersion"`
+  (`def navigationEventVersion = project.redirectVersions.get('androidx.navigationevent')`) in
+  `compose/ui/ui`, `navigation-compose`, `navigation3-ui`, `adaptive-navigation3` (build-fork) and
+  `ui-backhandler` (build.gradle). If upstream bumps that pin, re-apply the swap.
+  `LIFECYCLE`/`NAVIGATION_EVENT`/`SAVEDSTATE` are gone from `scripts/publish-tvos-fork.sh` too.
+  Project references stay only where the fork builds the module itself (`:navigation3:navigation3-ui`,
+  `:window:window-core`, and the `project(":compose:...")` swaps for `org.jetbrains.compose.*` Maven
+  pins, which have no tvOS variants).
 
 Also sweep for NEW upstream modules the fork's tvOS deps now reach (e.g. #3126 added
 `:compose:ui:ui-skiko`, an api dep of `:compose:ui:ui`): each needs `tvos()` added to its targets.
@@ -133,9 +171,9 @@ for f in ComposeContainer ComposeSceneMediator IosComposeSceneLayer; do
   p="compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/$f.tvos.kt"
   diff <(git show tvos-main:"$p") <(git show tvos-main-rebase-trial:"$p") && echo "OK $f" || echo "CHANGED $f — scrutinize"
 done
-# Density "10-foot" squaring must still be present on the scene-creation path:
-grep -rn 'density.density \* density.density\|screenDensity.density \* screenDensity.density' \
-  compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/
+# Density "10-foot" squaring must still be present on the scene-creation path (root scene AND
+# every layer's initialDensity — expect 2 hits in ComposeContainer.tvos.kt):
+grep -rn 'screenScale \*' compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/
 ```
 Then sanity-check fork behaviors against the original full fork branch `tvos` when an upstream
 change touched the same area (frame model, key input). Key fork behaviors that must remain:
@@ -152,6 +190,16 @@ scene AND every layer's `initialDensity` in `ComposeContainer.createComposeScene
 `registerSkikoComposeImplementation()` (populates `PlatformGraphicsRegistry`/`PlatformTextRegistry`)
 before scene creation — missing it compiles clean but crashes at launch with "Registered
 implementation is null". This class of break is invisible to steps 5–6 and only surfaces in step 7.
+Example (#3367, 2026-09): `PlatformContext.taskDispatchers` became an abstract member — the tvOS
+mediator's `IosPlatformContext` copy must add the override (the 5b merge carries it; a missed one
+fails compilation, which is the good case). Example (#2984 hosting-view sizing, 2026-09): the iOS
+container gained `ComposeSceneSizing`, `rootForTestListener` plumbing and `view.onSizeThatFits`;
+`ComposeSceneSizing.ios.kt` was hoisted to `uiKitMain` (pure move) and the tvOS mediator's
+`measureSceneSize` rescales constraints/results between `screenDensity` and the squared
+`composeSceneDensity`, because upstream's sizing bridge converts UIKit points with the *view*
+density. Rule: after the 5b merge, grep the merged tvOS files for every symbol upstream added and
+check where it is defined — anything only in `iosMain` must be hoisted (if platform-neutral) or
+re-implemented for tvOS.
 
 Also sweep tvOS counterpart files that are NOT content mirrors of their iOS siblings but must still
 track their *behavioral contract* — an upstream change to the iOS file lands with no conflict and no
@@ -185,8 +233,8 @@ squared density, dropped keyboard/text-input machinery) — resolve each by taki
 structure and re-applying the tvOS intent on top. After resolving, sweep tvosMain for stale
 removed-API references that sat in ours-only regions (`grep -rE 'redrawer|setNeedsRedraw|...'`).
 
-Post-#3212 state: `FrameChoreographer.ios.kt`, `LayoutInvalidationHandler.ios.kt` and
-`CompositionContextAttachment.ios.kt` live in `uiKitMain` (fork commit "[tvOS] Hoist
+Post-#3212 state: `FrameChoreographer.ios.kt`, `LayoutInvalidationHandler.ios.kt`,
+`CompositionContextAttachment.ios.kt` and (since 2026-09, #2984) `ComposeSceneSizing.ios.kt` live in `uiKitMain` (fork commit "[tvOS] Hoist
 FrameChoreographer and scene helpers to uiKitMain") because tvosMain and the shared interop
 views need them. Future upstream edits to these symbols (upstream keeps FrameChoreographer in
 iosMain and the helpers inline in ComposeContainer.ios.kt) will surface as modify/delete or
@@ -220,7 +268,8 @@ in the environment.)
 
 ## 8. Promote or discard
 ```bash
-# Promote the verified result:
+# Promote the verified result (dated backup first):
+git branch tvos-main-old-$(date +%Y%m%d) tvos-main
 git branch -f tvos-main tvos-main-rebase-trial && git branch -D tvos-main-rebase-trial
 # (then force-push: git push --force-with-lease origin tvos-main)
 
@@ -256,7 +305,7 @@ Keep dated backups (`tvos-main-old-YYYYMMDD`) before promoting — the publishin
 | `git pull` / merging instead of rebasing | The fork is a rebased history; merging creates duplicate-commit garbage. Always rebase. |
 | Rebasing `tvos-main` directly | If it goes wrong you've corrupted the branch. Always use the throwaway branch. |
 | Trusting "rebase succeeded" / "BUILD SUCCESSFUL" | Neither proves tvOS behavior survived an upstream rewrite. Run step 5 every time. |
-| Fixing only `build.gradle`/`settings.gradle`, not the `-fork` files | Since #3064 the default `./gradlew` uses `build-fork.gradle` + `settings-fork.gradle`. Skip step 4 and the default build silently drops tvOS (`:demo-tvos` not found). |
+| Putting tvOS wiring in AOSP-mode `build.gradle`/`settings.gradle` | Since #3064 the default `./gradlew` uses `build-fork.gradle` + `settings-fork.gradle`, and since #3265 the AOSP files are pure AOSP: wiring there is dead code and a guaranteed conflict next rebase. Only the un-reset JetBrains files (ui-uikit, ui-skiko, ui-backhandler, desktop) carry fork wiring in `build.gradle`. |
 | Compile-verifying only in AOSP mode (`EXPECTED_AGP_VERSION` set) | That hides a broken fork-mode build. Step 6 MUST pass with `EXPECTED_AGP_VERSION` unset. |
 | Compiling with JDK 17 | Build needs JDK 21 via `ANDROIDX_JDK21`. Sync/compile fails otherwise. |
 | Compiling only — never running | Compile ≠ renders. Run the demo (step 7) for real integration proof. |
