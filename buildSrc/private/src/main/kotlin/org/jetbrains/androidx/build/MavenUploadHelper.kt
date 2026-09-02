@@ -597,10 +597,31 @@ private fun removePreviouslyUploadedArchives(projectArchiveDir: File) {
     projectArchiveDir.deleteRecursively()
 }
 
+/**
+ * Fork-publication overrides for the informative POM fields. Each is an optional Gradle
+ * property (`-P` / gradle.properties); unset ones fall back to the upstream JetBrains/AOSP
+ * values so the default `org.jetbrains.*` publication is byte-for-byte unchanged.
+ *
+ * Read through `providers.gradleProperty` at configuration time so the values are captured
+ * into the GenerateMavenPom task state, unlike `JetBrainsPublication.coordinateRoot`, which is
+ * mutable singleton state and must not be consulted here (see publish-tvos-fork.sh).
+ */
+private const val PUBLICATION_PROJECT_URL = "publication.projectUrl"
+private const val PUBLICATION_SCM_URL = "publication.scmUrl"
+private const val PUBLICATION_SCM_CONNECTION = "publication.scmConnection"
+private const val PUBLICATION_DEVELOPER_ID = "publication.developerId"
+private const val PUBLICATION_DEVELOPER_NAME = "publication.developerName"
+
+private fun Project.publicationProperty(name: String): String? =
+    providers.gradleProperty(name).orNull?.trim()?.takeIf { it.isNotEmpty() }
+
 private fun Project.addInformativeMetadata(extension: AndroidXExtension, pom: MavenPom) {
     pom.name.set(extension.name)
     pom.description.set(extension.description)
-    pom.url.set("https://github.com/JetBrains/compose-multiplatform")
+    pom.url.set(
+        publicationProperty(PUBLICATION_PROJECT_URL)
+            ?: "https://github.com/JetBrains/compose-multiplatform"
+    )
     pom.inceptionYear.set(extension.inceptionYear)
     pom.licenses { licenses ->
         licenses.license { license ->
@@ -617,12 +638,24 @@ private fun Project.addInformativeMetadata(extension: AndroidXExtension, pom: Ma
         }
     }
     pom.scm { scm ->
-        scm.url.set("https://cs.android.com/androidx/platform/frameworks/support")
-        scm.connection.set(ANDROID_GIT_URL)
+        scm.url.set(
+            publicationProperty(PUBLICATION_SCM_URL)
+                ?: "https://cs.android.com/androidx/platform/frameworks/support"
+        )
+        scm.connection.set(publicationProperty(PUBLICATION_SCM_CONNECTION) ?: ANDROID_GIT_URL)
     }
     pom.developers { devs ->
         devs.developer { dev ->
             dev.name.set("The Android Open Source Project")
+        }
+        // A fork publisher is appended after AOSP rather than replacing it: the code is
+        // still overwhelmingly theirs, and Central only requires that *a* developer exists.
+        val forkDeveloperName = publicationProperty(PUBLICATION_DEVELOPER_NAME)
+        if (forkDeveloperName != null) {
+            devs.developer { dev ->
+                publicationProperty(PUBLICATION_DEVELOPER_ID)?.let { dev.id.set(it) }
+                dev.name.set(forkDeveloperName)
+            }
         }
     }
 }

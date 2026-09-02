@@ -95,11 +95,19 @@ VERSION_WINDOW="1.6.0-alpha02"
 VERSION_TV_MATERIAL="1.1.0-alpha01"
 
 COORDINATE_ROOT="dev.sajidali"
+# Informative POM fields (url / scm / developers). Without these the published POMs carry
+# upstream's JetBrains project url and the AOSP scm block, which is what shipped in 1.12.0.
+PROJECT_URL="https://github.com/sajidalidev/compose-tvos"
+SCM_URL="https://github.com/sajidalidev/compose-multiplatform-core"
+SCM_CONNECTION="scm:git:https://github.com/sajidalidev/compose-multiplatform-core.git"
+DEVELOPER_ID="sajidalidev"
+DEVELOPER_NAME="Sajid Ali"
 LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW,TV_MATERIAL"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 echo "About to publish to mavenLocal with:"
 echo "  coordinateRoot = $COORDINATE_ROOT"
+echo "  pom url / scm  = $PROJECT_URL / $SCM_URL"
 echo "  platforms      = $PLATFORMS"
 echo "  libraries      = $LIBRARIES"
 echo "  versions:"
@@ -129,6 +137,11 @@ echo "    TV_MATERIAL=$VERSION_TV_MATERIAL"
     # bites on the first publish after a daemon restart. Reproduced and confirmed 2026-09-01.
     ./gradlew -p mpp publishComposeJbToMavenLocal --no-configuration-cache \
         -Ppublication.coordinateRoot="$COORDINATE_ROOT" \
+        -Ppublication.projectUrl="$PROJECT_URL" \
+        -Ppublication.scmUrl="$SCM_URL" \
+        -Ppublication.scmConnection="$SCM_CONNECTION" \
+        -Ppublication.developerId="$DEVELOPER_ID" \
+        -Ppublication.developerName="$DEVELOPER_NAME" \
         "-Pcompose.platforms=$PLATFORMS" \
         -Pjetbrains.publication.libraries="$LIBRARIES" \
         -Pjetbrains.publication.version.COMPOSE="$VERSION_COMPOSE" \
