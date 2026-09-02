@@ -103,6 +103,7 @@ androidXMultiplatform {
         }
 
         def lifecycleVersion = project.redirectVersions.get('androidx.lifecycle')
+        def navigationEventVersion = project.redirectVersions.get('androidx.navigationevent')
         // TODO: Align naming: nonAndroidMain
         skikoMain {
             dependsOn(commonMain)
@@ -110,7 +111,7 @@ androidXMultiplatform {
                 api(project(":compose:ui:ui-skiko"))
                 implementation(libs.atomicFu)
 
-                implementation(project(":navigationevent:navigationevent-compose"))
+                implementation("androidx.navigationevent:navigationevent-compose:$navigationEventVersion")
                 implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleVersion")
                 implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:$lifecycleVersion")
             }

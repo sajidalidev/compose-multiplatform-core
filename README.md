@@ -63,16 +63,21 @@ Full documentation: https://sajidalidev.github.io/compose-tvos/ — and [TVOS.md
 | `compose.{runtime,ui,foundation,animation,material}` (63 modules incl. the KMP umbrella) | 1.12.0 |
 | `compose.material3` (`material3`, `material3-window-size-class`, `material3-adaptive-navigation-suite`) | 1.5.0-alpha22 |
 | `compose.material3.adaptive` | 1.3.0-beta02 |
-| `androidx.lifecycle` | 2.11.0 |
+| `androidx.lifecycle` (1.12.0 line only, see below) | 2.11.0 |
 | `androidx.navigation` | 2.10.0-alpha05 |
 | `androidx.navigation3` | 1.2.0-alpha04 |
-| `androidx.navigationevent` | 1.1.1 |
-| `androidx.savedstate` | 1.5.0-alpha01 |
+| `androidx.navigationevent` (1.12.0 line only, see below) | 1.1.1 |
+| `androidx.savedstate` (1.12.0 line only, see below) | 1.5.0-alpha01 |
 | `androidx.window` (`window-core`) | 1.6.0-alpha02 |
 | `androidx.tv` (`tv-material`) | 1.1.0-alpha01 |
 
 Only the compose group was republished for 1.12.0 because JetBrains re-released only that group;
 the companions above were built from the same `release/1.12` fork point and are unchanged.
+
+Since 2026-09-02 (`tvos-main` rebased past upstream #3357) the fork no longer builds or publishes
+`lifecycle`, `navigationevent` or `savedstate`: JetBrains' `org.jetbrains.androidx.lifecycle` 2.11.0
+and Google's `androidx.savedstate` / `androidx.navigationevent` artifacts ship tvOS variants and are
+consumed directly. The 1.12.0-line artifacts listed above remain on Central.
 
 ### Notable tvOS-specific work
 

@@ -6,8 +6,9 @@ that adds Apple tvOS as a first-class Compose Multiplatform target.
 ## What this fork adds
 
 - **`tvosArm64`/`tvosSimulatorArm64` Kotlin/Native targets** across Compose runtime, ui,
-  foundation, material3 (including `material3-adaptive`), navigation, navigation3, navigationevent,
-  lifecycle, savedstate, and related modules.
+  foundation, material3 (including `material3-adaptive`), navigation, navigation3, `window-core`,
+  `tv-material` and related modules. (`lifecycle`, `savedstate` and `navigationevent` come from
+  upstream's Maven artifacts, which already ship tvOS variants.)
 - **Siri Remote / focus / back-navigation behavior**: D-pad focus traversal, swipe-to-focus,
   `KeyEvent.isRepeat`, the Siri Remote Menu button routed through `Key.Back`, and squared "10-foot"
   scene density. See the commits prefixed `[tvOS]` in the git history for the full list.
