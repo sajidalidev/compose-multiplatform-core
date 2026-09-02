@@ -49,9 +49,8 @@ Full documentation: https://sajidalidev.github.io/compose-tvos/ — and [TVOS.md
 
 | Branch | Contents |
 |---|---|
-| `tvos-main` | upstream `jb-main` + the tvOS commits (prefixed `[tvOS]`); rebased onto upstream periodically |
-| `release-1.12-tvos` | upstream `v1.12.0` + the tvOS commits + the publishing commits; the 1.12.0 artifacts were built from here |
-| `tvos-publishing` | the publishing tooling (coordinate-root override, publish scripts, closure audit) on top of `tvos-main` |
+| `tvos-main` | upstream `jb-main` + the tvOS commits (prefixed `[tvOS]`), including the `dev.sajidali` publishing tooling; rebased onto upstream periodically |
+| `release-1.12-tvos` | upstream `v1.12.0` + the same tvOS commits; the 1.12.0 artifacts were built from here |
 
 ### Targets
 
@@ -105,7 +104,7 @@ export ANDROIDX_JDK21="$JAVA_HOME"
 
 Fork mode is switched on with `-Ppublication.coordinateRoot=dev.sajidali`, which publishes every
 module under `dev.sajidali.*` instead of `org.jetbrains.*` / `androidx.*`. The publishing
-tooling lives on `tvos-publishing` and the release branches:
+tooling:
 
 - `scripts/publish-tvos-fork.sh` — publishes the tvOS artifact set to mavenLocal
   (`./gradlew -p mpp publishComposeJbToMavenLocal --no-configuration-cache ...`).
