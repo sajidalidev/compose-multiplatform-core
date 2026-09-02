@@ -119,10 +119,10 @@ tooling:
 
 - [sajidalidev/compose-tvos](https://github.com/sajidalidev/compose-tvos) — the settings plugin,
   version manifest and docs. Start here.
-- [sajidalidev/compose-multiplatform-tvos](https://github.com/sajidalidev/compose-multiplatform-tvos)
+- [sajidalidev/compose-multiplatform](https://github.com/sajidalidev/compose-multiplatform)
   — fork of the Compose Gradle plugin and `components-resources`.
 - [sajidalidev/koin](https://github.com/sajidalidev/koin) — Koin with tvOS targets.
-- [sajidalidev/coil-tvos](https://github.com/sajidalidev/coil-tvos) — Coil 3 with tvOS targets.
+- [sajidalidev/coil](https://github.com/sajidalidev/coil) — Coil 3 with tvOS targets.
 - [sajidalidev/jetstream-tvos](https://github.com/sajidalidev/jetstream-tvos) — sample app
   (Google's JetStream) running on Apple TV.
 
