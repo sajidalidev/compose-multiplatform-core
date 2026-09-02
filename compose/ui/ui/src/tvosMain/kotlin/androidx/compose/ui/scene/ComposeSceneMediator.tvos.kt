@@ -52,6 +52,7 @@ import androidx.compose.ui.navigationevent.BackNavigationEventInput
 import androidx.compose.ui.platform.AccessibilityMediator
 import androidx.compose.ui.platform.CUPERTINO_TOUCH_SLOP
 import androidx.compose.ui.platform.DefaultInputModeManager
+import androidx.compose.ui.platform.DelegateRootForTestListener
 import androidx.compose.ui.platform.FrameChoreographer
 import androidx.compose.ui.platform.PlatformArchitectureComponentsOwner
 import androidx.compose.ui.platform.PlatformContext
@@ -60,6 +61,7 @@ import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.platform.WindowContext
 import androidx.compose.ui.platform.TvOSTextInputService
 import androidx.compose.ui.platform.ApplicationIdleTimer
+import androidx.compose.ui.platform.TaskDispatchers
 import androidx.compose.ui.platform.WindowInsetsManager
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.WindowInfo
@@ -69,6 +71,7 @@ import androidx.compose.ui.uikit.LocalUIView
 import androidx.compose.ui.uikit.OnFocusBehavior
 import androidx.compose.ui.uikit.density
 import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -89,12 +92,15 @@ import androidx.compose.ui.viewinterop.InteropSyncTransaction
 import androidx.compose.ui.window.FocusedViewsList
 import androidx.compose.ui.window.IosPrefetchScheduler
 import kotlin.coroutines.CoroutineContext
+import kotlin.math.roundToInt
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.readValue
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -370,6 +376,7 @@ internal class ComposeSceneMediator(
     private val navigationEventInput: BackNavigationEventInput,
     interfaceOrientationState: State<InterfaceOrientation>,
     composeSceneFactory: (platformContext: PlatformContext) -> ComposeScene,
+    private val schedulePendingInteropViewUpdates: () -> Unit = {},
 ) {
     private var onPreviewKeyEvent: (KeyEvent) -> Boolean = { false }
     private var onKeyEvent: (KeyEvent) -> Boolean = { false }
@@ -419,9 +426,10 @@ internal class ComposeSceneMediator(
     )
 
     /**
-     * Indicates that a draw happened in the current display-link interval so the prefetch scheduler
-     * can tell whether the draw loop was idle when [FrameChoreographer.Listener.onOutOfFrame]
-     * runs.
+     * Indicates that a draw happened in the current display-link interval so
+     * [FrameChoreographer.Listener.onOutOfFrame] can determine whether pending interop view
+     * updates still need a host draw, and the prefetch scheduler can tell whether the draw loop
+     * was idle.
      */
     private var didDrawSinceDisplayLink = false
     private val frameChoreographerListener = object : FrameChoreographer.Listener {
@@ -433,6 +441,10 @@ internal class ComposeSceneMediator(
             lastFrameTimestamp: NSTimeInterval,
             targetTimestamp: NSTimeInterval
         ) {
+            if (!didDrawSinceDisplayLink && interopContainer.hasPendingViewUpdatesOnly) {
+                schedulePendingInteropViewUpdates()
+            }
+
             prefetchScheduler.execute(
                 lastFrameTimestamp = lastFrameTimestamp,
                 targetTimestamp = targetTimestamp,
@@ -490,7 +502,7 @@ internal class ComposeSceneMediator(
      * Density of the hosting UIKit screen.
      *
      * This value is intentionally separate from [composeSceneDensity] so we can support setting
-     * composeSceneDensity without regressions.
+     * [composeSceneDensity] without regressions.
      */
     private val screenDensity: Density get() = windowContext.screenDensity
 
@@ -545,7 +557,7 @@ internal class ComposeSceneMediator(
     private val interopContainer = IosInteropContainer(
         overlayContainer = _overlayView,
         backgroundContainer = _backgroundView,
-        requestRedraw = frameChoreographer::requestFrame
+        requestRedraw = frameChoreographer::requestFrame,
     )
 
     private val windowInsetsManager = WindowInsetsManager(
@@ -568,6 +580,9 @@ internal class ComposeSceneMediator(
      */
     private fun isPointInsideInteractionBounds(point: CValue<CGPoint>) =
         interactionBounds.contains(point.toDpOffset().toOffset(screenDensity).round())
+
+    @OptIn(InternalComposeUiApi::class)
+    var rootForTestListener: PlatformContext.RootForTestListener? by DelegateRootForTestListener()
 
     private val semanticsOwnerListener by lazy {
         SemanticsOwnerListenerImpl(
@@ -724,7 +739,7 @@ internal class ComposeSceneMediator(
             nativeEvent = event,
             button = event?.getButton(previousButtonMask, eventKind, previousTouchEventKind),
             buttons = PointerButtons(pointerButtonsMask),
-            keyboardModifiers = PointerKeyboardModifiers(event.modifierFlagsOrZero)
+            keyboardModifiers = PointerKeyboardModifiers(modifierFlags =event.modifierFlagsOrZero)
         ).also {
             previousButtonMask = event.buttonMaskOrZero
             if (eventKind != TouchesEventKind.MOVED) previousTouchEventKind = eventKind
@@ -793,8 +808,14 @@ internal class ComposeSceneMediator(
         scene.draw(canvas)
     }
 
+    val needsComposeSceneDraw: Boolean
+        get() = scene.hasPendingDraw
+
     fun retrieveInteropTransaction(): InteropSyncTransaction =
         interopContainer.retrieveTransaction()
+
+    fun retrievePendingViewUpdatesInteropTransaction(): InteropSyncTransaction =
+        interopContainer.retrievePendingViewUpdatesTransaction()
 
     @OptIn(InternalComposeUiApi::class)
     @Composable
@@ -892,6 +913,30 @@ internal class ComposeSceneMediator(
     ) {
         this.onPreviewKeyEvent = onPreviewKeyEvent ?: { false }
         this.onKeyEvent = onKeyEvent ?: { false }
+    }
+
+    /**
+     * Measures the scene for a UIKit size proposal. [ComposeSceneSizing] derives [constraints]
+     * from the hosting view's [screenDensity], but the tvOS scene is laid out at the squared
+     * [composeSceneDensity] (see ComposeContainer), so rescale the constraints on the way in and
+     * the measured size on the way out to keep the result in screen pixels.
+     */
+    fun measureSceneSize(constraints: Constraints): IntSize {
+        val scale = composeSceneDensity.density / screenDensity.density
+        if (scale == 1f) return scene.measureContent(constraints)
+        fun Int.scaleIn() = if (this == Constraints.Infinity) this else (this * scale).roundToInt()
+        val measured = scene.measureContent(
+            Constraints(
+                minWidth = constraints.minWidth.scaleIn(),
+                maxWidth = constraints.maxWidth.scaleIn(),
+                minHeight = constraints.minHeight.scaleIn(),
+                maxHeight = constraints.maxHeight.scaleIn(),
+            )
+        )
+        return IntSize(
+            (measured.width / scale).roundToInt(),
+            (measured.height / scale).roundToInt(),
+        )
     }
 
     /**
@@ -994,6 +1039,10 @@ internal class ComposeSceneMediator(
 
     private inner class IosPlatformContext : PlatformContext {
         override val windowInfo: WindowInfo get() = windowContext.windowInfo
+        override val taskDispatchers: TaskDispatchers = object : TaskDispatchers {
+            override val Default = Dispatchers.Default
+            override val IO = Dispatchers.IO
+        }
         override val architectureComponentsOwner get() = this@ComposeSceneMediator.architectureComponentsOwner
         override val screenReader: PlatformScreenReader get() = platformScreenReader
 
@@ -1019,6 +1068,7 @@ internal class ComposeSceneMediator(
             DefaultInputModeManager(InputMode.Touch)
         }
         override val semanticsOwnerListener get() = this@ComposeSceneMediator.semanticsOwnerListener
+        override val rootForTestListener get() = this@ComposeSceneMediator.rootForTestListener
         override val windowInsets get() = this@ComposeSceneMediator.windowInsetsManager.windowInsets
         override val outOfFrameExecutor get() = this@ComposeSceneMediator.frameChoreographer.outOfFrameExecutor
         override val prefetchScheduler get() = this@ComposeSceneMediator.prefetchScheduler

@@ -109,11 +109,18 @@ internal class IosComposeSceneLayer(
         coroutineContext = layerCoroutineContext,
         navigationEventInput = navigationEventInput,
         composeSceneFactory = ::createComposeScene,
-        interfaceOrientationState = interfaceOrientationState
+        interfaceOrientationState = interfaceOrientationState,
+        schedulePendingInteropViewUpdates = layersViewController::invalidateDraw,
     ).also {
         interactionView.embedSubview(it.backgroundView)
         it.isInterceptingOutsideEvents = consumePointerInputOutside
     }
+
+    var rootForTestListener: PlatformContext.RootForTestListener?
+        get() = mediator.rootForTestListener
+        set(value) {
+            mediator.rootForTestListener = value
+        }
 
     private fun createComposeScene(platformContext: PlatformContext): ComposeScene {
         // tvOS reports UIScreen density 1.0, but 10-foot UIs expect the Android TV
@@ -177,6 +184,10 @@ internal class IosComposeSceneLayer(
     }
 
     fun retrieveInteropTransaction() = mediator.retrieveInteropTransaction()
+
+    fun retrievePendingViewUpdatesInteropTransaction() = mediator.retrievePendingViewUpdatesInteropTransaction()
+
+    val needsComposeSceneDraw: Boolean get() = mediator.needsComposeSceneDraw
 
     val hasInteropViews: Boolean get() = mediator.hasInteropViews
 
