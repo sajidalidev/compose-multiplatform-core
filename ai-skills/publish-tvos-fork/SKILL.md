@@ -1,6 +1,6 @@
 ---
 name: publish-tvos-fork
-description: Use when publishing the tvOS fork's Compose Multiplatform artifacts (dev.sajidali.* coordinate root) — mavenLocal smoke-testing, the mandatory closure audit, staging a signed Maven Central Portal bundle, or diagnosing a publish failure on the `tvos-publishing` branch. Specific to the dev.sajidali coordinate-root publish flow in this repository.
+description: Use when publishing the tvOS fork's Compose Multiplatform artifacts (dev.sajidali.* coordinate root) — mavenLocal smoke-testing, the mandatory closure audit, staging a signed Maven Central Portal bundle, or diagnosing a publish failure on `tvos-main` / a `release-X.Y-tvos` branch. Specific to the dev.sajidali coordinate-root publish flow in this repository.
 version: 1.1.0
 ---
 
@@ -26,9 +26,9 @@ it and getting exit 0.
   export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
   export ANDROIDX_JDK21="$JAVA_HOME"
   ```
-- Branch: `tvos-publishing` (carries the coordinate-root/publish-wrapper/audit commits on top
-  of `tvos-main`). Confirm `git branch --show-current` before running any publish — these
-  scripts are not meant to run against plain `tvos-main` or `jb-main`.
+- Branch: `tvos-main` (which carries the coordinate-root/publish-wrapper/audit commits) or a
+  `release-X.Y-tvos` branch rebased from it. Confirm `git branch --show-current` before running
+  any publish — these scripts are not meant to run against upstream `jb-main`.
 - Clean tree: `git status --short` should be empty (or only contain files you intend to
   publish from) before a publish you plan to trust. An uncommitted local edit silently
   becomes part of what gets published.
@@ -182,18 +182,10 @@ and should get its own clean-session run before being trusted for an actual Cent
 
 `rebase-tvos-fork`'s procedure rebases `tvos-main` via a throwaway
 `tvos-main-rebase-trial` branch, then promotes it (`git branch -f tvos-main
-tvos-main-rebase-trial`). Once a rebase promotes a new `tvos-main`, `tvos-publishing` needs
-its own rebase onto it. Two hard-won specifics (2026-07 rebase):
+tvos-main-rebase-trial`). Since 2026-09 the publishing commits live on `tvos-main` itself
+(the separate `tvos-publishing` branch was folded in), so they are replayed as part of that
+rebase — there is no second rebase. One hard-won specific (2026-07 rebase) still applies:
 
-- **Always use `--onto` with the OLD `tvos-main` tip as the cut point.** Promoting rewrites
-  every `tvos-main` commit hash, so `merge-base(tvos-publishing, tvos-main)` falls back to
-  the old *upstream* base and a plain `git rebase tvos-main` replays ALL fork commits (not
-  just the publishing ones) against themselves — conflicts everywhere. Recover the old tip
-  from the force-push log line (`+ <old>...<new> tvos-main -> tvos-main`), then:
-  ```bash
-  git branch tvos-publishing-rebase-trial tvos-publishing
-  git rebase --onto tvos-main <old-tvos-main-tip> tvos-publishing-rebase-trial
-  ```
 - **Verify the four buildSrc publish files with their REAL paths** — they are exactly where
   an upstream restructure is most likely to produce a silent, clean-but-wrong merge (per
   `rebase-tvos-fork`'s own "Core principle"):
@@ -207,8 +199,7 @@ its own rebase onto it. Two hard-won specifics (2026-07 rebase):
   `grep 'coordinateRoot == "org.jetbrains"' .../JetBrainsVerifyDependencyVersionsTask.kt`.
 
 Then re-run Stage 1 + Stage 2 (mandatory audit) before trusting the result, and keep a dated
-backup of the old branch tip (`git branch tvos-publishing-old-YYYYMMDD tvos-publishing`)
-before promoting.
+backup of the old branch tip (`git branch tvos-main-old-YYYYMMDD tvos-main`) before promoting.
 
 # Troubleshooting
 

@@ -37,9 +37,10 @@ until it's live, see the [compose-tvos](https://github.com/sajidalidev/compose-t
 
 - **Branch model.** `tvos-main` is the canonical tvOS development branch, rebased onto upstream
   `jb-main` periodically (see `ai-skills/rebase-tvos-fork/SKILL.md` for the rebase-and-verify
-  procedure). `tvos-publishing` carries the release-engineering commits (coordinate-root override,
-  publish scripts, dependency-closure audit) on top of `tvos-main` and is the branch that actually
-  gets published.
+  procedure). It also carries the release-engineering commits (coordinate-root override, publish
+  scripts, dependency-closure audit) — releases are cut from `release-X.Y-tvos` branches rebased
+  from it onto the upstream `vX.Y.0` tag. (The former separate `tvos-publishing` branch was folded
+  into `tvos-main` in 2026-09.)
 - **Runbooks:** `ai-skills/rebase-tvos-fork/SKILL.md` (integrating upstream changes) and
   `ai-skills/publish-tvos-fork/SKILL.md` (publishing a release).
 - **Scripts:** `scripts/publish-tvos-fork.sh` (mavenLocal publish under the `dev.sajidali`
