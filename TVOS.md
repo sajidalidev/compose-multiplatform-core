@@ -48,7 +48,7 @@ until it's live, see the [compose-tvos](https://github.com/sajidalidev/compose-t
   pass before trusting a publish), `scripts/stage-central-bundle.sh` (signed local staging and
   Maven Central Portal bundle preparation — it never uploads anything itself).
 - The rest of the tvOS ecosystem lives in:
-  - [compose-multiplatform](https://github.com/sajidalidev/compose-multiplatform-tvos) — the
+  - [compose-multiplatform](https://github.com/sajidalidev/compose-multiplatform) — the
     Compose Gradle plugin and Compose Resources fork (tvOS resource packaging).
   - [compose-tvos](https://github.com/sajidalidev/compose-tvos) — the settings plugin, version
     manifest, and canonical docs.
