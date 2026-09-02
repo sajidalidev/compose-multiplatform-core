@@ -42,18 +42,23 @@ fi
 #   COMPOSE               = "1.12.0-beta01"
 #   COMPOSE_MATERIAL3     = "1.5.0-alpha22"
 #   COMPOSE_MATERIAL3_ADAPTIVE = "1.3.0-beta02"
-#   LIFECYCLE             = "2.11.0"
 #   NAVIGATION            = "2.10.0-alpha05"
 #   NAVIGATION3           = "1.2.0-alpha04"
-#   NAVIGATIONEVENT       = "1.1.1"
-#   SAVEDSTATE            = "1.5.0-alpha01"
 #   WINDOW                = "1.6.0-alpha02"
 #   TV_MATERIAL           = "1.1.0-alpha01"
 #
 # NOTE: the -Pjetbrains.publication.version.<LIB> property names below use the library
 # keys registered in JetBrainsPublication.libraryToComponents (buildSrc/public/.../
-# JetBrainsPublication.kt), which use underscores for NAVIGATION_3 and NAVIGATION_EVENT
-# even though the toml keys above (NAVIGATION3 / NAVIGATIONEVENT) do not.
+# JetBrainsPublication.kt), which use an underscore for NAVIGATION_3 even though the toml key
+# above (NAVIGATION3) does not.
+#
+# LIFECYCLE, NAVIGATION_EVENT and SAVEDSTATE were dropped on 2026-09-02 when tvos-main was rebased
+# past upstream #3357 ("Remove lifecycle, savedstate, navigationevent"): fork mode no longer
+# includes those projects. Nothing is lost for tvOS consumers -- org.jetbrains.androidx.lifecycle
+# 2.11.0, androidx.savedstate 1.4.0/1.5.0 and androidx.navigationevent 1.1.1 all ship tvosArm64 /
+# tvosSimulatorArm64 variants and the fork's build files now depend on those coordinates directly.
+# The dev.sajidali.androidx.{lifecycle,navigationevent,savedstate} artifacts published for the
+# 1.12.0 line stay on Central but will not be re-released.
 #
 # TV_MATERIAL (:tv:tv-material) was added in task 23a: its androidLibrary target is wrapped
 # in redirect("androidx.tv") { ... } (see tv/tv-material/build.gradle), so its android variant
@@ -86,16 +91,13 @@ fi
 VERSION_COMPOSE="1.12.0-beta01"
 VERSION_COMPOSE_MATERIAL3="1.5.0-alpha22"
 VERSION_COMPOSE_MATERIAL3_ADAPTIVE="1.3.0-beta02"
-VERSION_LIFECYCLE="2.11.0"
 VERSION_NAVIGATION="2.10.0-alpha05"
 VERSION_NAVIGATION_3="1.2.0-alpha04"
-VERSION_NAVIGATION_EVENT="1.1.1"
-VERSION_SAVEDSTATE="1.5.0-alpha01"
 VERSION_WINDOW="1.6.0-alpha02"
 VERSION_TV_MATERIAL="1.1.0-alpha01"
 
 COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW,TV_MATERIAL"
+LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,NAVIGATION,NAVIGATION_3,WINDOW,TV_MATERIAL"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 echo "About to publish to mavenLocal with:"
@@ -106,11 +108,8 @@ echo "  versions:"
 echo "    COMPOSE=$VERSION_COMPOSE"
 echo "    COMPOSE_MATERIAL3=$VERSION_COMPOSE_MATERIAL3"
 echo "    COMPOSE_MATERIAL3_ADAPTIVE=$VERSION_COMPOSE_MATERIAL3_ADAPTIVE"
-echo "    LIFECYCLE=$VERSION_LIFECYCLE"
 echo "    NAVIGATION=$VERSION_NAVIGATION"
 echo "    NAVIGATION_3=$VERSION_NAVIGATION_3"
-echo "    NAVIGATION_EVENT=$VERSION_NAVIGATION_EVENT"
-echo "    SAVEDSTATE=$VERSION_SAVEDSTATE"
 echo "    WINDOW=$VERSION_WINDOW"
 echo "    TV_MATERIAL=$VERSION_TV_MATERIAL"
 
@@ -134,11 +133,8 @@ echo "    TV_MATERIAL=$VERSION_TV_MATERIAL"
         -Pjetbrains.publication.version.COMPOSE="$VERSION_COMPOSE" \
         -Pjetbrains.publication.version.COMPOSE_MATERIAL3="$VERSION_COMPOSE_MATERIAL3" \
         -Pjetbrains.publication.version.COMPOSE_MATERIAL3_ADAPTIVE="$VERSION_COMPOSE_MATERIAL3_ADAPTIVE" \
-        -Pjetbrains.publication.version.LIFECYCLE="$VERSION_LIFECYCLE" \
         -Pjetbrains.publication.version.NAVIGATION="$VERSION_NAVIGATION" \
         -Pjetbrains.publication.version.NAVIGATION_3="$VERSION_NAVIGATION_3" \
-        -Pjetbrains.publication.version.NAVIGATION_EVENT="$VERSION_NAVIGATION_EVENT" \
-        -Pjetbrains.publication.version.SAVEDSTATE="$VERSION_SAVEDSTATE" \
         -Pjetbrains.publication.version.WINDOW="$VERSION_WINDOW" \
         -Pjetbrains.publication.version.TV_MATERIAL="$VERSION_TV_MATERIAL"
 )

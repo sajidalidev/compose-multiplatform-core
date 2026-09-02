@@ -46,8 +46,8 @@ property set —
   `org.jetbrains.androidx.*` group roots to `dev.sajidali.*`; everything after the root
   segment is untouched).
 - `-Pcompose.platforms=KotlinMultiplatform,TvosArm64,TvosSimulatorArm64`.
-- `-Pjetbrains.publication.libraries=COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,LIFECYCLE,NAVIGATION,NAVIGATION_3,NAVIGATION_EVENT,SAVEDSTATE,WINDOW,TV_MATERIAL`
-  (10 libraries; see "The 11th library" below).
+- `-Pjetbrains.publication.libraries=COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,NAVIGATION,NAVIGATION_3,WINDOW,TV_MATERIAL`
+  (7 libraries; see "The library set" and "The Gradle plugin" below).
 - A per-library `-Pjetbrains.publication.version.<LIB>=<version>` pin, hardcoded in the
   script and manually kept in sync with `libraryversions.toml`. The script's header comments
   are the authoritative per-library rationale — read them when the set looks surprising.
@@ -62,12 +62,16 @@ artifact — and task 18b re-included `COMPOSE_MATERIAL3_ADAPTIVE` and lifted th
 `WINDOW` must therefore always be published alongside adaptive (the
 `project(":window:window-core")` reference depends on it). `TV_MATERIAL` (task 23a) publishes
 the in-tree `androidx.tv:tv-material` port the same redirect-wrapped way; `tv-foundation` was
-deliberately not ported (tv-material does not depend on it).
+deliberately not ported (tv-material does not depend on it). `LIFECYCLE`, `NAVIGATION_EVENT` and
+`SAVEDSTATE` were dropped on 2026-09-02 when `tvos-main` was rebased past upstream #3357 (JetBrains
+stopped building them in fork mode): `org.jetbrains.androidx.lifecycle` 2.11.0, `androidx.savedstate`
+and `androidx.navigationevent` all ship tvOS klibs on Maven, so the fork's build files consume those
+coordinates directly and nothing under `dev.sajidali` is needed for them any more.
 
 **The stability-gate behavior.** `JetBrainsVerifyDependencyVersionsTask` (AndroidX's
 "a beta artifact may not depend on an alpha artifact" rule) fails by default here, because
 this fork's version pins are intentionally mixed release-phases (`COMPOSE=1.12.0-beta01` but
-e.g. `NAVIGATION=2.10.0-alpha05`, `SAVEDSTATE=1.5.0-alpha01`) — those pins simply republish
+e.g. `NAVIGATION=2.10.0-alpha05`) — those pins simply republish
 upstream's own existing version combination under a different coordinate root; the
 beta-on-alpha shape is upstream's state, not something this fork introduced. The gate is
 scoped off for exactly this case in
@@ -80,7 +84,7 @@ skipped only when `-Ppublication.coordinateRoot` overrides the root. Expect to s
 `jbVerifyDependencyVersions SKIPPED` lines in the log — that is this gate working as intended,
 not a problem.
 
-**The 11th library.** `dev.sajidali.compose:compose-gradle-plugin` (the tvOS-patched
+**The Gradle plugin (not built here).** `dev.sajidali.compose:compose-gradle-plugin` (the tvOS-patched
 `org.jetbrains.compose` Gradle plugin fork that `compose-tvos-redirect`'s plugin-marker
 interception substitutes to) is built and published from a **different** repository — this
 one (`compose-multiplatform-core`) has no `compose-gradle-plugin` subproject. Do not expect
@@ -208,7 +212,7 @@ backup of the old branch tip (`git branch tvos-main-old-YYYYMMDD tvos-main`) bef
 | `jbVerifyDependencyVersions` fails: "Project with version X may not take a dependency on less-stable artifact Y" | The stability gate is firing for an `org.jetbrains`-root publish (expected — do NOT scope it off further), or the `onlyIf { JetBrainsPublication.coordinateRoot == "org.jetbrains" }` guard in `JetBrainsVerifyDependencyVersionsTask.kt` was lost in a merge/rebase. Confirm with `grep -c "jbVerifyDependencyVersions SKIPPED"` in the publish log — should be non-zero for a `dev.sajidali` publish. |
 | `compose:material3:adaptive:adaptive:compileCommonMainKotlinMetadata` fails: `Unresolved reference 'window'` | The fork-built `:window:window-core` (task 18a) is missing or lost its tvOS wiring — adaptive resolves `WindowSizeClass` from it, not from upstream `androidx.window` (which still has no tvOS klib). Check `window/window-core/build.gradle` still has tvos targets and `WINDOW` is still in the libraries list. |
 | The `org.jetbrains.compose:org.jetbrains.compose.gradle.plugin` marker publication ends up depending on a `dev.sajidali.compose:compose-gradle-plugin` coordinate | This is the plugin-marker-suppression issue from the `compose-gradle-plugin` fork build (a **different** repo than this one — `gradle-plugins/` doesn't exist here). `java-gradle-plugin`'s auto-generated marker publication is keyed off the plugin-id string, not `project.group`, so a coordinate-root override on the implementation artifact does NOT automatically move the marker — it must be explicitly suppressed (`onlyIf` on tasks matching `*PluginMarkerMavenPublication*`, gated behind the same coordinate/group-override property check) in that other repo's `gradle-plugins/build.gradle.kts`. `compose-tvos-redirect`'s settings plugin relies on this marker staying under `org.jetbrains` and does its own substitution via `pluginManagement.resolutionStrategy.eachPlugin` — never on this marker pointing at the fork directly. |
-| Publish looks successful but a `dev.sajidali` artifact you expect is missing from `~/.m2` | Check `-Pjetbrains.publication.libraries` actually lists it (10 libraries by default here — see "The 11th library" above), and re-run the closure audit; a `FAIL` finding will name the exact missing coordinate. |
+| Publish looks successful but a `dev.sajidali` artifact you expect is missing from `~/.m2` | Check `-Pjetbrains.publication.libraries` actually lists it (7 libraries by default here — see "The Gradle plugin" above), and re-run the closure audit; a `FAIL` finding will name the exact missing coordinate. |
 | Closure audit reports many `WARN` entries | Expected and informational — these are version-mismatch findings (the twin exists locally, just at a different version than requested) that should feed `compose-tvos-redirect/manifest/compose-tvos-versions.json`'s `mappings`, not something to "fix" in this repo. |
 | `stage-central-bundle.sh` reports missing `.asc` signatures | Expected when `PUBLISH_SIGNING_KEY` is unset (unsigned dry-run mode) — re-run with real signing credentials before treating the bundle as upload-ready. |
 | `stage-central-bundle.sh`'s Step 1 fails partway through with klib/runtime version errors | See "The known issue" above — retry in a clean session (`./gradlew --stop` + clear configuration-cache dirs) before assuming a real regression. |

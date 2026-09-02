@@ -38,6 +38,7 @@ androidXMultiplatform {
     defaultPlatform(PlatformIdentifier.ANDROID)
 
     sourceSets {
+        def navigationEventVersion = project.redirectVersions.get('androidx.navigationevent')
         commonMain {
             dependencies {
                 implementation(libs.kotlinCoroutinesCore)
@@ -63,7 +64,7 @@ androidXMultiplatform {
         jbMain {
             dependsOn(commonMain)
             dependencies {
-                implementation(project(":navigationevent:navigationevent-compose"))
+                implementation("androidx.navigationevent:navigationevent-compose:$navigationEventVersion")
             }
         }
 
