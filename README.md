@@ -1,68 +1,133 @@
-# Android Jetpack
+# Compose Multiplatform core — tvOS fork
 
-[![Revved up by Develocity](https://img.shields.io/badge/Revved%20up%20by-Develocity-06A0CE?logo=Gradle&labelColor=02303A)](https://ge.androidx.dev)
+This is a fork of [JetBrains/compose-multiplatform-core](https://github.com/JetBrains/compose-multiplatform-core)
+(the androidx-based sources of Compose Multiplatform: runtime, ui, foundation, material, material3,
+lifecycle, navigation, and friends) that adds Apple tvOS as a Kotlin/Native target.
+The upstream project's own README is [here](https://github.com/JetBrains/compose-multiplatform-core#readme).
 
-Jetpack is a suite of libraries, tools, and guidance to help developers write high-quality apps easier. These components help you follow best practices, free you from writing boilerplate code, and simplify complex tasks, so you can focus on the code you care about.
+It is an unofficial community fork. It is not affiliated with or endorsed by JetBrains or Google.
 
-Jetpack comprises the `androidx.*` package libraries, unbundled from the platform APIs. This means that it offers backward compatibility and is updated more frequently than the Android platform, making sure you always have access to the latest and greatest versions of the Jetpack components.
+## Status / maintenance
 
-Our official AARs and JARs binaries are distributed through [Google Maven](https://maven.google.com).
+I maintain only the tvOS port, and only as far as I need it for my own tvOS app. I do not track
+every upstream release; I republish roughly once per Compose Multiplatform stable line. There are
+no support commitments and no release schedule.
 
-You can learn more about using it from [Android Jetpack landing page](https://developer.android.com/jetpack).
+**PRs are welcome** — bug fixes, additional targets or modules, and help keeping the fork up to
+date with upstream are all appreciated.
 
-# Contribution Guide
+## How to use it
 
-For contributions via GitHub, see the [GitHub Contribution Guide](CONTRIBUTING.md).
+Do not depend on this repository directly. Apply the
+[compose-tvos](https://github.com/sajidalidev/compose-tvos) Gradle settings plugin and keep your
+stock `org.jetbrains.compose.*` / `org.jetbrains.androidx.*` coordinates:
 
-Note: The contributions workflow via GitHub is currently experimental - only contributions to the following projects are being accepted at this time:
-* [Activity](activity)
-* [AppCompat](appcompat)
-* [Biometric](biometric)
-* [Collection](collection)
-* [Compose Runtime](compose/runtime)
-* [Core](core)
-* [DataStore](datastore)
-* [Fragment](fragment)
-* [Lifecycle](lifecycle)
-* [Navigation](navigation)
-* [Paging](paging)
-* [Room](room)
-* [WorkManager](work)
+```kotlin
+// settings.gradle.kts
+plugins {
+    id("dev.sajidali.compose-tvos") version "1.3.0"
+}
+```
 
-## Code Review Etiquette
-When contributing to Jetpack, follow the [code review etiquette](code-review.md).
+Add `tvosArm64()` / `tvosSimulatorArm64()` targets to your Kotlin Multiplatform module as usual.
+At dependency-resolution time the plugin attaches tvOS variants from this fork's artifacts, which
+are published to Maven Central under the `dev.sajidali.*` group prefix (for example
+`dev.sajidali.compose.ui:ui`). Non-tvOS targets keep resolving the official JetBrains artifacts.
 
-## Accepted Types of Contributions
-* Bug fixes - needs a corresponding bug report in the [Android Issue Tracker](https://issuetracker.google.com/issues/new?component=192731&template=842428)
-* Each bug fix is expected to come with tests
-* Fixing spelling errors
-* Updating documentation
-* Adding new tests to the area that is not currently covered by tests
-* New features to existing libraries if the feature request bug has been approved by an AndroidX team member.
+Versions follow upstream (the "same-version convention"): a request for
+`org.jetbrains.compose.foundation:foundation:1.12.0` resolves the tvOS variant from
+`dev.sajidali.compose.foundation:foundation:1.12.0`. The current published line is **1.12.0**.
+Companion libraries that JetBrains did not re-release for 1.12.0 (material3, lifecycle,
+navigation, ...) are mapped through the plugin's version manifest; see
+[Supported versions](https://sajidalidev.github.io/compose-tvos/supported-versions.html).
 
-We **are not** currently accepting new modules.
+Full documentation: https://sajidalidev.github.io/compose-tvos/ — and [TVOS.md](TVOS.md) in this repo.
 
-## Checking Out the Code
+## What's in this fork
 
-Head over to the [onboarding docs](docs/onboarding.md) to learn more about getting set up and the
-development workflow!
+### Branches
 
-### Continuous integration
-[Our continuous integration system](https://ci.android.com/builds/branches/aosp-androidx-main/grid?) builds all in progress (and potentially unstable) libraries as new changes are merged. You can manually download these AARs and JARs for your experimentation.
+| Branch | Contents |
+|---|---|
+| `tvos-main` | upstream `jb-main` + the tvOS commits (prefixed `[tvOS]`); rebased onto upstream periodically |
+| `release-1.12-tvos` | upstream `v1.12.0` + the tvOS commits + the publishing commits; the 1.12.0 artifacts were built from here |
+| `tvos-publishing` | the publishing tooling (coordinate-root override, publish scripts, closure audit) on top of `tvos-main` |
 
-## Password and Contributor Agreement before making a change
-Before uploading your first contribution, you will need setup a password and agree to the contribution agreement:
+### Targets
 
-Generate a HTTPS password:
-https://android-review.googlesource.com/new-password
+`tvosArm64` and `tvosSimulatorArm64`. `tvosX64` (Intel simulator) is not built.
 
-Agree to the Google Contributor Licenses Agreement:
-https://android-review.googlesource.com/settings/new-agreement
+### Published module groups (`dev.sajidali.*`)
 
-## Getting reviewed
-* After you run repo upload, open [r.android.com](http://r.android.com)
-* Sign in into your account (or create one if you do not have one yet)
-* Add an appropriate reviewer (use git log to find who did most modifications on the file you are fixing or check the OWNERS file in the project's directory)
+| Group | Version |
+|---|---|
+| `compose.{runtime,ui,foundation,animation,material}` (63 modules incl. the KMP umbrella) | 1.12.0 |
+| `compose.material3` (`material3`, `material3-window-size-class`, `material3-adaptive-navigation-suite`) | 1.5.0-alpha22 |
+| `compose.material3.adaptive` | 1.3.0-beta02 |
+| `androidx.lifecycle` | 2.11.0 |
+| `androidx.navigation` | 2.10.0-alpha05 |
+| `androidx.navigation3` | 1.2.0-alpha04 |
+| `androidx.navigationevent` | 1.1.1 |
+| `androidx.savedstate` | 1.5.0-alpha01 |
+| `androidx.window` (`window-core`) | 1.6.0-alpha02 |
+| `androidx.tv` (`tv-material`) | 1.1.0-alpha01 |
 
-## Handling binary dependencies
-AndroidX uses git to store all the binary Gradle dependencies. They are stored in `prebuilts/androidx/internal` and `prebuilts/androidx/external` directories in your checkout. All the dependencies in these directories are also available from `google()`, or `mavenCentral()`. We store copies of these dependencies to have hermetic builds. You can pull in [a new dependency using our importMaven tool](development/importMaven/README.md).
+Only the compose group was republished for 1.12.0 because JetBrains re-released only that group;
+the companions above were built from the same `release/1.12` fork point and are unchanged.
+
+### Notable tvOS-specific work
+
+- tvOS UIKit scene integration under `compose/ui/ui/src/tvosMain/.../scene/`
+  (`ComposeSceneMediator.tvos.kt`, `ComposeHostingViewController.tvos.kt`,
+  `ComposeLayersViewController.tvos.kt`, ...) and `ComposeUIViewController.tvos.kt`, sharing the
+  `FrameChoreographer` architecture with the iOS scene stack.
+- Siri Remote input: D-pad focus traversal, swipe-to-focus, Menu button routed to `Key.Back`,
+  and discrimination of clickpad press from swipe by hardware timestamp
+  (`ComposeSceneMediator.tvos.kt`).
+- Squared "10-foot" scene density.
+- tvOS text input (`TvOSTextInputService.tvos.kt`): keyboard presented on the Select press that
+  starts an input session.
+- Focus handling when overlay layers (dialogs, popups) close.
+- `androidx.tv:tv-material` ported to Compose Multiplatform with a tvOS source set.
+- A real tvOS build of `window-core` so `material3-adaptive` works without stubs.
+- tvOS `actual`s for foundation (clipboard, magnifier, text selection), `ui-text` font resolution,
+  navigation-compose default transitions and navigation3 `NavDisplay`.
+- `:demo-tvos` sample module, built and run on the Apple TV 4K simulator.
+
+## Building / publishing locally
+
+The build needs JDK 21:
+
+```bash
+export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+export ANDROIDX_JDK21="$JAVA_HOME"
+```
+
+Fork mode is switched on with `-Ppublication.coordinateRoot=dev.sajidali`, which publishes every
+module under `dev.sajidali.*` instead of `org.jetbrains.*` / `androidx.*`. The publishing
+tooling lives on `tvos-publishing` and the release branches:
+
+- `scripts/publish-tvos-fork.sh` — publishes the tvOS artifact set to mavenLocal
+  (`./gradlew -p mpp publishComposeJbToMavenLocal --no-configuration-cache ...`).
+- `scripts/audit-tvos-closure.py` — dependency-closure audit over `~/.m2`; run it before trusting
+  a publish.
+- `scripts/stage-central-bundle.sh` — signs and stages a Maven Central Portal bundle. It never
+  uploads.
+- `ai-skills/rebase-tvos-fork/SKILL.md` and `ai-skills/publish-tvos-fork/SKILL.md` — the rebase
+  and release runbooks.
+
+## Related repositories
+
+- [sajidalidev/compose-tvos](https://github.com/sajidalidev/compose-tvos) — the settings plugin,
+  version manifest and docs. Start here.
+- [sajidalidev/compose-multiplatform-tvos](https://github.com/sajidalidev/compose-multiplatform-tvos)
+  — fork of the Compose Gradle plugin and `components-resources`.
+- [sajidalidev/koin](https://github.com/sajidalidev/koin) — Koin with tvOS targets.
+- [sajidalidev/coil-tvos](https://github.com/sajidalidev/coil-tvos) — Coil 3 with tvOS targets.
+- [sajidalidev/jetstream-tvos](https://github.com/sajidalidev/jetstream-tvos) — sample app
+  (Google's JetStream) running on Apple TV.
+
+## License
+
+Same as upstream: [Apache License 2.0](LICENSE.txt). Copyright for the upstream code remains with
+the Android Open Source Project and JetBrains s.r.o.
