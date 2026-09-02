@@ -171,13 +171,20 @@ for f in ComposeContainer ComposeSceneMediator IosComposeSceneLayer; do
   p="compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/$f.tvos.kt"
   diff <(git show tvos-main:"$p") <(git show tvos-main-rebase-trial:"$p") && echo "OK $f" || echo "CHANGED $f — scrutinize"
 done
-# Density "10-foot" squaring must still be present on the scene-creation path (root scene AND
-# every layer's initialDensity — expect 2 hits in ComposeContainer.tvos.kt):
-grep -rn 'screenScale \*' compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/
+# Density "10-foot" squaring: since 2026-09-02 it has ONE owner, tvSceneDensity() in
+# TvSceneDensity.tvos.kt, applied by ComposeSceneMediator.tvos.kt in the `scene` lazy initializer.
+# The container/layer call sites pass the plain UIKit scale exactly like iOS (byte-identical), so
+# upstream rewrites of those sites merge cleanly. Check the owner, and that nothing re-inlined it:
+grep -n 'tvSceneDensity' compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/ComposeSceneMediator.tvos.kt \
+  || echo "MISSING tvSceneDensity hook in mediator"
+grep -rn 'screenScale \*' compose/ui/ui/src/tvosMain/ && echo "inline squaring crept back — move it to tvSceneDensity"
+diff <(grep -A2 'Density(' compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/ComposeContainer.ios.kt) \
+     <(grep -A2 'Density(' compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/ComposeContainer.tvos.kt) \
+  && echo "OK container density sites mirror iOS"
 ```
 Then sanity-check fork behaviors against the original full fork branch `tvos` when an upstream
 change touched the same area (frame model, key input). Key fork behaviors that must remain:
-squared scene density, `FrameRecomposer` wiring (call site must match upstream's current
+squared scene density (owned by `tvSceneDensity`, see above), `FrameRecomposer` wiring (call site must match upstream's current
 `PlatformLayersComposeScene(frameRecomposer, density, …)` signature), Siri Remote key mappings
 (Menu→Back, D-pad focus), `KeyEvent.isRepeat`.
 

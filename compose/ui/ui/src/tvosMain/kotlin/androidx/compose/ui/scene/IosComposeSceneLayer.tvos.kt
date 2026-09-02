@@ -122,11 +122,8 @@ internal class IosComposeSceneLayer(
             mediator.rootForTestListener = value
         }
 
-    private fun createComposeScene(platformContext: PlatformContext): ComposeScene {
-        // tvOS reports UIScreen density 1.0, but 10-foot UIs expect the Android TV
-        // scale where a 1080p screen has density 2.0 — [initialDensity] arrives already
-        // squared from ComposeContainer.createComposeSceneLayer to match.
-        return PlatformLayersComposeScene(
+    private fun createComposeScene(platformContext: PlatformContext): ComposeScene =
+        PlatformLayersComposeScene(
             frameRecomposer = frameChoreographer.frameRecomposer,
             density = initialDensity,
             layoutDirection = initialLayoutDirection,
@@ -134,7 +131,6 @@ internal class IosComposeSceneLayer(
             invalidateLayout = invalidateLayout,
             invalidateDraw = invalidateDraw,
         )
-    }
 
     val hasInvalidations by mediator::hasInvalidations
 

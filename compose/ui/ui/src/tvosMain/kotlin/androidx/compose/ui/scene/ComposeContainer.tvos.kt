@@ -36,7 +36,6 @@ import androidx.compose.ui.uikit.PreferredSizeReportingStrategy
 import androidx.compose.ui.uikit.InterfaceOrientation
 import androidx.compose.ui.uikit.LocalUIViewController
 import androidx.compose.ui.uikit.PlistSanityCheck
-import androidx.compose.ui.uikit.density
 import androidx.compose.ui.uikit.embedSubview
 import androidx.compose.ui.uikit.utils.CMPKeyValueObserver
 import androidx.compose.ui.unit.Density
@@ -276,15 +275,9 @@ internal class ComposeContainer(
             coroutineContext = containerCoroutineContext,
             navigationEventInput = navigationEventInput,
             composeSceneFactory = { context ->
-                // tvOS reports UIScreen density 1.0, but 10-foot UIs expect the Android TV
-                // scale where a 1080p screen has density 2.0 — square the density to match.
-                val screenDensity = view.density
                 PlatformLayersComposeScene(
                     frameRecomposer = frameChoreographer.frameRecomposer,
-                    density = Density(
-                        density = windowContext.screenScale * windowContext.screenScale,
-                        fontScale = fontScaleProvider.fontScale
-                    ),
+                    density = Density(windowContext.screenScale, fontScaleProvider.fontScale),
                     layoutDirection = layoutDirection,
                     composeSceneContext = createComposeSceneContext(
                         frameChoreographer = frameChoreographer,
@@ -392,8 +385,7 @@ internal class ComposeContainer(
                     },
                     layersViewController = layersHolder.getLayersViewController(),
                     initialDensity = Density(
-                        layersHolder.getLayersViewController().windowContext.screenScale *
-                            layersHolder.getLayersViewController().windowContext.screenScale,
+                        layersHolder.getLayersViewController().windowContext.screenScale,
                         fontScaleProvider.fontScale,
                     ),
                     initialLayoutDirection = layoutDirection,
