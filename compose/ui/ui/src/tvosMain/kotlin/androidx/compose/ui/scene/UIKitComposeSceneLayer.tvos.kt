@@ -118,14 +118,9 @@ internal class UIKitComposeSceneLayer(
         platformContext: PlatformContext,
         frameRecomposer: FrameRecomposer,
     ): ComposeScene {
-        val screenDensity = mediator.screenDensity
-        val computed = Density(
-            density = screenDensity.density * screenDensity.density,
-            fontScale = screenDensity.fontScale
-        )
         return PlatformLayersComposeScene(
             frameRecomposer = frameRecomposer,
-            density = computed,
+            density = mediator.screenDensity,
             layoutDirection = initialLayoutDirection,
             composeSceneContext = createComposeSceneContext(platformContext),
             invalidateLayout = invalidate,

@@ -327,14 +327,9 @@ internal class ComposeContainer(
         layersHolder: ComposeLayersHolder,
         frameRecomposer: FrameRecomposer,
     ): ComposeScene {
-        val density = view.density
-        val computed = Density(
-            density = density.density * density.density,
-            fontScale = density.fontScale
-        )
         return PlatformLayersComposeScene(
             frameRecomposer = frameRecomposer,
-            density = computed,
+            density = view.density,
             layoutDirection = layoutDirection,
             composeSceneContext = createComposeSceneContext(
                 platformContext = platformContext,

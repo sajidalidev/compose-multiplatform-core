@@ -423,7 +423,10 @@ internal class ComposeSceneMediator(
             sceneRenderingScope::onSceneInvalidation,
             PlatformContextImpl(),
             frameRecomposer,
-        )
+        ).also {
+            // Single owner of the 10-foot density rule; call sites pass the plain UIKit scale.
+            it.density = tvSceneDensity(screenDensity, it.density.fontScale)
+        }
     }
 
     private var composeSceneSize: IntSize?
