@@ -243,7 +243,7 @@ echo "    TV_MATERIAL=$DEV_VERSION_TV_MATERIAL"
 
 if [ "$DRY_RUN" = "1" ]; then
     echo
-    echo "DRY RUN -- Gradle would be invoked as (credentials go through MAVEN_* env vars):"
+    echo "DRY RUN: Gradle would be invoked as (credentials go through MAVEN_* env vars):"
     echo
     echo "  MAVEN_URL=$REPOSILITE_URL MAVEN_USERNAME=$REPOSILITE_USER MAVEN_PASSWORD=***"
     echo
@@ -332,7 +332,7 @@ cat <<EOF
 
 Published. Consumer setup:
 
-settings.gradle.kts (repositories block) -- keep mavenCentral() as well, the fork's artifacts
+settings.gradle.kts (repositories block): keep mavenCentral() as well, the fork's artifacts
 depend on upstream Kotlin/kotlinx and androidx coordinates that only Central serves:
 
     maven {
@@ -346,7 +346,7 @@ Gradle reads the tvosDev credentials from tvosDevUsername / tvosDevPassword in
 ~/.gradle/gradle.properties (or ORG_GRADLE_PROJECT_tvosDevUsername / ORG_GRADLE_PROJECT_tvosDevPassword
 in the environment); the repository requires credentials for reads as well as publishing.
 
-build.gradle.kts / settings.gradle.kts (redirect plugin) -- map each JetBrains release version
+build.gradle.kts / settings.gradle.kts (redirect plugin): map each JetBrains release version
 onto this dev build. Dev versions are immutable: to pick up a new build, bump the trailing .N
 in DEV_SUFFIX and update these mappings.
 
