@@ -256,9 +256,15 @@ set.
 maven {
     name = "tvosDev"
     url = uri("https://maven.example.com/releases")
+    credentials(PasswordCredentials::class)
     content { includeGroupByRegex("dev\\.sajidali.*") }
 }
 ```
+
+Gradle reads the `tvosDev` credentials from `tvosDevUsername` / `tvosDevPassword` in
+`~/.gradle/gradle.properties` (or `ORG_GRADLE_PROJECT_tvosDevUsername` /
+`ORG_GRADLE_PROJECT_tvosDevPassword` in the environment); the repository requires credentials
+for reads as well as publishing.
 
 ```kotlin
 composeTvos {
@@ -267,6 +273,10 @@ composeTvos {
     // ... one entry per library group, printed by the script with the real versions
 }
 ```
+
+To always resolve the newest dated build instead of a fixed one, use a dynamic mapping value
+such as `1.12.0-dev.+` (the plugin passes the value verbatim to Gradle). Gradle caches dynamic
+versions for 24 hours unless `resolutionStrategy.cacheDynamicVersionsFor(0, "seconds")` is set.
 
 Keep `mavenCentral()` in the consumer's repository list: the fork's artifacts depend on
 upstream Kotlin, kotlinx and androidx coordinates that only Central serves.
