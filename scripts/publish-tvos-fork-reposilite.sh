@@ -64,7 +64,7 @@ done
 
 # JDK 21 is required by the build (org.gradle.java.installations.fromEnv=ANDROIDX_JDK21).
 # Fail fast rather than let Gradle fall back to an unsupported JDK. It's not enough for the
-# env var to merely be set -- verify the java binary it points at actually reports major
+# env var to merely be set; verify the java binary it points at actually reports major
 # version 21.
 JDK21_HOME="${ANDROIDX_JDK21:-${JAVA_HOME:-}}"
 if [ -z "$JDK21_HOME" ]; then
