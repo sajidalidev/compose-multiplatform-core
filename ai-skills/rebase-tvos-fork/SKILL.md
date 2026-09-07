@@ -171,26 +171,28 @@ for f in ComposeContainer ComposeSceneMediator IosComposeSceneLayer; do
   p="compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/$f.tvos.kt"
   diff <(git show tvos-main:"$p") <(git show tvos-main-rebase-trial:"$p") && echo "OK $f" || echo "CHANGED $f — scrutinize"
 done
-# Density "10-foot" squaring: since 2026-09-02 it has ONE owner, tvSceneDensity() in
+# Density "10-foot" scaling: since 2026-09-02 it has ONE owner, tvSceneDensity() in
 # TvSceneDensity.tvos.kt, applied by ComposeSceneMediator.tvos.kt in the `scene` lazy initializer.
+# The rule is TEN_FOOT_DENSITY_PER_1080P (2f) times the UIKit screen scale, not the squared scale.
 # The container/layer call sites pass the plain UIKit scale exactly like iOS (byte-identical), so
 # upstream rewrites of those sites merge cleanly. Check the owner, and that nothing re-inlined it:
 grep -n 'tvSceneDensity' compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/ComposeSceneMediator.tvos.kt \
   || echo "MISSING tvSceneDensity hook in mediator"
-grep -rn 'screenScale \*' compose/ui/ui/src/tvosMain/ && echo "inline squaring crept back — move it to tvSceneDensity"
+grep -rn 'density \* screenDensity\|screenScale \*' compose/ui/ui/src/tvosMain/ | grep -v TvSceneDensity.tvos.kt \
+  && echo "inline density rule crept back, move it to tvSceneDensity"
 diff <(grep -A2 'Density(' compose/ui/ui/src/iosMain/kotlin/androidx/compose/ui/scene/ComposeContainer.ios.kt) \
      <(grep -A2 'Density(' compose/ui/ui/src/tvosMain/kotlin/androidx/compose/ui/scene/ComposeContainer.tvos.kt) \
   && echo "OK container density sites mirror iOS"
 ```
 Then sanity-check fork behaviors against the original full fork branch `tvos` when an upstream
 change touched the same area (frame model, key input). Key fork behaviors that must remain:
-squared scene density (owned by `tvSceneDensity`, see above), `FrameRecomposer` wiring (call site must match upstream's current
+10-foot scene density (owned by `tvSceneDensity`, see above), `FrameRecomposer` wiring (call site must match upstream's current
 `PlatformLayersComposeScene(frameRecomposer, density, …)` signature), Siri Remote key mappings
 (Menu→Back, D-pad focus), `KeyEvent.isRepeat`.
 
 Also check for NEW per-platform entry-point obligations upstream added since the last rebase
 (#3306 Dynamic Type: `FontScaleProvider` feeds `Density(screenScale, fontScale)`; `FontScale.ios.kt`
-was hoisted to uiKitMain and tvOS keeps `Density(screenScale * screenScale, fontScale)` for the root
+was hoisted to uiKitMain and tvOS keeps `tvSceneDensity(screenScale, fontScale)` for the root
 scene AND every layer's `initialDensity` in `ComposeContainer.createComposeSceneLayer`): diff
 `ComposeContainer.ios.kt` against the last base and mirror anything init-time into
 `ComposeContainer.tvos.kt`. Example (#3126): every entry point must now call
@@ -202,7 +204,7 @@ mediator's `IosPlatformContext` copy must add the override (the 5b merge carries
 fails compilation, which is the good case). Example (#2984 hosting-view sizing, 2026-09): the iOS
 container gained `ComposeSceneSizing`, `rootForTestListener` plumbing and `view.onSizeThatFits`;
 `ComposeSceneSizing.ios.kt` was hoisted to `uiKitMain` (pure move) and the tvOS mediator's
-`measureSceneSize` rescales constraints/results between `screenDensity` and the squared
+`measureSceneSize` rescales constraints/results between `screenDensity` and the 10-foot
 `composeSceneDensity`, because upstream's sizing bridge converts UIKit points with the *view*
 density. Rule: after the 5b merge, grep the merged tvOS files for every symbol upstream added and
 check where it is defined — anything only in `iosMain` must be hoisted (if platform-neutral) or
@@ -236,7 +238,7 @@ git show tvos-main:$ios > base; git show HEAD:$ios > theirs
 git merge-file -p --diff3 tvosfile base theirs > merged
 ```
 Conflicts then mark exactly the genuine tvOS deltas (BackNavigationEventInput, Tv*InputView,
-squared density, dropped keyboard/text-input machinery) — resolve each by taking upstream's new
+10-foot density, dropped keyboard/text-input machinery) — resolve each by taking upstream's new
 structure and re-applying the tvOS intent on top. After resolving, sweep tvosMain for stale
 removed-API references that sat in ours-only regions (`grep -rE 'redrawer|setNeedsRedraw|...'`).
 
@@ -316,5 +318,5 @@ Keep dated backups (`tvos-main-old-YYYYMMDD`) before promoting — the publishin
 | Compile-verifying only in AOSP mode (`EXPECTED_AGP_VERSION` set) | That hides a broken fork-mode build. Step 6 MUST pass with `EXPECTED_AGP_VERSION` unset. |
 | Compiling with JDK 17 | Build needs JDK 21 via `ANDROIDX_JDK21`. Sync/compile fails otherwise. |
 | Compiling only — never running | Compile ≠ renders. Run the demo (step 7) for real integration proof. |
-| Keeping the fork's old call site verbatim after upstream changed an API | A clean patch can keep stale calls that bind to a deprecated overload. Adapt the call to upstream's new signature while preserving fork intent (e.g. squared density). |
+| Keeping the fork's old call site verbatim after upstream changed an API | A clean patch can keep stale calls that bind to a deprecated overload. Adapt the call to upstream's new signature while preserving fork intent (e.g. 10-foot density). |
 | Comparing `:3:<path>` / the worktree file to detect a "pure move" during a rename storm | Stage 3 is already rename-merged with upstream content; compare `REBASE_HEAD:<path>` to the fork parent instead. |
