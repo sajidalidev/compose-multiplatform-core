@@ -96,6 +96,8 @@ import androidx.compose.ui.viewinterop.InteropSyncTransaction
 import androidx.compose.ui.window.FocusedViewsList
 import androidx.compose.ui.window.IosPrefetchScheduler
 import kotlin.coroutines.CoroutineContext
+import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.readValue
@@ -111,6 +113,7 @@ import kotlinx.coroutines.launch
 import platform.CoreGraphics.CGPoint
 import platform.CoreGraphics.CGRectIsEmpty
 import platform.CoreGraphics.CGRectZero
+import platform.Foundation.NSProcessInfo
 import platform.Foundation.NSTimeInterval
 import platform.QuartzCore.CACurrentMediaTime
 import platform.UIKit.UIEvent
@@ -127,6 +130,97 @@ import platform.UIKit.UITouchTypeIndirectPointer
 import platform.UIKit.UIView
 import platform.UIKit.endEditing
 import platform.UIKit.setAccessibilityElements
+
+// Siri Remote swipe recognition tuning. Values measured on a second-generation Siri Remote
+// (GameController micro gamepad, reportsAbsoluteDpadValues = true) with the display-link
+// sampling of SiriRemoteTouchOracle, which catches the origin of a contact within a frame of the
+// finger landing: centre swipes start at radius <= 0.33, ring drags at >= 0.94; genuine swipes
+// cross 0.35 within 60 to 151 ms; a resting finger, a ring rest and the drift inside a ring click
+// travel at most 0.25 and need 179 to 406 ms to get there.
+//
+// Radius, in the absolute clickpad space reported by SiriRemoteTouchOracle (|x| and |y| in
+// [0, 1]), beyond which a contact started on the outer ring of arrow buttons rather than on the
+// centre pad. Native tvOS only swipes for movement that starts on the centre pad. Ring contacts
+// between 0.60 and 0.75 are not gated here but by the press latch and by the distance gate,
+// since they travel at most 0.25.
+private const val CENTER_PAD_RADIUS = 0.75f
+// A contact that lasts longer than this is a rest or a drag, not a swipe: genuine swipes cross
+// the distance gate within 151 ms, while the contact roll of a centre click that lands partly on
+// the ring takes 300 ms or more to cover the same distance.
+private const val SWIPE_MAX_DURATION_S = 0.25
+// Minimum travel along the dominant axis, in absolute clickpad units.
+private const val SWIPE_DISTANCE_NORMALIZED = 0.30f
+// A finger that stayed within this radius of its rest anchor for REST_RESET_DURATION_S is at
+// rest: the origin and the timer move to where it rests, so a rest-then-move still swipes and a
+// slow drift never accumulates into one.
+private const val REST_ANCHOR_TOLERANCE = 0.02f
+private const val REST_RESET_DURATION_S = 0.15
+// Minimum travel along the dominant axis, in dp, when no controller is reported and the relative
+// UIKit location is the only signal.
+private const val SWIPE_DISTANCE_FALLBACK_DP = 40f
+// The dominant axis must travel at least this many times the other one, so a diagonal smear does
+// not move focus in an arbitrary direction.
+private const val SWIPE_AXIS_DOMINANCE = 2f
+// A swipe that crossed the distance gate waits this long before it is dispatched, so a Select
+// press that arrives right after the contact rolled far enough cancels it instead of firing both.
+// A contact that ends while armed is dispatched at once: a lifted finger can no longer click.
+private const val DISPATCH_HOLD_S = 0.08
+// A contact live for longer than this lost its terminal event: tvOS can absorb a touch's
+// terminal event, e.g. when the keyboard overlay appears; without this the display link would
+// poll forever.
+private const val INDIRECT_CONTACT_MAX_AGE_S = 2.0
+// A clickpad press this long before a contact starts belongs to that contact: finger contact
+// physically precedes the switch closing, and the two sensors stamp their events a few ms apart.
+private const val PRESS_SUPPRESSION_WINDOW_S = 0.15
+
+private val isSwipeDebugEnabled: Boolean by lazy {
+    NSProcessInfo.processInfo.environment["COMPOSE_TVOS_SWIPE_DEBUG"] == "1"
+}
+
+private inline fun swipeDebug(message: () -> String) {
+    if (isSwipeDebugEnabled) {
+        println(message())
+    }
+}
+
+private fun directionName(key: Key): String = when (key) {
+    Key.DirectionRight -> "DirectionRight"
+    Key.DirectionLeft -> "DirectionLeft"
+    Key.DirectionDown -> "DirectionDown"
+    else -> "DirectionUp"
+}
+
+/**
+ * The state of one Siri Remote indirect contact.
+ *
+ * A contact produces at most one directional key: it starts as a [CANDIDATE] (or as [IGNORED]
+ * when it started on the ring), becomes [ARMED] with a direction once it travelled far enough,
+ * and leaves that state for good once the swipe is [DISPATCHED] or a clickpad press or an
+ * overlong contact makes it [CANCELLED].
+ *
+ * A contact whose BEGAN arrives before the oracle reported any position of that contact starts as
+ * [PENDING]: the pad reads exactly (0, 0) between contacts, so there is nothing to compare the
+ * origin against yet. The first later sample decides the origin and the verdict.
+ */
+private enum class IndirectTouchVerdict {
+    PENDING, CANDIDATE, ARMED, IGNORED, CANCELLED, DISPATCHED
+}
+
+private class IndirectTouchState(
+    var origin: Offset,
+    var startTimestamp: Double,
+    val beginTimestamp: Double,
+    val usesOracle: Boolean,
+    var verdict: IndirectTouchVerdict,
+) {
+    /** Position the rest detection measures against, and when it was last left. */
+    var restAnchor: Offset = origin
+    var lastSignificantMoveTime: Double = startTimestamp
+
+    /** The direction the contact armed, and when it armed it. */
+    var armedKey: Key? = null
+    var armedAt: Double = 0.0
+}
 
 /**
  * A reason for why touches are sent to Compose.
@@ -384,6 +478,7 @@ internal class ComposeSceneMediator(
     val coroutineContext: CoroutineContext,
     private val navigationEventInput: TvBackNavigationEventInput,
     private val pressDispatchLog: TvPressDispatchLog,
+    private val touchOracle: SiriRemoteTouchOracle,
     interfaceOrientationState: State<InterfaceOrientation>,
     composeSceneFactory: (platformContext: PlatformContext) -> ComposeScene,
     private val schedulePendingInteropViewUpdates: () -> Unit = {},
@@ -406,26 +501,21 @@ internal class ComposeSceneMediator(
     // make the next Select press on another element disappear.
     private var swallowedSelectKeyId: Long? = null
 
-    // Tracks the start of each Siri Remote indirect touch for swipe-to-focus fallback.
-    private class IndirectTouchStart(val position: Offset, val timestamp: Double)
-    private val indirectTouchStarts = mutableMapOf<Int, IndirectTouchStart>()
-    // Timestamp (seconds since boot, same timebase as UITouch.timestamp) of the last clickpad
-    // press. The Siri Remote trackpad is itself a button (Select in the middle, arrow presses
-    // on the outer ring of 2nd-gen remotes): clicking it delivers a UIPress alongside an
-    // indirect UITouch whose ENDED position can drift several dp from where it began, so any
-    // touch whose lifetime overlaps a clickpad press is click contact, not a swipe. Both
-    // timestamps are hardware event times rather than delivery times, so comparing them is
-    // immune to UIKit delivering the press and touch callbacks of one click out of order.
-    private var lastClickpadPressTimestamp = Double.NEGATIVE_INFINITY
+    // Tracks each Siri Remote indirect contact for swipe-to-focus.
+    private val indirectTouches = mutableMapOf<Int, IndirectTouchState>()
+
+    // Guards the display-link evaluation against re-entering itself through a dispatched key.
+    private var isEvaluatingOracleSample = false
+
+    // Kept as a value so the same instance can be removed from the shared oracle on dispose.
+    private val oracleSampleListener: (Offset?) -> Unit = ::onOracleSample
+
+    // Whether this mediator holds a sampling session of the shared oracle, and the token of that
+    // session.
+    private var isSamplingOracle = false
+    private var oracleSamplingToken = 0
     private val keyRepeatInitialDelayMs = 500L
     private val keyRepeatIntervalMs = 50L
-    // Minimum swipe distance (dp) on the Siri Remote trackpad to trigger a focus move.
-    private val INDIRECT_SWIPE_THRESHOLD_DP = 40f
-    // Finger contact physically precedes the click's switch closing, but the two sensors may
-    // stamp their events a few ms apart; this only needs to absorb that jitter. It must stay
-    // well below the time it takes to lift after a click and start a new touch, so a swipe
-    // immediately following a click is never falsely suppressed.
-    private val PRESS_TOUCH_TIMESTAMP_JITTER_SECONDS = 0.05
     private val platformScreenReader = object : PlatformScreenReader {
         override var isActive by mutableStateOf(false)
     }
@@ -644,6 +734,7 @@ internal class ComposeSceneMediator(
     init {
         coroutineContext.job.invokeOnCompletion { dispose() }
         frameChoreographer.addListener(frameChoreographerListener)
+        touchOracle.addSampleListener(oracleSampleListener)
     }
 
     private fun hitTestInteropView(point: CValue<CGPoint>): UIView? =
@@ -659,9 +750,351 @@ internal class ComposeSceneMediator(
 
     private fun onCancelAllTouches(touches: Set<*>) {
         activitiesHandler.onActivitiesEnded(touches.count())
-        indirectTouchStarts.clear()
+        // Only the cancelled contacts are forgotten: another contact of the same gesture may
+        // still be live and must keep its verdict.
+        touches.forEach { indirectTouches.remove((it as UITouch).hashCode()) }
+        updateIndirectSampling()
         scene.cancelPointerInput()
     }
+
+    /**
+     * Recognizes Siri Remote swipes from indirect contacts and converts them to directional key
+     * events. Those contacts are never forwarded to the Compose pointer input pipeline.
+     *
+     * When [touchOracle] reports a controller the contact is tracked in the absolute clickpad
+     * space, so a movement that starts on the outer ring of arrow buttons is ignored the way
+     * native tvOS ignores it, and the swipe is dispatched as soon as it is long enough. Without a
+     * controller (the simulator, or the first frames before the remote connects) the relative
+     * UIKit location is the only signal and the contact is evaluated once, when it ends.
+     */
+    private fun onIndirectTouchEvent(touch: UITouch, eventKind: TouchesEventKind) {
+        val key = touch.hashCode()
+        when (eventKind) {
+            TouchesEventKind.BEGAN -> {
+                val state = if (touchOracle.isAvailable) {
+                    val oraclePosition = touchOracle.position()
+                    if (oraclePosition == null) {
+                        // No sample of this contact yet: stay pending until one arrives, so the
+                        // ring gate still applies instead of dropping to the ungated fallback.
+                        swipeDebug { "SWIPE began verdict=pending" }
+                        IndirectTouchState(
+                            origin = Offset.Zero,
+                            startTimestamp = touch.timestamp,
+                            beginTimestamp = touch.timestamp,
+                            usesOracle = true,
+                            verdict = IndirectTouchVerdict.PENDING,
+                        )
+                    } else {
+                        IndirectTouchState(
+                            origin = oraclePosition,
+                            startTimestamp = touch.timestamp,
+                            beginTimestamp = touch.timestamp,
+                            usesOracle = true,
+                            verdict = IndirectTouchVerdict.PENDING,
+                        ).also {
+                            resolveIndirectTouchOrigin(it, oraclePosition, touch.timestamp)
+                        }
+                    }
+                } else {
+                    val position = touch.offsetInView(_backgroundView, screenDensity.density)
+                    swipeDebug {
+                        "SWIPE began origin=(${position.x}, ${position.y}) r=0.0 verdict=fallback"
+                    }
+                    IndirectTouchState(
+                        origin = position,
+                        startTimestamp = touch.timestamp,
+                        beginTimestamp = touch.timestamp,
+                        usesOracle = false,
+                        verdict = IndirectTouchVerdict.CANDIDATE,
+                    )
+                }
+                indirectTouches[key] = state
+                updateIndirectSampling()
+            }
+            TouchesEventKind.MOVED -> {
+                val state = indirectTouches[key] ?: return
+                if (!state.usesOracle) return
+                val position = touchOracle.position()
+                if (position == null) {
+                    swipeDebug { "SWIPE moved sample=null" }
+                    return
+                }
+                // The display link runs the same evaluation on every frame; this call is
+                // idempotent and only keeps the contact moving when UIKit is the earlier signal.
+                evaluateIndirectSample(state, position, touch.timestamp, logSample = true)
+            }
+            TouchesEventKind.ENDED -> {
+                val state = indirectTouches.remove(key) ?: return
+                updateIndirectSampling()
+                if (state.usesOracle) {
+                    if (state.verdict == IndirectTouchVerdict.PENDING) {
+                        // The only sample of this contact arrives at its end: an origin with no
+                        // movement observed in oracle space, so nothing is dispatched.
+                        touchOracle.position()?.let {
+                            resolveIndirectTouchOrigin(state, it, touch.timestamp)
+                        }
+                    }
+                } else if (state.verdict == IndirectTouchVerdict.CANDIDATE) {
+                    // Fallback only: the relative location is meaningful just once, at the end.
+                    evaluateIndirectTouch(
+                        state = state,
+                        position = touch.offsetInView(_backgroundView, screenDensity.density),
+                        timestamp = touch.timestamp,
+                    )
+                }
+                // A lifted finger can no longer be a click, so the hold is not waited out here:
+                // it only has to cover the press race while the finger is still down.
+                if (state.verdict == IndirectTouchVerdict.ARMED) {
+                    dispatchArmedIndirectTouch(state, touch.timestamp)
+                }
+            }
+        }
+    }
+
+    /**
+     * Decides the origin and the verdict of a pending oracle contact from [sample], its first
+     * known position. The contact keeps the timestamp of its BEGAN as start, so its duration is
+     * measured from the finger landing rather than from the first sample.
+     */
+    private fun resolveIndirectTouchOrigin(
+        state: IndirectTouchState,
+        sample: Offset,
+        timestamp: Double,
+    ) {
+        state.origin = sample
+        state.restAnchor = sample
+        state.lastSignificantMoveTime = timestamp
+        val radius = hypot(sample.x, sample.y)
+        state.verdict = if (touchOracle.hasRing && radius >= CENTER_PAD_RADIUS) {
+            IndirectTouchVerdict.IGNORED
+        } else {
+            IndirectTouchVerdict.CANDIDATE
+        }
+        swipeDebug {
+            val verdict = if (state.verdict == IndirectTouchVerdict.IGNORED) {
+                "ignored-ring"
+            } else {
+                "candidate"
+            }
+            val sinceBegin = (timestamp - state.beginTimestamp) * 1000.0
+            "SWIPE origin=(${sample.x}, ${sample.y}) r=$radius verdict=$verdict " +
+                "t=${sinceBegin}ms"
+        }
+    }
+
+    /**
+     * Runs the origin resolution or the swipe evaluation of one oracle contact for [sample],
+     * whichever its verdict calls for. Called both from UIKit's sparse MOVED callbacks and from
+     * every display-link tick, so it must stay idempotent.
+     */
+    private fun evaluateIndirectSample(
+        state: IndirectTouchState,
+        sample: Offset,
+        timestamp: Double,
+        logSample: Boolean,
+    ) {
+        if (!state.usesOracle) return
+        when (state.verdict) {
+            IndirectTouchVerdict.PENDING ->
+                // First sample of this contact: it is the origin, not a movement.
+                resolveIndirectTouchOrigin(state, sample, timestamp)
+            IndirectTouchVerdict.CANDIDATE ->
+                evaluateIndirectTouch(state, sample, timestamp, logSample)
+            IndirectTouchVerdict.ARMED ->
+                holdArmedIndirectTouch(state, timestamp)
+            else -> {}
+        }
+    }
+
+    /**
+     * Feeds one display-link sample of the clickpad to every live oracle contact. UIKit reports
+     * indirect movement sparsely, so this is what catches the origin of a contact in time and
+     * what dispatches a swipe as soon as it is long enough.
+     */
+    private fun onOracleSample(sample: Offset?) {
+        if (sample == null || isEvaluatingOracleSample) return
+        if (indirectTouches.isEmpty()) return
+        isEvaluatingOracleSample = true
+        try {
+            val timestamp = CACurrentMediaTime()
+            purgeStaleIndirectTouches(timestamp)
+            // A dispatch runs key event handlers, which may end contacts, so the states are
+            // snapshotted before they are evaluated.
+            for (state in indirectTouches.values.toList()) {
+                // A dispatch can dispose this mediator, which clears every contact.
+                if (indirectTouches.isEmpty()) break
+                evaluateIndirectSample(state, sample, timestamp, logSample = false)
+            }
+        } finally {
+            isEvaluatingOracleSample = false
+        }
+    }
+
+    /**
+     * Drops the contacts of [timestamp] whose terminal event never arrived, so a lost ENDED does
+     * not keep the display link polling for the rest of the process. Contacts that already reached
+     * a terminal verdict are dropped as soon as they can no longer dispatch.
+     */
+    private fun purgeStaleIndirectTouches(timestamp: Double) {
+        var removed = false
+        val iterator = indirectTouches.values.iterator()
+        while (iterator.hasNext()) {
+            val state = iterator.next()
+            val maxAge = when (state.verdict) {
+                IndirectTouchVerdict.IGNORED,
+                IndirectTouchVerdict.CANCELLED,
+                IndirectTouchVerdict.DISPATCHED -> SWIPE_MAX_DURATION_S + DISPATCH_HOLD_S
+                else -> INDIRECT_CONTACT_MAX_AGE_S
+            }
+            // The tick stamps with CACurrentMediaTime and the contacts with UITouch.timestamp,
+            // both of which are the system uptime.
+            if (timestamp - state.beginTimestamp > maxAge) {
+                iterator.remove()
+                removed = true
+            }
+        }
+        if (removed) {
+            updateIndirectSampling()
+        }
+    }
+
+    /** Samples the pad per frame exactly while at least one indirect contact is live. */
+    private fun updateIndirectSampling() {
+        val shouldSample = indirectTouches.isNotEmpty()
+        if (shouldSample == isSamplingOracle) return
+        isSamplingOracle = shouldSample
+        if (shouldSample) {
+            oracleSamplingToken = touchOracle.beginSampling()
+        } else {
+            touchOracle.endSampling(oracleSamplingToken)
+        }
+    }
+
+    /**
+     * Moves [state] out of [IndirectTouchVerdict.CANDIDATE] if the contact reached [position] at
+     * [timestamp] is a swipe, or if it can no longer become one.
+     */
+    private fun evaluateIndirectTouch(
+        state: IndirectTouchState,
+        position: Offset,
+        timestamp: Double,
+        logSample: Boolean = true,
+    ) {
+        if (updateIndirectRest(state, position, timestamp)) return
+        val dx = position.x - state.origin.x
+        val dy = position.y - state.origin.y
+        val elapsed = timestamp - state.startTimestamp
+        if (logSample) {
+            swipeDebug { "SWIPE moved d=($dx, $dy) t=${elapsed * 1000.0}ms" }
+        }
+        if (isClickpadPressOverlapping(state.beginTimestamp, timestamp)) {
+            state.verdict = IndirectTouchVerdict.CANCELLED
+            swipeDebug { "SWIPE cancelled reason=press" }
+            return
+        }
+        if (elapsed > SWIPE_MAX_DURATION_S) {
+            state.verdict = IndirectTouchVerdict.CANCELLED
+            swipeDebug { "SWIPE cancelled reason=duration" }
+            return
+        }
+        val distance = if (state.usesOracle) {
+            SWIPE_DISTANCE_NORMALIZED
+        } else {
+            with(screenDensity) { SWIPE_DISTANCE_FALLBACK_DP.dp.toPx() }
+        }
+        val absDx = abs(dx)
+        val absDy = abs(dy)
+        val dominant = maxOf(absDx, absDy)
+        val other = minOf(absDx, absDy)
+        if (dominant < distance || dominant < SWIPE_AXIS_DOMINANCE * other) {
+            return
+        }
+        // Sign convention for dy differs by source: the oracle's dy is the GameController dpad's
+        // absolute clickpad y, which is positive toward the top of the remote, so a positive dy
+        // is an upward swipe. The fallback dy is a UIKit relative view location, positive
+        // downward as usual for screen coordinates, so a positive dy there is a downward swipe.
+        val key = if (absDx >= absDy) {
+            if (dx > 0) Key.DirectionRight else Key.DirectionLeft
+        } else if (state.usesOracle) {
+            if (dy > 0) Key.DirectionUp else Key.DirectionDown
+        } else {
+            if (dy > 0) Key.DirectionDown else Key.DirectionUp
+        }
+        state.verdict = IndirectTouchVerdict.ARMED
+        state.armedKey = key
+        state.armedAt = timestamp
+        swipeDebug { "SWIPE armed ${directionName(key)}" }
+    }
+
+    /**
+     * Holds an armed swipe until [DISPATCH_HOLD_S] elapsed, so a Select press that lands right
+     * after the contact travelled far enough cancels the swipe instead of firing both.
+     */
+    private fun holdArmedIndirectTouch(state: IndirectTouchState, timestamp: Double) {
+        if (isClickpadPressOverlapping(state.beginTimestamp, timestamp)) {
+            state.verdict = IndirectTouchVerdict.CANCELLED
+            swipeDebug { "SWIPE cancelled reason=press" }
+            return
+        }
+        if (timestamp - state.armedAt < DISPATCH_HOLD_S) return
+        dispatchIndirectSwipe(state)
+    }
+
+    /** Dispatches an armed swipe unless a clickpad press claimed the contact meanwhile. */
+    private fun dispatchArmedIndirectTouch(state: IndirectTouchState, timestamp: Double) {
+        if (isClickpadPressOverlapping(state.beginTimestamp, timestamp)) {
+            state.verdict = IndirectTouchVerdict.CANCELLED
+            swipeDebug { "SWIPE cancelled reason=press" }
+            return
+        }
+        dispatchIndirectSwipe(state)
+    }
+
+    private fun dispatchIndirectSwipe(state: IndirectTouchState) {
+        val key = state.armedKey ?: return
+        swipeDebug { "SWIPE dispatch ${directionName(key)}" }
+        state.verdict = IndirectTouchVerdict.DISPATCHED
+        onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
+        onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp))
+    }
+
+    /**
+     * Tracks whether the finger of [state] is resting: as long as it stays within
+     * [REST_ANCHOR_TOLERANCE] of its anchor for longer than [REST_RESET_DURATION_S], the origin
+     * and the swipe timer move to where it rests, so a rest followed by a real movement still
+     * swipes and a slow drift never accumulates into one.
+     *
+     * Returns `true` when the origin was just moved, i.e. when there is no displacement left to
+     * evaluate for this sample.
+     */
+    private fun updateIndirectRest(
+        state: IndirectTouchState,
+        position: Offset,
+        timestamp: Double,
+    ): Boolean {
+        val moved = hypot(position.x - state.restAnchor.x, position.y - state.restAnchor.y)
+        if (moved >= REST_ANCHOR_TOLERANCE) {
+            state.restAnchor = position
+            state.lastSignificantMoveTime = timestamp
+            return false
+        }
+        if (timestamp - state.lastSignificantMoveTime <= REST_RESET_DURATION_S) return false
+        state.origin = position
+        state.startTimestamp = timestamp
+        state.lastSignificantMoveTime = timestamp
+        return true
+    }
+
+    /**
+     * `true` if a clickpad press is held, or if one began during the contact that started at
+     * [startTimestamp] or shortly before it. Press and touch timestamps are hardware event times
+     * rather than delivery times, so comparing them is immune to UIKit delivering the press and
+     * the touch callbacks of one click out of order.
+     */
+    private fun isClickpadPressOverlapping(startTimestamp: Double, timestamp: Double): Boolean =
+        touchOracle.anyButtonPressed() ||
+            pressDispatchLog.isClickpadPressHeld(timestamp) ||
+            pressDispatchLog.clickpadPressTimestamp >= startTimestamp - PRESS_SUPPRESSION_WINDOW_S
 
     /**
      * Converts [UITouch] objects from [touches] to [ComposeScenePointer] and dispatches them to the appropriate handlers.
@@ -686,36 +1119,7 @@ internal class ComposeSceneMediator(
         for (anyTouch in touches) {
             val touch = anyTouch as UITouch
             if (touch.type == UITouchTypeIndirect) {
-                val position = touch.offsetInView(_backgroundView, screenDensity.density)
-                when (eventKind) {
-                    TouchesEventKind.BEGAN -> {
-                        indirectTouchStarts[touch.hashCode()] =
-                            IndirectTouchStart(position, touch.timestamp)
-                    }
-                    TouchesEventKind.ENDED -> {
-                        val start = indirectTouchStarts.remove(touch.hashCode()) ?: continue
-                        // A clickpad press during this touch's lifetime means the drift is
-                        // from a click, not a swipe.
-                        if (lastClickpadPressTimestamp >=
-                            start.timestamp - PRESS_TOUCH_TIMESTAMP_JITTER_SECONDS
-                        ) {
-                            continue
-                        }
-                        val dx = position.x - start.position.x
-                        val dy = position.y - start.position.y
-                        val threshold = with(screenDensity) { INDIRECT_SWIPE_THRESHOLD_DP.dp.toPx() }
-                        if (dx * dx + dy * dy >= threshold * threshold) {
-                            val key = if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) {
-                                if (dx > 0) Key.DirectionRight else Key.DirectionLeft
-                            } else {
-                                if (dy > 0) Key.DirectionDown else Key.DirectionUp
-                            }
-                            onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
-                            onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp))
-                        }
-                    }
-                    TouchesEventKind.MOVED -> {}
-                }
+                onIndirectTouchEvent(touch, eventKind)
             } else {
                 pointerTouches.add(touch)
             }
@@ -852,6 +1256,12 @@ internal class ComposeSceneMediator(
         )
 
     private fun dispose() {
+        touchOracle.removeSampleListener(oracleSampleListener)
+        if (isSamplingOracle) {
+            isSamplingOracle = false
+            touchOracle.endSampling(oracleSamplingToken)
+        }
+        indirectTouches.clear()
         repeatingKeys.values.forEach { it.cancel() }
         repeatingKeys.clear()
         consumedKeyIds.clear()
@@ -991,26 +1401,26 @@ internal class ComposeSceneMediator(
             val keyId = press.key?.keyCode?.toLong() ?: -(press.type.toLong() + 1L)
             val phase = press.phase
 
-            if (!pressDispatchLog.shouldEvaluate(pressesEvent, keyId, phase)) {
-                // Already evaluated for this UIPressesEvent, by this mediator or by another
-                // mediator of the same container: this is the responder chain echoing back a
-                // press an overlay view forwarded to `super`.
-                reportUnconsumed(anyPress)
-                return@forEach
-            }
-
-            // The Siri Remote trackpad doubles as its buttons (Select in the middle, arrows
-            // on the outer ring): clicking it produces a press alongside an indirect touch
-            // whose end position can drift enough to look like a swipe. Record the press time
-            // so the touch's ENDED branch doesn't also dispatch a phantom directional key.
-            if (phase == UIPressPhase.UIPressPhaseBegan &&
+            // The Siri Remote clickpad doubles as its buttons (Select in the middle, arrows
+            // on the outer ring): clicking it produces a press alongside an indirect touch that
+            // drifts enough to look like a swipe. The press is recorded before the echo check,
+            // so the mediator that sees the echo rather than the original still latches it.
+            if (
                 when (event.key) {
                     Key.DirectionCenter, Key.DirectionUp, Key.DirectionDown,
                     Key.DirectionLeft, Key.DirectionRight -> true
                     else -> false
                 }
             ) {
-                lastClickpadPressTimestamp = press.timestamp
+                pressDispatchLog.recordClickpadPress(keyId, phase, press.timestamp)
+            }
+
+            if (!pressDispatchLog.shouldEvaluate(pressesEvent, keyId, phase)) {
+                // Already evaluated for this UIPressesEvent, by this mediator or by another
+                // mediator of the same container: this is the responder chain echoing back a
+                // press an overlay view forwarded to `super`.
+                reportUnconsumed(anyPress)
+                return@forEach
             }
 
             when (phase) {
