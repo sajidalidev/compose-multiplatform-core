@@ -65,6 +65,10 @@ import androidx.compose.ui.platform.TaskDispatchers
 import androidx.compose.ui.platform.WindowInsetsManager
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.WindowInfo
+import androidx.compose.ui.text.input.EditCommand
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.ImeOptions
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.semantics.SemanticsOwner
 import androidx.compose.ui.uikit.InterfaceOrientation
 import androidx.compose.ui.uikit.LocalUIView
@@ -1168,8 +1172,38 @@ internal class ComposeSceneMediator(
             frameChoreographer.voteFrameRate(frameRate, frameRateCategory)
         }
 
+        /**
+         * Makes `LocalSoftwareKeyboardController.show()/hide()` functional on tvOS by
+         * forwarding to the tvOS keyboard overlay. The controller only forwards while a text
+         * session is active on the focused field, so `show()` is a no-op when no Compose text
+         * field requested input; [TvOSTextInputService.showKeyboard] guards that case too.
+         * Text state itself flows through [startInputMethod], hence the no-op session methods.
+         */
+        @Suppress("DEPRECATION")
+        override val textInputService: androidx.compose.ui.text.input.PlatformTextInputService =
+            object : androidx.compose.ui.text.input.PlatformTextInputService {
+                override fun startInput(
+                    value: TextFieldValue,
+                    imeOptions: ImeOptions,
+                    onEditCommand: (List<EditCommand>) -> Unit,
+                    onImeActionPerformed: (ImeAction) -> Unit
+                ) = Unit
+
+                override fun stopInput() = Unit
+
+                override fun showSoftwareKeyboard() {
+                    tvOSTextInputService.showKeyboard()
+                }
+
+                override fun hideSoftwareKeyboard() {
+                    tvOSTextInputService.hideKeyboard()
+                }
+
+                override fun updateState(oldValue: TextFieldValue?, newValue: TextFieldValue) = Unit
+            }
+
         override suspend fun startInputMethod(request: PlatformTextInputMethodRequest): Nothing {
-            tvOSTextInputService.startInput(request)
+            val sessionId = tvOSTextInputService.startInput(request)
             try {
                 // Suspend until Compose cancels this session (text field loses focus).
                 // The keyboard UI is shown/hidden independently via showKeyboard()/hideKeyboard();
@@ -1177,11 +1211,11 @@ internal class ComposeSceneMediator(
                 // keyboard by pressing Select on the same field without losing and regaining focus.
                 kotlinx.coroutines.suspendCancellableCoroutine<Nothing> { continuation ->
                     continuation.invokeOnCancellation {
-                        tvOSTextInputService.stopInput()
+                        tvOSTextInputService.stopInput(sessionId)
                     }
                 }
             } finally {
-                tvOSTextInputService.stopInput()
+                tvOSTextInputService.stopInput(sessionId)
             }
         }
     }

@@ -18,6 +18,10 @@ package androidx.compose.ui.platform
 
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.text.input.CommitTextCommand
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.ImeOptions
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.SetSelectionCommand
 import androidx.compose.ui.window.FocusedViewsList
 import kotlinx.cinterop.readValue
@@ -25,6 +29,19 @@ import platform.CoreGraphics.CGRectZero
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.UIKit.UIColor
+import platform.UIKit.UIKeyboardTypeASCIICapable
+import platform.UIKit.UIKeyboardTypeDecimalPad
+import platform.UIKit.UIKeyboardTypeDefault
+import platform.UIKit.UIKeyboardTypeEmailAddress
+import platform.UIKit.UIKeyboardTypeNumberPad
+import platform.UIKit.UIKeyboardTypePhonePad
+import platform.UIKit.UIKeyboardTypeURL
+import platform.UIKit.UIReturnKeyType
+import platform.UIKit.UITextAutocapitalizationType
+import platform.UIKit.UITextAutocorrectionType
+import platform.UIKit.UITextContentTypeEmailAddress
+import platform.UIKit.UITextContentTypePassword
+import platform.UIKit.UITextContentTypeTelephoneNumber
 import platform.UIKit.UITextField
 import platform.UIKit.UITextFieldDelegateProtocol
 import platform.UIKit.UITextFieldTextDidChangeNotification
@@ -58,10 +75,28 @@ internal class TvOSTextInputService(
     private var textFieldDelegate: TvOSTextFieldDelegate? = null
     private var notificationObserver: Any? = null
     private var previousText: String = ""
+    // The request the currently visible keyboard was opened for. Text typed on a keyboard left
+    // over from a previous session must never be committed into a newer request.
+    private var keyboardRequest: PlatformTextInputMethodRequest? = null
 
-    /** Records the active request. Does NOT show the keyboard yet. */
-    fun startInput(request: PlatformTextInputMethodRequest) {
+    // Identifies the current input session. A field that loses focus while another one gains it
+    // tears its session down after the new session started, so [stopInput] must only clear the
+    // state of the session it belongs to.
+    private var currentSessionId: Int = 0
+    private var nextSessionId: Int = 0
+
+    /**
+     * Records the active request. Does NOT show the keyboard yet.
+     * @return the id of the started session, to be passed to [stopInput].
+     */
+    fun startInput(request: PlatformTextInputMethodRequest): Int {
+        // A previous session can still have its keyboard on screen: Compose cancels the old
+        // session only after the new one started, so tear the UIKit state down here, otherwise
+        // the stale text field keeps typing into this request.
+        hideKeyboard()
         activeRequest = request
+        currentSessionId = ++nextSessionId
+        return currentSessionId
     }
 
     /**
@@ -77,6 +112,8 @@ internal class TvOSTextInputService(
         val initialText = request.value().text
         tf.text = initialText
         previousText = initialText
+        tf.applyImeOptions(request.imeOptions)
+        keyboardRequest = request
 
         val del = TvOSTextFieldDelegate(this)
         tf.delegate = del
@@ -128,7 +165,8 @@ internal class TvOSTextInputService(
      * Called from [kotlinx.coroutines.CancellableContinuation.invokeOnCancellation] when
      * Compose cancels the session (e.g. the text field loses focus).
      */
-    fun stopInput() {
+    fun stopInput(sessionId: Int) {
+        if (sessionId != currentSessionId) return
         hideKeyboard()
         activeRequest = null
     }
@@ -137,7 +175,7 @@ internal class TvOSTextInputService(
      * Tears down UIKit state. Sets [textField] to null *before* calling UIKit APIs so
      * that re-entrant calls from [UITextField] delegate/notification callbacks are no-ops.
      */
-    private fun hideKeyboard() {
+    fun hideKeyboard() {
         val tf = textField ?: return // already cleaned up
         val observer = notificationObserver
 
@@ -146,6 +184,7 @@ internal class TvOSTextInputService(
         textFieldDelegate = null
         notificationObserver = null
         previousText = ""
+        keyboardRequest = null
 
         // UIKit cleanup.
         observer?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
@@ -163,11 +202,66 @@ internal class TvOSTextInputService(
     }
 
     /**
+     * Mirrors the iOS `SkikoUITextInputTraits` mapping onto the hidden [UITextField], so that
+     * the tvOS system keyboard shows the layout and return key the text field asked for.
+     * `PlatformImeOptions` is not honoured: its UIKit accessors live in the iOS source set.
+     */
+    private fun UITextField.applyImeOptions(options: ImeOptions) {
+        keyboardType = when (options.keyboardType) {
+            KeyboardType.Number, KeyboardType.NumberPassword -> UIKeyboardTypeNumberPad
+            KeyboardType.Decimal -> UIKeyboardTypeDecimalPad
+            KeyboardType.Phone -> UIKeyboardTypePhonePad
+            KeyboardType.Email -> UIKeyboardTypeEmailAddress
+            KeyboardType.Uri -> UIKeyboardTypeURL
+            KeyboardType.Ascii, KeyboardType.Password -> UIKeyboardTypeASCIICapable
+            else -> UIKeyboardTypeDefault
+        }
+
+        returnKeyType = when (options.imeAction) {
+            ImeAction.Go -> UIReturnKeyType.UIReturnKeyGo
+            ImeAction.Search -> UIReturnKeyType.UIReturnKeySearch
+            ImeAction.Send -> UIReturnKeyType.UIReturnKeySend
+            ImeAction.Next -> UIReturnKeyType.UIReturnKeyNext
+            ImeAction.Done -> UIReturnKeyType.UIReturnKeyDone
+            else -> UIReturnKeyType.UIReturnKeyDefault
+        }
+
+        secureTextEntry = options.keyboardType == KeyboardType.Password ||
+            options.keyboardType == KeyboardType.NumberPassword
+
+        textContentType = when (options.keyboardType) {
+            KeyboardType.Password, KeyboardType.NumberPassword -> UITextContentTypePassword
+            KeyboardType.Email -> UITextContentTypeEmailAddress
+            KeyboardType.Phone -> UITextContentTypeTelephoneNumber
+            else -> null
+        }
+
+        autocapitalizationType = when (options.capitalization) {
+            KeyboardCapitalization.Characters ->
+                UITextAutocapitalizationType.UITextAutocapitalizationTypeAllCharacters
+            KeyboardCapitalization.Words ->
+                UITextAutocapitalizationType.UITextAutocapitalizationTypeWords
+            KeyboardCapitalization.Sentences ->
+                UITextAutocapitalizationType.UITextAutocapitalizationTypeSentences
+            else ->
+                UITextAutocapitalizationType.UITextAutocapitalizationTypeNone
+        }
+
+        autocorrectionType = if (options.autoCorrect) {
+            UITextAutocorrectionType.UITextAutocorrectionTypeYes
+        } else {
+            UITextAutocorrectionType.UITextAutocorrectionTypeNo
+        }
+    }
+
+    /**
      * Called by [UITextFieldTextDidChangeNotification]. Diffs the old and new text
      * and dispatches edit commands to keep Compose in sync.
      */
     private fun syncTextToCompose() {
         val request = activeRequest ?: return
+        // The keyboard belongs to an older request: its text is not this request's text.
+        if (request !== keyboardRequest) return
         val newText = textField?.text ?: ""
         val oldText = previousText
         if (newText == oldText) return
