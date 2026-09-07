@@ -362,7 +362,7 @@ in DEV_SUFFIX and update these mappings.
     }
 
 To always resolve the newest dated build instead of a fixed one, use a dynamic mapping value
-such as "1.12.0-dev.+" -- the plugin passes the value verbatim to Gradle. Gradle caches dynamic
+such as "1.12.0-dev.+"; the plugin passes the value verbatim to Gradle. Gradle caches dynamic
 versions for 24 hours unless resolutionStrategy.cacheDynamicVersionsFor(0, "seconds") is set.
 
 EOF
