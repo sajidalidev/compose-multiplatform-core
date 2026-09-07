@@ -28,12 +28,17 @@ one of the `-tvos*` platform-split modules), this script walks its declared
                                the FAIL bucket so remaining FAILs are meaningful.
   COVERED-BY-REDIRECT          the dependency's group is one that the tvos-redirect
                                Gradle plugin rewrites to the audited prefix, AND the
-                               rewritten (twin) coordinate exists locally at the exact
-                               same version.
+                               rewritten (twin) coordinate exists at the exact same
+                               version either locally or as a released artifact on Maven
+                               Central (checked by fetching the twin's .pom). A partial
+                               local publish (e.g. a rehearsal covering only some
+                               libraries) therefore does not turn already-released twins
+                               into failures.
   WARN (group-covered-but-version-mismatch)
-                               same as COVERED-BY-REDIRECT, except the twin exists
-                               locally under a DIFFERENT version than requested. This is
-                               a version-manifest gap, not a hard failure.
+                               same as COVERED-BY-REDIRECT, except the twin exists only
+                               under a DIFFERENT version than requested (locally or on
+                               Maven Central). This is a version-manifest gap, not a hard
+                               failure.
   UNKNOWN                      an external lookup could not be completed (network
                                failure, timeout, non-2xx response, etc).
   FAIL                         none of the above apply -- the dependency is neither
@@ -50,6 +55,7 @@ are accepted for --group-prefix; the script normalizes internally.
 
 import argparse
 import json
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -93,8 +99,10 @@ ASSUMED_TVOS_UNIVERSAL_GROUP_PREFIXES = (
 )
 
 # Remote repositories checked (in order) for OK-EXTERNAL-TVOS lookups.
+CENTRAL_REPO_BASE_URL = "https://repo1.maven.org/maven2"
+
 REMOTE_REPO_BASE_URLS = [
-    "https://repo1.maven.org/maven2",
+    CENTRAL_REPO_BASE_URL,
     "https://maven.google.com",
 ]
 
@@ -243,6 +251,54 @@ def fetch_external_module_tvos_support(group: str, module: str, version: str):
     return result
 
 
+_remote_twin_cache = {}
+_remote_twin_versions_cache = {}
+
+
+def remote_twin_exists(group: str, module: str, version: str):
+    """True/False/None (None == network lookup failed) for a released twin .pom on Central."""
+    cache_key = (group, module, version)
+    if cache_key in _remote_twin_cache:
+        return _remote_twin_cache[cache_key]
+
+    group_path = group.replace(".", "/")
+    url = f"{CENTRAL_REPO_BASE_URL}/{group_path}/{module}/{version}/{module}-{version}.pom"
+    result = None
+    try:
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "audit-tvos-closure/1.0"})
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECONDS) as resp:
+            result = resp.status == 200
+    except urllib.error.HTTPError as e:
+        result = False if e.code == 404 else None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        result = None
+
+    _remote_twin_cache[cache_key] = result
+    return result
+
+
+def remote_twin_versions(group: str, module: str):
+    """Versions of the twin released on Central, from maven-metadata.xml ([] if none/unknown)."""
+    cache_key = (group, module)
+    if cache_key in _remote_twin_versions_cache:
+        return _remote_twin_versions_cache[cache_key]
+
+    group_path = group.replace(".", "/")
+    url = f"{CENTRAL_REPO_BASE_URL}/{group_path}/{module}/maven-metadata.xml"
+    versions = []
+    try:
+        req = urllib.request.Request(url, method="GET", headers={"User-Agent": "audit-tvos-closure/1.0"})
+        with urllib.request.urlopen(req, timeout=NETWORK_TIMEOUT_SECONDS) as resp:
+            if resp.status == 200:
+                body = resp.read().decode("utf-8", errors="replace")
+                versions = re.findall(r"<version>([^<]+)</version>", body)
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
+        versions = []
+
+    _remote_twin_versions_cache[cache_key] = versions
+    return versions
+
+
 def classify_dependency(dep: Dependency, repo_root: Path, audited_prefix_dotted: str):
     # (i) OK-INTERNAL
     if dep.group == audited_prefix_dotted or dep.group.startswith(audited_prefix_dotted + "."):
@@ -255,13 +311,24 @@ def classify_dependency(dep: Dependency, repo_root: Path, audited_prefix_dotted:
         twin_group = _rewrite(dep.group, audited_prefix_dotted)
         if local_module_dir_exists(repo_root, twin_group, dep.module, dep.version):
             return "COVERED-BY-REDIRECT", f"twin {twin_group}:{dep.module}:{dep.version} present"
+        if remote_twin_exists(twin_group, dep.module, dep.version) is True:
+            return "COVERED-BY-REDIRECT", f"twin {twin_group}:{dep.module}:{dep.version} on Central"
         available = local_module_versions(repo_root, twin_group, dep.module)
         if available:
             return "WARN", (
                 f"group-covered-but-version-mismatch: requested {dep.gav()}, "
                 f"twin {twin_group}:{dep.module} available locally at {', '.join(available)}"
             )
-        return "FAIL", f"covered group {dep.group} but no local twin {twin_group}:{dep.module} at any version"
+        released = remote_twin_versions(twin_group, dep.module)
+        if released:
+            return "WARN", (
+                f"group-covered-but-version-mismatch: requested {dep.gav()}, "
+                f"twin {twin_group}:{dep.module} released on Central at {', '.join(released)}"
+            )
+        return "FAIL", (
+            f"covered group {dep.group} but no twin {twin_group}:{dep.module} at any version "
+            f"locally or on Central"
+        )
 
     # (ii-assumed) OK-EXTERNAL-TVOS-ASSUMED -- kotlin-stdlib / kotlinx libraries ship native
     # klibs universally but are resolved outside Gradle's per-target variant metadata; skip

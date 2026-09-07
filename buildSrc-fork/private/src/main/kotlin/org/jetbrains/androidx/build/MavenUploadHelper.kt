@@ -139,6 +139,9 @@ private fun Project.configureComponentPublishing(
                 it.maven { repo ->
                     repo.name = "Remote"
                     repo.setUrl(remoteUrl)
+                    // Plain HTTP is allowed only when explicitly configured with an http URL
+                    // (e.g. a LAN Reposilite); https URLs are unaffected.
+                    repo.isAllowInsecureProtocol = remoteUrl.startsWith("http://")
                     repo.credentials { creds ->
                         creds.username = (project.findProperty("publish.maven.username") as? String)
                             ?: System.getenv("MAVEN_USERNAME")
