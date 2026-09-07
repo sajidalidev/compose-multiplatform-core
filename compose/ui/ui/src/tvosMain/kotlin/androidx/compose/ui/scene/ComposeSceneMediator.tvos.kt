@@ -1067,8 +1067,11 @@ internal class ComposeSceneMediator(
 
         override val viewConfiguration get() = this@ComposeSceneMediator.viewConfiguration
 
+        // tvOS has no touch surface: the Siri Remote is a directional input device. Starting in
+        // InputMode.Touch would make Focusability.SystemDefined resolve to "cannot focus", so
+        // requestFocus() and moveFocus() would be no-ops until the first remote key event.
         override val inputModeManager by lazy(LazyThreadSafetyMode.NONE) {
-            DefaultInputModeManager(InputMode.Touch)
+            DefaultInputModeManager(InputMode.Keyboard)
         }
         override val semanticsOwnerListener get() = this@ComposeSceneMediator.semanticsOwnerListener
         override val rootForTestListener get() = this@ComposeSceneMediator.rootForTestListener
