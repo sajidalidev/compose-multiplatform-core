@@ -16,6 +16,7 @@
 
 package androidx.tv.material3
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.runtime.Composable
@@ -62,6 +63,7 @@ fun MaterialTheme(
     val selectionColors = rememberTextSelectionColors(rememberedColorScheme)
     CompositionLocalProvider(
         LocalColorScheme provides rememberedColorScheme,
+        LocalIndication provides NoIndication,
         LocalShapes provides shapes,
         LocalTextSelectionColors provides selectionColors,
         LocalTypography provides typography

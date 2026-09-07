@@ -751,6 +751,11 @@ package androidx.tv.material3 {
     property public abstract boolean hasFocus;
   }
 
+  public final class NoIndication implements androidx.compose.foundation.IndicationNodeFactory {
+    method public androidx.compose.ui.node.DelegatableNode create(androidx.compose.foundation.interaction.InteractionSource interactionSource);
+    field public static final androidx.tv.material3.NoIndication INSTANCE;
+  }
+
   public final class OutlinedButtonDefaults {
     method @androidx.compose.runtime.Composable @androidx.compose.runtime.ReadOnlyComposable public androidx.tv.material3.ButtonBorder border(optional androidx.tv.material3.Border border, optional androidx.tv.material3.Border focusedBorder, optional androidx.tv.material3.Border pressedBorder, optional androidx.tv.material3.Border disabledBorder, optional androidx.tv.material3.Border focusedDisabledBorder);
     method @androidx.compose.runtime.Composable @androidx.compose.runtime.ReadOnlyComposable public androidx.tv.material3.ButtonColors colors(optional long containerColor, optional long contentColor, optional long focusedContainerColor, optional long focusedContentColor, optional long pressedContainerColor, optional long pressedContentColor, optional long disabledContainerColor, optional long disabledContentColor);
