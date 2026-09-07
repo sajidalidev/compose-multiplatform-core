@@ -48,7 +48,7 @@ import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.navigationevent.BackNavigationEventInput
+import androidx.compose.ui.navigationevent.TvBackNavigationEventInput
 import androidx.compose.ui.platform.AccessibilityMediator
 import androidx.compose.ui.platform.CUPERTINO_TOUCH_SLOP
 import androidx.compose.ui.platform.DefaultInputModeManager
@@ -208,7 +208,7 @@ private class TvOverlayInputView(
     private var isPointInsideInteractionBounds: (CValue<CGPoint>) -> Boolean,
     private var onTouchesEvent: (touches: Set<*>, event: UIEvent?, phase: TouchesEventKind) -> PointerEventResult,
     private var onCancelAllTouches: (touches: Set<*>) -> Unit,
-    private var onKeyboardPresses: (Set<*>) -> Unit,
+    private var onKeyboardPresses: (presses: Set<*>, event: UIPressesEvent?) -> Set<*>,
 ) : UIView(CGRectZero.readValue()) {
 
     var isInterceptingOutsideEvents: Boolean = false
@@ -225,16 +225,21 @@ private class TvOverlayInputView(
     override fun canBecomeFocused(): Boolean = false
 
     override fun pressesBegan(presses: Set<*>, withEvent: UIPressesEvent?) {
-        onKeyboardPresses(presses)
-        // Do not call super to prevent the back button from exiting the app
+        // `super` is called only for the presses Compose did not consume, so that tvOS can act
+        // on them, e.g. suspend the app when the Menu button isn't handled by any Compose
+        // back handler. Consumed presses are never forwarded up the responder chain.
+        val unconsumed = onKeyboardPresses(presses, withEvent)
+        if (unconsumed.isNotEmpty()) super.pressesBegan(unconsumed, withEvent)
     }
 
     override fun pressesEnded(presses: Set<*>, withEvent: UIPressesEvent?) {
-        onKeyboardPresses(presses)
+        val unconsumed = onKeyboardPresses(presses, withEvent)
+        if (unconsumed.isNotEmpty()) super.pressesEnded(unconsumed, withEvent)
     }
 
     override fun pressesCancelled(presses: Set<*>, withEvent: UIPressesEvent?) {
-        onKeyboardPresses(presses)
+        val unconsumed = onKeyboardPresses(presses, withEvent)
+        if (unconsumed.isNotEmpty()) super.pressesCancelled(unconsumed, withEvent)
     }
 
     override fun touchesBegan(touches: Set<*>, withEvent: UIEvent?) {
@@ -284,7 +289,7 @@ private class TvOverlayInputView(
         endEditing(force = true)
         hitTestInteropView = { null }
         isPointInsideInteractionBounds = { false }
-        onKeyboardPresses = {}
+        onKeyboardPresses = { presses, _ -> presses }
         onOutsidePointerEvent = {}
         onTouchesEvent = { _, _, _ -> PointerEventResult() }
         onCancelAllTouches = {}
@@ -373,7 +378,8 @@ internal class ComposeSceneMediator(
     private val windowContext: WindowContext,
     private val architectureComponentsOwner: PlatformArchitectureComponentsOwner,
     val coroutineContext: CoroutineContext,
-    private val navigationEventInput: BackNavigationEventInput,
+    private val navigationEventInput: TvBackNavigationEventInput,
+    private val pressDispatchLog: TvPressDispatchLog,
     interfaceOrientationState: State<InterfaceOrientation>,
     composeSceneFactory: (platformContext: PlatformContext) -> ComposeScene,
     private val schedulePendingInteropViewUpdates: () -> Unit = {},
@@ -383,6 +389,18 @@ internal class ComposeSceneMediator(
 
     // Key repeat state: repeatedly dispatch KeyDown while a key is held
     private val repeatingKeys = mutableMapOf<Long, Job>()
+
+    // Key ids whose KeyDown was consumed by Compose. Consumption is decided once, on the
+    // Began phase, and remembered so that the matching KeyUp is dispatched to the same
+    // destination: dispatching a KeyUp whose KeyDown never reached the scene would be dropped
+    // by FocusOwnerImpl.validateKeyEvent and would break `clickable()`.
+    private val consumedKeyIds = mutableSetOf<Long>()
+
+    // Id of the Select press whose KeyDown was swallowed to open the tvOS keyboard; the matching
+    // KeyUp must be swallowed too so the scene never observes an unmatched KeyUp. Keyed by press
+    // id rather than a flag, so a KeyUp delivered elsewhere (e.g. to the keyboard overlay) can't
+    // make the next Select press on another element disappear.
+    private var swallowedSelectKeyId: Long? = null
 
     // Tracks the start of each Siri Remote indirect touch for swipe-to-focus fallback.
     private class IndirectTouchStart(val position: Offset, val timestamp: Double)
@@ -832,6 +850,8 @@ internal class ComposeSceneMediator(
     private fun dispose() {
         repeatingKeys.values.forEach { it.cancel() }
         repeatingKeys.clear()
+        consumedKeyIds.clear()
+        swallowedSelectKeyId = null
         focusedViewsList?.remove(_overlayView)
 
         onPreviewKeyEvent = { false }
@@ -946,21 +966,40 @@ internal class ComposeSceneMediator(
      * Converts [UIPress] objects to [KeyEvent] and dispatches them to the appropriate handlers.
      * Handles key repeat by starting a coroutine that repeatedly dispatches KeyDown while a key
      * is held, similar to Android's key repeat behavior.
+     * Returns the presses Compose did not consume, so the caller can forward them to `super`
+     * and let tvOS act on them (e.g. suspend the app on an unhandled Menu press).
      * @param presses a [Set] of [UIPress] objects. Erasure happens due to K/N not supporting Obj-C lightweight generics.
+     * @param pressesEvent the event the presses belong to, used to recognize presses that the
+     * responder chain delivers to this mediator twice.
      */
-    fun onKeyboardPresses(presses: Set<*>) {
+    fun onKeyboardPresses(presses: Set<*>, pressesEvent: UIPressesEvent?): Set<*> {
+        var unconsumed: MutableSet<Any?>? = null
+        fun reportUnconsumed(press: Any?) {
+            val set = unconsumed ?: mutableSetOf<Any?>().also { unconsumed = it }
+            set.add(press)
+        }
+
         presses.forEach { anyPress ->
             val press = anyPress as UIPress
             val rawEvent = press.toComposeEvent()
             // Siri Remote's Menu button is tvOS's back gesture.
             val event = if (rawEvent.key == Key.Menu) rawEvent.copy(key = Key.Back) else rawEvent
             val keyId = press.key?.keyCode?.toLong() ?: -(press.type.toLong() + 1L)
+            val phase = press.phase
+
+            if (!pressDispatchLog.shouldEvaluate(pressesEvent, keyId, phase)) {
+                // Already evaluated for this UIPressesEvent, by this mediator or by another
+                // mediator of the same container: this is the responder chain echoing back a
+                // press an overlay view forwarded to `super`.
+                reportUnconsumed(anyPress)
+                return@forEach
+            }
 
             // The Siri Remote trackpad doubles as its buttons (Select in the middle, arrows
             // on the outer ring): clicking it produces a press alongside an indirect touch
             // whose end position can drift enough to look like a swipe. Record the press time
             // so the touch's ENDED branch doesn't also dispatch a phantom directional key.
-            if (press.phase == UIPressPhase.UIPressPhaseBegan &&
+            if (phase == UIPressPhase.UIPressPhaseBegan &&
                 when (event.key) {
                     Key.DirectionCenter, Key.DirectionUp, Key.DirectionDown,
                     Key.DirectionLeft, Key.DirectionRight -> true
@@ -970,43 +1009,85 @@ internal class ComposeSceneMediator(
                 lastClickpadPressTimestamp = press.timestamp
             }
 
-            when (press.phase) {
+            when (phase) {
                 UIPressPhase.UIPressPhaseBegan -> {
-                    onKeyboardEvent(event)
+                    // A new Began for this press id means the previous press is over even if
+                    // its Ended never arrived (the system keyboard overlay can absorb it), so
+                    // clear here what the Ended phase would have cleared.
+                    if (swallowedSelectKeyId == keyId) {
+                        swallowedSelectKeyId = null
+                        consumedKeyIds.remove(keyId)
+                        repeatingKeys.remove(keyId)?.cancel()
+                    }
+                    if (!onKeyboardEvent(event, keyId)) {
+                        // Not consumed: no key repeat, and the press goes to tvOS instead.
+                        reportUnconsumed(anyPress)
+                        return@forEach
+                    }
+                    consumedKeyIds.add(keyId)
 
-                    if (repeatingKeys[keyId]?.isActive != true) {
+                    // A KeyDown swallowed to open the system keyboard never reached the scene,
+                    // so it must not key-repeat.
+                    if (swallowedSelectKeyId != keyId && repeatingKeys[keyId]?.isActive != true) {
                         val repeatEvent = event.copy(isRepeat = true)
                         repeatingKeys[keyId] = CoroutineScope(coroutineContext).launch {
                             delay(keyRepeatInitialDelayMs)
                             while (isActive) {
-                                onKeyboardEvent(repeatEvent)
+                                onKeyboardEvent(repeatEvent, keyId)
                                 delay(keyRepeatIntervalMs)
                             }
                         }
                     }
                 }
-                UIPressPhase.UIPressPhaseEnded -> {
+                UIPressPhase.UIPressPhaseEnded, UIPressPhase.UIPressPhaseCancelled -> {
                     repeatingKeys.remove(keyId)?.cancel()
-                    onKeyboardEvent(event)
+                    // Consumption is never re-evaluated on KeyUp: the KeyUp follows its
+                    // KeyDown. Cancelled presses dispatch the KeyUp too, otherwise the
+                    // scene would keep the key pressed forever.
+                    if (consumedKeyIds.remove(keyId)) {
+                        onKeyboardEvent(event, keyId)
+                    } else {
+                        reportUnconsumed(anyPress)
+                    }
                 }
-                UIPressPhase.UIPressPhaseCancelled -> {
-                    repeatingKeys.remove(keyId)?.cancel()
-                }
-                else -> Unit
+                else -> reportUnconsumed(anyPress)
             }
         }
+
+        val result = unconsumed ?: return emptySet<Any?>()
+        // Avoid allocating a copy when nothing was consumed at all.
+        return if (result.size == presses.size) presses else result
     }
 
-    private fun onKeyboardEvent(keyEvent: KeyEvent): Boolean {
+    private fun onKeyboardEvent(keyEvent: KeyEvent, keyId: Long? = null): Boolean {
         // Show the tvOS system keyboard when the user presses Select on a focused text field.
         // The keyboard must not open on D-pad navigation alone (only on explicit Select press).
-        if (tvOSTextInputService.activeRequest != null &&
-            !tvOSTextInputService.isKeyboardVisible &&
-            keyEvent.key == Key.DirectionCenter &&
-            keyEvent.type == KeyEventType.KeyDown
-        ) {
-            tvOSTextInputService.showKeyboard()
-            return true
+        // The matching KeyUp is swallowed too: the scene never saw the KeyDown, so
+        // FocusOwnerImpl.validateKeyEvent would drop the KeyUp anyway, and `clickable()`
+        // would fire onClick for a click the user never made on the field.
+        // (The alternative is to send the KeyDown to the scene first and only open the
+        // keyboard if nothing consumed it; that changes more behaviour, so it isn't done.)
+        if (keyEvent.key == Key.DirectionCenter) {
+            if (keyEvent.type == KeyEventType.KeyUp &&
+                keyId != null && keyId == swallowedSelectKeyId
+            ) {
+                swallowedSelectKeyId = null
+                return true
+            }
+            if (keyEvent.type == KeyEventType.KeyDown &&
+                keyId != null && keyId == swallowedSelectKeyId
+            ) {
+                // A repeat of the KeyDown that was already swallowed to open the keyboard.
+                return true
+            }
+            if (tvOSTextInputService.activeRequest != null &&
+                !tvOSTextInputService.isKeyboardVisible &&
+                keyEvent.type == KeyEventType.KeyDown
+            ) {
+                swallowedSelectKeyId = keyId
+                tvOSTextInputService.showKeyboard()
+                return true
+            }
         }
 
         // tvOS text fields must not consume D-pad presses — there's no in-line cursor on
