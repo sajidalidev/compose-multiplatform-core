@@ -107,8 +107,8 @@ a `-tvos*`-suffixed platform-split module) of every `.module` under
 | `OK-INTERNAL` | dependency is under the audited prefix and its module directory exists locally at that exact version |
 | `OK-EXTERNAL-TVOS` | not under the audited prefix, but upstream's own `.module` (Central/Google Maven) already advertises a `tvos_` variant |
 | `OK-EXTERNAL-TVOS-ASSUMED` | `org.jetbrains.kotlin`/`org.jetbrains.kotlinx` — resolved via the Kotlin/Native toolchain's own klib distribution, not per-target Gradle variants; never flagged FAIL for lacking a `tvos_`-tagged `.module` variant |
-| `COVERED-BY-REDIRECT` | dependency's group is one `compose-tvos-redirect` rewrites, and the rewritten twin exists locally at the exact same version |
-| `WARN` | same as above, but the twin exists locally at a **different** version — a version-manifest gap (see `compose-tvos-redirect/manifest/compose-tvos-versions.json`), not a hard failure |
+| `COVERED-BY-REDIRECT` | dependency's group is one `compose-tvos-redirect` rewrites, and the rewritten twin exists at the exact same version either locally **or** as a released artifact on Maven Central (the audit HEADs the twin's `.pom` under `repo1.maven.org`) |
+| `WARN` | same as above, but the twin exists only at a **different** version, locally or on Central (read from the twin's `maven-metadata.xml`) — a version-manifest gap (see `compose-tvos-redirect/manifest/compose-tvos-versions.json`), not a hard failure |
 | `UNKNOWN` | external network lookup failed/timed out |
 | `FAIL` | none of the above — a real gap |
 
@@ -135,6 +135,11 @@ Required env vars (both optional — see "the known issue" below for what happen
   passphrase, forwarded as `-Ppublish.signing.key`/`-Ppublish.signing.password` to the same
   `publishComposeJbToMavenLocal` task Stage 1 uses (signing applies regardless of which
   repository task publishes — real `~/.m2` output is genuinely signed when these are set).
+  These two names belong to `stage-central-bundle.sh` itself (it also uses them for its own
+  gpg pass in Step 3). The build code, `MavenUploadHelper.kt`, reads the Gradle property
+  `publish.signing.key` first and falls back to the environment variable `SIGNING_KEY`
+  (likewise `publish.signing.password` / `SIGNING_PASSWORD`); signing is skipped whenever the
+  resolved key is blank.
 
 What it does, in order:
 1. **Publish** (same task/property set as `publish-tvos-fork.sh`, plus signing props) to real
@@ -181,6 +186,96 @@ end-to-end success of this exact script in a genuinely cold configuration-cache 
 treat it as validated for the unsigned dry-run path. A real signed run (with
 `PUBLISH_SIGNING_KEY`/`PUBLISH_SIGNING_PASSWORD` set) still has not been exercised end-to-end
 and should get its own clean-session run before being trusted for an actual Central upload.
+
+# Reposilite dev builds (`scripts/publish-tvos-fork-reposilite.sh`)
+
+Use this when a consumer project needs to compile against the CURRENT state of this tree
+without a Maven Central release: pre-release verification, a bisect, or handing a colleague a
+build. It is not a release path. Central releases still go through Stage 3.
+
+**Version scheme.** Each artifact keeps its exact JetBrains version identity and gains a build
+qualifier: `<pinned version>-dev.<YYYYMMDD>.<n>`, e.g. `1.12.0-dev.20260907.1`. Keeping the
+JetBrains prefix means the coordinate still says what the artifact IS, and the qualifier says
+it is a build rather than a release. Dev versions are IMMUTABLE: never republish an existing
+one (Reposilite release repos answer 409 on redeploy, and consumers cache what they got).
+When `DEV_SUFFIX` is unset the script picks the version for you: it HEADs
+`<REPOSILITE_URL>/dev/sajidali/compose/runtime/runtime/<COMPOSE version>-dev.<date>.<N>/runtime-<...>.pom`
+for N in 1..50 and takes the first N that answers 404, printing the choice. When `DEV_SUFFIX`
+IS set explicitly and that version is already on the server, the script aborts immediately,
+before the (long) build, instead of letting the 409 surface at upload time.
+
+**Known closure gap.** Twelve tvOS dependency edges of the current pins point at
+`org.jetbrains.androidx` coordinates whose `dev.sajidali` twins are not on Central at those
+versions: `lifecycle-runtime-compose:2.9.6`, `savedstate:1.4.0` and `savedstate-compose:1.3.6`
+(the released twins are lifecycle `2.11.0` and savedstate `1.5.0-alpha01`). The audit reports
+them as `WARN`, not `FAIL`, so they do not block a dev publish, but the next Central release
+should either publish matching twin versions or add the mappings to
+`compose-tvos-redirect/manifest/compose-tvos-versions.json`.
+
+**Pins.** The seven `VERSION_<LIB>` stamps and the `LIBRARIES` list live in
+`scripts/tvos-versions.sh`, sourced by both `publish-tvos-fork.sh` and this script. Edit the
+pins there only.
+
+**Environment.**
+
+- `REPOSILITE_URL` (required): the full repository URL, e.g. `https://maven.example.com/releases`.
+  `http://` URLs are accepted (Gradle's insecure-protocol opt-in is applied automatically for
+  them), but sending a token over plain HTTP is only acceptable on a trusted LAN.
+- `REPOSILITE_USER` (required).
+- `REPOSILITE_TOKEN` (required, never echoed). Passed to Gradle through `MAVEN_URL` /
+  `MAVEN_USERNAME` / `MAVEN_PASSWORD`, which `MavenUploadHelper.kt` reads directly, and to
+  every `curl` call through a `--config -` document on stdin, so it never reaches a command
+  line or `ps` output.
+- `DEV_SUFFIX` (optional). Unset: the first free `-dev.$(date +%Y%m%d).<N>` is probed and
+  chosen. Set: used verbatim, with a collision check that aborts before the build.
+
+**Flags.** `--dry-run` prints the Gradle command lines with the token masked and exits; it
+still probes the server for a free dev version (and says so and assumes `.1` when the server
+is unreachable), and it reflects `--skip-local-audit` in what it prints.
+`--skip-local-audit` skips the mavenLocal rehearsal plus closure audit (the audit is otherwise
+run and a non-zero result aborts before anything is uploaded). `--no-suffix` publishes the
+exact pinned versions and is refused off a `release-*-tvos*` or `tvos-main` branch.
+
+Signing is never applied: the script unsets `SIGNING_KEY`/`SIGNING_PASSWORD` **and** passes an
+empty `-Ppublish.signing.key`, because `MavenUploadHelper.kt` prefers the Gradle property over
+the environment variable, so without the empty property a `publish.signing.key` left in
+`~/.gradle/gradle.properties` would sign a dev publish. The signing plugin is only applied when
+the resolved key is non-blank.
+
+After the upload the script verifies one representative module per library (compose `runtime`,
+`material3`, `adaptive`, `navigation-runtime`, `navigation3-ui`, `window-core`, `tv-material`),
+fetching both the `.pom` and the `.module`, and fails on the first miss naming the library.
+
+The upload target is the `publishComposeJbToRemote` task (`mpp/build.gradle.kts`), which
+targets the `Remote` named repository that only exists when `publish.maven.url`/`MAVEN_URL` is
+set.
+
+**Consumer snippet** (also printed by the script on success):
+
+```kotlin
+maven {
+    name = "tvosDev"
+    url = uri("https://maven.example.com/releases")
+    content { includeGroupByRegex("dev\\.sajidali.*") }
+}
+```
+
+```kotlin
+composeTvos {
+    manifestUrl.set("")
+    versionMappings.put("org.jetbrains.compose:1.12.0", "1.12.0-dev.20260907.1")
+    // ... one entry per library group, printed by the script with the real versions
+}
+```
+
+Keep `mavenCentral()` in the consumer's repository list: the fork's artifacts depend on
+upstream Kotlin, kotlinx and androidx coordinates that only Central serves.
+
+**Manifest rule.** The shipped version-mapping manifest keeps `mappings: {}`. Dev versions are
+per-machine, throwaway coordinates; publishing them in the manifest would point every consumer
+of the plugin at a build that may not exist tomorrow. Dev mappings belong in the consuming
+project's own `composeTvos { versionMappings }` block, or are disabled entirely with
+`manifestUrl.set("")`.
 
 # Post-rebase note
 

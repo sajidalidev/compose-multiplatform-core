@@ -6,7 +6,11 @@
 ##
 ## This script only WRAPS the mavenLocal publish task; it does not run it automatically
 ## on its own — see the invocation below. It intentionally does not configure any
-## `publish.maven.*` remote-repo or `publish.signing.*` PGP credentials.
+## `publish.maven.*` remote-repo or `publish.signing.*` PGP credentials. For a remote (Reposilite)
+## dev publish see publish-tvos-fork-reposilite.sh.
+##
+## The published version stamps (VERSION_*) and the LIBRARIES list are sourced from
+## scripts/tvos-versions.sh, the single source of truth shared with the Reposilite flow.
 
 set -e
 
@@ -37,12 +41,48 @@ if ! "$JDK21_HOME/bin/java" -version 2>&1 | grep -q 'version "21'; then
     exit 1
 fi
 
+# VERSION_* below are the PUBLISHED VERSION IDENTITY each artifact is stamped with -- the
+# coordinate a consumer actually requests -- via -Pjetbrains.publication.version.<LIB>
+# (JetBrainsVersionsService.kt parses the property; JetBrainsMavenCoordinatesChanger.kt sets
+# group+version from it). For COMPOSE, COMPOSE_MATERIAL3 and NAVIGATION this MUST be
+# JetBrains' own org.jetbrains.* release version for that module, NOT the in-tree androidx
+# number from libraryversions.toml: the Compose Multiplatform Gradle plugin's redirect
+# mechanism substitutes dev.sajidali.* for org.jetbrains.* only when the consumer-requested
+# version STRING matches (the "same-version convention"). Stamping the androidx number (e.g.
+# material3 1.5.0-alpha22, navigation 2.10.0-alpha05) produces a coordinate no real consumer
+# ever asks for and no JetBrains release ever published, which is why every consumer needed a
+# manual `versionMappings` workaround.
+#
+# Determined 2026-09-03 on the jb-version-stamping branch:
+#   - COMPOSE = "1.12.0": JetBrains' final released tag (v1.12.0 = f29d2f99f3b on
+#     release/1.12); this fork tree's compose source is the same fork point, and that release
+#     re-published only the COMPOSE group (see commit ad725033bc1's own investigation).
+#   - COMPOSE_MATERIAL3 = "1.12.0-alpha03": JetBrains' LATEST published material3 (confirmed
+#     via Central's maven-metadata.xml <latest>/<release>). Its own POM depends on
+#     org.jetbrains.compose.{runtime,ui,foundation}:1.12.0-beta01 -- exactly this tree's
+#     libraryversions.toml COMPOSE value (1.12.0-beta01) -- i.e. it's the material3 release
+#     built from the same androidx material3 1.5.0-alpha22 source drop this tree carries.
+#     1.11.0-alpha07 (the OTHER version the old manifest wrongly also claimed) depends on
+#     compose 1.11.0-beta03 instead, confirmed via its POM, and does NOT match.
+#   - NAVIGATION = "2.10.0-alpha02": JetBrains has never published a navigation-compose
+#     release compatible with the 1.12.0 compose line. Per Central's maven-metadata.xml,
+#     2.10.0-alpha02 is the latest (and last) version JetBrains has ever published for
+#     org.jetbrains.androidx.navigation:navigation-compose; its POM depends on compose
+#     1.10.0, stale relative to this tree. 2.10.0-alpha03/04/05 do not exist upstream. There
+#     is no exact content match available, so the topping-out published version -- the safer,
+#     most-defensible choice -- is used rather than the androidx number nothing upstream ever
+#     shipped.
+#
+# COMPOSE_MATERIAL3_ADAPTIVE, NAVIGATION_3 and WINDOW below are still pinned to the in-tree
+# libraryversions.toml/androidx number (out of scope for this stamping pass). TV_MATERIAL is
+# correctly an androidx number: androidx.tv has no JetBrains counterpart at all.
+#
 # Versions extracted from libraryversions.toml at the repo root. That file is the
-# source of truth for these; update the values below if it changes.
-#   COMPOSE               = "1.12.0-beta01"
-#   COMPOSE_MATERIAL3     = "1.5.0-alpha22"
+# source of truth for the androidx-numbered entries; update the values below if it changes.
+#   COMPOSE               = "1.12.0-beta01"  (in-tree; stamped as JetBrains' "1.12.0" above)
+#   COMPOSE_MATERIAL3     = "1.5.0-alpha22"  (in-tree; stamped as JetBrains' "1.12.0-alpha03" above)
 #   COMPOSE_MATERIAL3_ADAPTIVE = "1.3.0-beta02"
-#   NAVIGATION            = "2.10.0-alpha05"
+#   NAVIGATION            = "2.10.0-alpha05"  (in-tree; stamped as JetBrains' "2.10.0-alpha02" above)
 #   NAVIGATION3           = "1.2.0-alpha04"
 #   WINDOW                = "1.6.0-alpha02"
 #   TV_MATERIAL           = "1.1.0-alpha01"
@@ -88,16 +128,10 @@ fi
 # `:compose:material3:material3-adaptive-navigation-suite:compileKotlinTvosArm64` (the
 # COMPOSE_MATERIAL3 consumer of adaptive) succeeds too, so the navigation-suite exclusion in
 # JetBrainsPublication.kt was removed as well.
-VERSION_COMPOSE="1.12.0-beta01"
-VERSION_COMPOSE_MATERIAL3="1.5.0-alpha22"
-VERSION_COMPOSE_MATERIAL3_ADAPTIVE="1.3.0-beta02"
-VERSION_NAVIGATION="2.10.0-alpha05"
-VERSION_NAVIGATION_3="1.2.0-alpha04"
-VERSION_WINDOW="1.6.0-alpha02"
-VERSION_TV_MATERIAL="1.1.0-alpha01"
+# The VERSION_* pins and LIBRARIES documented above live in scripts/tvos-versions.sh.
+source "$(dirname "$0")/tvos-versions.sh"
 
 COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,NAVIGATION,NAVIGATION_3,WINDOW,TV_MATERIAL"
 PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
 
 echo "About to publish to mavenLocal with:"
