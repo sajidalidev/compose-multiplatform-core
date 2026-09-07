@@ -24,7 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.LocalSystemTheme
 import androidx.compose.ui.graphics.asComposeCanvas
-import androidx.compose.ui.navigationevent.BackNavigationEventInput
+import androidx.compose.ui.navigationevent.TvBackNavigationEventInput
 import androidx.compose.ui.platform.DefaultArchitectureComponentsOwner
 import androidx.compose.ui.platform.FrameChoreographer
 import androidx.compose.ui.platform.MotionDurationScaleImpl
@@ -65,6 +65,7 @@ import platform.Foundation.addObserver
 import platform.Foundation.removeObserver
 import platform.UIKit.UIAccessibilityIsReduceMotionEnabled
 import platform.UIKit.UIApplication
+import platform.UIKit.UIPressesEvent
 import platform.UIKit.UIResponder
 import platform.UIKit.UIUserInterfaceLayoutDirection
 import platform.UIKit.UIUserInterfaceStyle
@@ -95,6 +96,11 @@ internal class ComposeContainer(
         get() = view.window?.windowScene?.let { FrameChoreographer.choreographerForScene(it) }
 
     private var mediator: ComposeSceneMediator? = null
+
+    // Shared by the root mediator and every scene layer's mediator, so that a press a layer
+    // reported as unconsumed isn't evaluated a second time by the root mediator when the
+    // responder chain delivers it back to the hosting view controller.
+    private val pressDispatchLog = TvPressDispatchLog()
 
     @OptIn(InternalComposeUiApi::class)
     var rootForTestListener: PlatformContext.RootForTestListener? = null
@@ -131,7 +137,7 @@ internal class ComposeContainer(
     private val interfaceOrientationObserver = SceneGeometryObserver {
         updateInterfaceOrientationState()
     }
-    private val navigationEventInput = BackNavigationEventInput()
+    private val navigationEventInput = TvBackNavigationEventInput()
     private var layoutInvalidationHandler: LayoutInvalidationHandler? = null
     private val fontScaleProvider = FontScaleProvider(
         view = view,
@@ -139,9 +145,12 @@ internal class ComposeContainer(
     )
     val hasInteropViews: Boolean get() = mediator?.hasInteropViews ?: false
 
-    fun onKeyboardPresses(presses: Set<*>) {
-        mediator?.onKeyboardPresses(presses)
-    }
+    /**
+     * Returns the subset of [presses] that Compose did not consume, so that the caller can
+     * forward them to `super` and let tvOS act on them (e.g. suspend the app on Menu).
+     */
+    fun onKeyboardPresses(presses: Set<*>, event: UIPressesEvent?): Set<*> =
+        mediator?.onKeyboardPresses(presses, event) ?: presses
 
     fun didUpdateFocusInContext() {
         mediator?.didUpdateFocusInContext()
@@ -274,6 +283,7 @@ internal class ComposeContainer(
             architectureComponentsOwner = architectureComponentsOwner,
             coroutineContext = containerCoroutineContext,
             navigationEventInput = navigationEventInput,
+            pressDispatchLog = pressDispatchLog,
             composeSceneFactory = { context ->
                 PlatformLayersComposeScene(
                     frameRecomposer = frameChoreographer.frameRecomposer,
@@ -345,6 +355,7 @@ internal class ComposeContainer(
         architectureComponentsOwner.navigationEventDispatcher.removeInput(navigationEventInput)
 
         mediator = null
+        pressDispatchLog.clear()
 
         activeStateListener?.dispose()
         activeStateListener = null
@@ -394,6 +405,7 @@ internal class ComposeContainer(
                     focusedViewsList = if (focusable) focusedViewsList.childFocusedViewsList() else null,
                     consumePointerInputOutside = consumePointerInputOutside,
                     parentCoroutineContext = containerCoroutineContext,
+                    pressDispatchLog = pressDispatchLog,
                     ownerProvider = architectureComponentsOwner,
                     interfaceOrientationState = interfaceOrientationState,
                     invalidateLayout = { layersHolder.getLayersViewController().invalidateLayout() },

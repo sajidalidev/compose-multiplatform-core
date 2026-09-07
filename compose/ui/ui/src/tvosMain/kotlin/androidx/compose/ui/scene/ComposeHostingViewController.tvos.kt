@@ -105,16 +105,21 @@ internal class ComposeHostingViewController(
     }
 
     override fun pressesBegan(presses: Set<*>, withEvent: UIPressesEvent?) {
-        container.onKeyboardPresses(presses)
-        // Do not call super to prevent the back button from exiting the app
+        // `super` is called only for the presses Compose did not consume, so that tvOS can act
+        // on them, e.g. suspend the app when the Menu button isn't handled by any Compose
+        // back handler. Consumed presses are never forwarded up the responder chain.
+        val unconsumed = container.onKeyboardPresses(presses, withEvent)
+        if (unconsumed.isNotEmpty()) super.pressesBegan(unconsumed, withEvent)
     }
 
     override fun pressesEnded(presses: Set<*>, withEvent: UIPressesEvent?) {
-        container.onKeyboardPresses(presses)
+        val unconsumed = container.onKeyboardPresses(presses, withEvent)
+        if (unconsumed.isNotEmpty()) super.pressesEnded(unconsumed, withEvent)
     }
 
     override fun pressesCancelled(presses: Set<*>, withEvent: UIPressesEvent?) {
-        container.onKeyboardPresses(presses)
+        val unconsumed = container.onKeyboardPresses(presses, withEvent)
+        if (unconsumed.isNotEmpty()) super.pressesCancelled(unconsumed, withEvent)
     }
 
     override fun didUpdateFocusInContext(
