@@ -26,7 +26,7 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.navigationevent.BackNavigationEventInput
+import androidx.compose.ui.navigationevent.TvBackNavigationEventInput
 import androidx.compose.ui.platform.FrameChoreographer
 import androidx.compose.ui.platform.PlatformArchitectureComponentsOwner
 import androidx.compose.ui.platform.PlatformContext
@@ -60,6 +60,7 @@ internal class IosComposeSceneLayer(
     private var focusedViewsList: FocusedViewsList?,
     consumePointerInputOutside: Boolean = focusedViewsList != null,
     parentCoroutineContext: CoroutineContext,
+    private val pressDispatchLog: TvPressDispatchLog,
     private val ownerProvider: PlatformArchitectureComponentsOwner,
     private val interfaceOrientationState: State<InterfaceOrientation>,
     private var invalidateLayout: () -> Unit,
@@ -94,7 +95,7 @@ internal class IosComposeSceneLayer(
     private val navigationEventDispatcher: NavigationEventDispatcher
         get() = ownerProvider.navigationEventDispatcherOwner.navigationEventDispatcher
 
-    private val navigationEventInput = BackNavigationEventInput()
+    private val navigationEventInput = TvBackNavigationEventInput()
         .also { navigationEventDispatcher.addInput(it) }
 
     private val windowContext get() = layersViewController.windowContext
@@ -108,6 +109,7 @@ internal class IosComposeSceneLayer(
         architectureComponentsOwner = ownerProvider,
         coroutineContext = layerCoroutineContext,
         navigationEventInput = navigationEventInput,
+        pressDispatchLog = pressDispatchLog,
         composeSceneFactory = ::createComposeScene,
         interfaceOrientationState = interfaceOrientationState,
         schedulePendingInteropViewUpdates = layersViewController::invalidateDraw,
