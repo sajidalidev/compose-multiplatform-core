@@ -33,6 +33,18 @@ tasks.register("publishComposeJbToMavenLocal", ComposePublishingTask::class) {
     }
 }
 
+// "Remote" is the named repository declared in MavenUploadHelper.kt; it only exists when
+// -Ppublish.maven.url (or the MAVEN_URL env var) is set, so this task is only usable with it.
+tasks.register("publishComposeJbToRemote", ComposePublishingTask::class) {
+    group = "Compose Multiplatform"
+    repository = "RemoteRepository"
+    composeProperties = parsedComposeProperties
+
+    libraries.forEach {
+        libraryToComponents[it]?.forEach { publish(rootProject, it) }
+    }
+}
+
 val libraries = project.findProperty("jetbrains.publication.libraries")
     ?.toString()?.split(",")
     ?: libraryToComponents.keys
