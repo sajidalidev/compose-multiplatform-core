@@ -102,6 +102,10 @@ internal class ComposeContainer(
     // responder chain delivers it back to the hosting view controller.
     private val pressDispatchLog = TvPressDispatchLog()
 
+    // Reports where the finger physically is on the Siri Remote clickpad, which UIKit indirect
+    // touches cannot tell. Shared by every mediator of this container, like the press log.
+    private val touchOracle = SiriRemoteTouchOracle()
+
     @OptIn(InternalComposeUiApi::class)
     var rootForTestListener: PlatformContext.RootForTestListener? = null
         set(value) {
@@ -243,6 +247,7 @@ internal class ComposeContainer(
 
     fun initializeComposeScene() {
         sceneJob = Job()
+        touchOracle.start()
         val frameChoreographer = frameChoreographer ?: error("No window scene found")
         val containerCoroutineContext = frameChoreographer.coroutineContext + motionDurationScale + sceneJob
 
@@ -284,6 +289,7 @@ internal class ComposeContainer(
             coroutineContext = containerCoroutineContext,
             navigationEventInput = navigationEventInput,
             pressDispatchLog = pressDispatchLog,
+            touchOracle = touchOracle,
             composeSceneFactory = { context ->
                 PlatformLayersComposeScene(
                     frameRecomposer = frameChoreographer.frameRecomposer,
@@ -356,6 +362,7 @@ internal class ComposeContainer(
 
         mediator = null
         pressDispatchLog.clear()
+        touchOracle.stop()
 
         activeStateListener?.dispose()
         activeStateListener = null
@@ -406,6 +413,7 @@ internal class ComposeContainer(
                     consumePointerInputOutside = consumePointerInputOutside,
                     parentCoroutineContext = containerCoroutineContext,
                     pressDispatchLog = pressDispatchLog,
+                    touchOracle = touchOracle,
                     ownerProvider = architectureComponentsOwner,
                     interfaceOrientationState = interfaceOrientationState,
                     invalidateLayout = { layersHolder.getLayersViewController().invalidateLayout() },
