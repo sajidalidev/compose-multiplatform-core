@@ -20,8 +20,8 @@ user logs in. The Mac must be awake and connected; queued builds wait while it i
 The setup does not change sleep settings or the global Xcode selection.
 
 The runner's `.env` supplies `TVOS_JDK21_HOME`, `ANDROID_HOME` and `ANDROID_SDK_ROOT`.
-CI selects Xcode through `DEVELOPER_DIR` and uses separate Gradle/Maven directories in
-its tool cache. Publishing credentials stay in `~/.config/tvos-reposilite.env` on the Mac
+CI selects Xcode through `DEVELOPER_DIR`, caches Gradle dependencies in its tool cache,
+and stages Maven artifacts in a fresh temporary directory for each run. Publishing credentials stay in `~/.config/tvos-reposilite.env` on the Mac
 and are loaded only by the upload step. They are not copied into GitHub secrets.
 
 Create the GitHub environment `reposilite`. Optional environment variables:
