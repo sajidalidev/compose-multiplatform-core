@@ -1,0 +1,93 @@
+name: tvOS Reposilite
+run-name: Reposilite · ${{ github.ref_name }} · ${{ github.sha }}
+
+on:
+  push:
+    branches: [tvos-main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Upload after building and validating (false builds locally only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Serialize publishes and never interrupt an upload halfway through.
+concurrency:
+  group: tvos-reposilite
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/tvos-main'
+    # Only trusted tvos-main pushes/manual runs use the Mac; PR jobs are hosted.
+    runs-on: [self-hosted, macOS, ARM64, tvos-release]
+    timeout-minutes: 180
+    environment: reposilite
+    env:
+      CI: 'true'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Configure local toolchain and isolated build caches
+        env:
+          XCODE_PATH: ${{ vars.TVOS_XCODE_PATH || '/Applications/Xcode.app' }}
+        run: |
+          # Select Xcode for this job only; do not change the Mac's global selection.
+          export DEVELOPER_DIR="$XCODE_PATH/Contents/Developer"
+          export JAVA_HOME="${TVOS_JDK21_HOME:?Runner must configure TVOS_JDK21_HOME}"
+          test -x "$JAVA_HOME/bin/java"
+          "$JAVA_HOME/bin/java" -version
+          xcodebuild -version
+          {
+            echo "DEVELOPER_DIR=$DEVELOPER_DIR"
+            echo "JAVA_HOME=$JAVA_HOME"
+            echo "ANDROIDX_JDK21=$JAVA_HOME"
+            echo "GRADLE_USER_HOME=$RUNNER_TOOL_CACHE/tvos-gradle"
+            echo "TVOS_MAVEN_LOCAL=$RUNNER_TOOL_CACHE/tvos-maven"
+            echo "DEV_SUFFIX=-dev.$(date -u +%Y%m%d).${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+          } >> "$GITHUB_ENV"
+          mkdir -p build/release
+          git rev-parse HEAD > build/release/source-commit.txt
+      - name: Test release tooling
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Review publish plan
+        run: bash scripts/publish-tvos-fork-reposilite.sh --local-only --dry-run | tee build/release/plan.log
+      - name: Build both tvOS targets and audit dependencies
+        run: bash scripts/publish-tvos-fork-reposilite.sh --local-only | tee build/release/build.log
+      - name: Publish to Reposilite and verify remote metadata
+        if: (github.event_name == 'push' && vars.REPOSILITE_AUTO_PUBLISH == 'true') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+        env:
+          REPOSILITE_ENV_FILE: ${{ vars.REPOSILITE_ENV_FILE }}
+        # The local rehearsal and audit above used this exact source and DEV_SUFFIX.
+        run: |
+          set -a
+          source "${REPOSILITE_ENV_FILE:-$HOME/.config/tvos-reposilite.env}"
+          set +a
+          bash scripts/publish-tvos-fork-reposilite.sh --skip-local-audit | tee build/release/publish.log
+      - name: Write run summary
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo '### tvOS Reposilite'
+            echo "- Source: $GITHUB_SHA"
+            echo "- Version suffix: $DEV_SUFFIX"
+            echo "- Job status: $JOB_STATUS"
+            echo '- Exact versions and consumer mappings are in the attached logs.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve release logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reposilite-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/release/
+          if-no-files-found: warn
+          retention-days: 30

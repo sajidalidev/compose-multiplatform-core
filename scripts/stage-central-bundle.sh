@@ -459,8 +459,8 @@ if [ "$missing_signatures" -gt 0 ]; then
             esac
             if [ ! -f "$artifact_file.asc" ]; then
                 GNUPGHOME="$SIGN_HOME" gpg --batch --quiet --pinentry-mode loopback \
-                    --passphrase "$PUBLISH_SIGNING_PASSWORD" \
-                    --detach-sign --armor --output "$artifact_file.asc" "$artifact_file"
+                    --passphrase-fd 0 \
+                    --detach-sign --armor --output "$artifact_file.asc" "$artifact_file" <<< "${PUBLISH_SIGNING_PASSWORD:-}"
                 signed_now=$((signed_now + 1))
             fi
         done < <(find "$STAGING_REPO_DIR" -type f -print0)

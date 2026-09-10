@@ -1,9 +1,10 @@
 name: 'Setup Prerequisites'
+description: Install the JDK, Android SDK and Gradle cache for hosted CI.
 runs:
   using: "composite"
   steps:
     - name: Setup JDK 21
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
         java-version: '21'
         distribution: 'jetbrains'
@@ -11,7 +12,7 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
 
     - name: Setup Android SDK
-      uses: android-actions/setup-android@v2
+      uses: android-actions/setup-android@v3
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v4
@@ -25,3 +26,17 @@ runs:
         gradle-home-cache-excludes: |
           caches/jars-9
           caches/transforms-3
+
+    - name: Fit native builds into free macOS runners
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        mkdir -p "$HOME/.gradle"
+        cat >> "$HOME/.gradle/gradle.properties" <<'PROPERTIES'
+        org.gradle.jvmargs=-Xmx3g -XX:+UseParallelGC -Dfile.encoding=UTF-8
+        org.gradle.workers.max=1
+        org.gradle.parallel=false
+        kotlin.compiler.execution.strategy=in-process
+        kotlin.daemon.jvmargs=-Xmx1g
+        kotlin.native.jvmArgs=-Xmx2g
+        PROPERTIES

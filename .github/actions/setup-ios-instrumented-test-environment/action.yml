@@ -1,4 +1,5 @@
 name: 'Setup iOS Instrumented Test Environment'
+description: Prepare Xcode and an iOS simulator for instrumented tests.
 inputs:
   xcode-path:
     description: 'Path to the Xcode app bundle to select.'

@@ -28,7 +28,7 @@ jobs:
         include:
           - os: ubuntu-24.04
             name: Linux
-          - os: macos-26-xlarge
+          - os: macos-26
             name: macOS
           - os: windows-latest
             name: Windows

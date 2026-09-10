@@ -60,10 +60,10 @@ jobs:
         if: always()
 
   compose-ios-tests:
-    runs-on: macos-26-xlarge
+    runs-on: macos-26
     name: iOS
     env:
-      GRADLE_OPTS: -Xmx12g -Dorg.gradle.daemon=false
+      GRADLE_OPTS: -Xmx1g -Dorg.gradle.daemon=false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -87,10 +87,10 @@ jobs:
         if: always()
 
   compose-ios-utils-tests:
-    runs-on: macos-26-xlarge
+    runs-on: macos-26
     name: iOS Utils
     env:
-      GRADLE_OPTS: -Xmx12g -Dorg.gradle.daemon=false
+      GRADLE_OPTS: -Xmx1g -Dorg.gradle.daemon=false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -130,13 +130,13 @@ jobs:
           # Resolve runtime-specific Xcode and runner configuration.
           - runtime: 'ios18'
             runtime_name: 'iOS 18.6'
-            runner: macos-15-xlarge
+            runner: macos-15
             simulator_os: '18.6'
             xcode_path: '/Applications/Xcode_26.3.app'
             xcode_cache_key_suffix: '26.3'
           - runtime: 'ios26'
             runtime_name: 'iOS 26.5'
-            runner: macos-26-xlarge
+            runner: macos-26
             simulator_os: '26.5'
             xcode_path: '/Applications/Xcode_26.5.app'
             xcode_cache_key_suffix: '26.5'
@@ -155,7 +155,7 @@ jobs:
             device: 'iPad Pro 11-inch (M5)'
     name: iOS Instrumented ${{ matrix.runtime_name }} / ${{ matrix.device }}
     env:
-      GRADLE_OPTS: -Xmx12g -Dorg.gradle.daemon=false
+      GRADLE_OPTS: -Xmx1g -Dorg.gradle.daemon=false
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5

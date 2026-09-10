@@ -9,7 +9,7 @@ on:
 
 jobs:
   compose-native-publish:
-    runs-on: macos-26-xlarge
+    runs-on: macos-26
     name: Darwin + Native Linux
     steps:
       - name: Checkout Repository

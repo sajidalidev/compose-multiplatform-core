@@ -9,6 +9,22 @@ artifacts, in three stages: mavenLocal (fast, local, safe to repeat), the closur
 (mandatory gate before trusting a publish), and a staged/signed Central Portal bundle
 (dry-run preparation only — no upload). It never uploads anything itself.
 
+# Current entry points
+
+See `docs/tvos-releasing.md` for the operator instructions.
+
+- Reposilite: `.github/workflows/tvos-reposilite.yml` uses the self-hosted Mac for `tvos-main` (automatic uploads require
+  `REPOSILITE_AUTO_PUBLISH=true`; dispatch can request a build-only rehearsal).
+  `--local-only` builds and audits without Reposilite credentials. `--dry-run` is offline
+  and never probes Reposilite; remote publication checks availability before upload.
+- Maven Central: `scripts/release-central.sh --ledger FILE --plugin-version VERSION`
+  is manual only and rejects CI. Explicit ledger versions are mandatory. It stages a signed
+  bundle, runs strict bundle validation and the consumer probe, and uploads only with
+  `--publish`. `scripts/publish-central.py` performs the manual upload and polls until
+  `PUBLISHED`; it also refuses CI. No GitHub Action publishes to Central.
+- `stage-central-bundle.sh` remains a local staging utility. It creates missing
+  checksums after signing; uploading is the separate manual script above.
+
 # Ledger-driven flow (read this first)
 
 Since 2026-09-04 both scripts are ledger-driven and per-module. There are no version
