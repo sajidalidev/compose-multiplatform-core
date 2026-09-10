@@ -87,6 +87,14 @@ class CentralTests(unittest.TestCase):
 
 
 class ReposiliteTests(unittest.TestCase):
+    def test_reposilite_refuses_ci(self):
+        import os
+        for variable in ('CI', 'GITHUB_ACTIONS'):
+            result = subprocess.run(['bash', str(SCRIPTS / 'publish-tvos-fork-reposilite.sh'), '--local-only', '--dry-run'],
+                                    env=dict(os.environ, **{variable: 'true'}), capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('manual only', result.stderr)
+
     def test_dry_run_needs_no_credentials_and_makes_no_network_calls(self):
         import os
         with tempfile.TemporaryDirectory() as tmp:

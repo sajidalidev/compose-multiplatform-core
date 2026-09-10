@@ -1,65 +1,36 @@
 # Releasing the tvOS core fork
 
-Reposilite is automated. Maven Central is always run manually with explicit versions.
-This setup publishes **compose-multiplatform-core**. The Compose Gradle plugin and the
-redirect plugin remain in their own repositories and keep their own release processes.
+Both Reposilite and Maven Central are manual-only. There is no publishing workflow
+or self-hosted runner. Ordinary PR checks continue on free GitHub-hosted runners.
 
-## Reposilite: your Mac runs the release job
+## Reposilite: run locally
 
-PR checks use free standard GitHub-hosted runners (`ubuntu-24.04`, `windows-latest`,
-`macos-26` and `macos-15`). macOS jobs use smaller heaps and one Gradle worker to fit
-standard Apple Silicon runners. There are no paid `large` or `xlarge` runner labels.
-
-The release workflow requires a repository self-hosted runner with labels
-`self-hosted`, `macOS`, `ARM64`, `tvos-release`. It only runs on pushes to `tvos-main`
-or manual dispatches from that branch; PR workflows do not use this runner.
-
-This Mac's runner is installed separately from the development workspace at:
-`~/Library/Developer/GitHubActions/tvos-release`. Its launchd service starts when the
-user logs in. The Mac must be awake and connected; queued builds wait while it is offline.
-The setup does not change sleep settings or the global Xcode selection.
-
-The runner's `.env` supplies `TVOS_JDK21_HOME`, `ANDROID_HOME` and `ANDROID_SDK_ROOT`.
-CI selects Xcode through `DEVELOPER_DIR`, caches Gradle dependencies in its tool cache,
-and stages Maven artifacts in a fresh temporary directory for each run. Publishing credentials stay in `~/.config/tvos-reposilite.env` on the Mac
-and are loaded only by the upload step. They are not copied into GitHub secrets.
-
-Create the GitHub environment `reposilite`. Optional environment variables:
-
-| Variable | Purpose |
-| --- | --- |
-| `TVOS_XCODE_PATH` | Defaults to `/Applications/Xcode.app` |
-| `REPOSILITE_ENV_FILE` | Alternate path to the local credentials file |
-| `REPOSILITE_AUTO_PUBLISH` | Set to `true` after the first successful rehearsal to enable uploads on pushes |
-
-Start with **Actions → tvOS Reposilite → Run workflow**, choose `tvos-main`, and leave
-`publish` false. Until `REPOSILITE_AUTO_PUBLISH=true`, pushes also build and audit without
-uploading. Manual dispatch with `publish=true` explicitly requests an upload.
-
-Each run appends `-dev.<UTC date>.<run ID>.<attempt>` to the versions in
-`scripts/tvos-versions.sh`. A rerun gets a new version. Publishes are serialized and never
-canceled midway through an upload. Downloadable logs record the source commit, exact
-versions, audit output, and consumer mappings.
-
-A failed build, audit, or remote version check blocks publication. The existing audit's
-version-mismatch warnings remain visible; they are not fixes for missing matching releases.
-
-Runner service controls (run from its installation directory):
-
-```bash
-./svc.sh status
-./svc.sh stop
-./svc.sh start
-```
-
-Local equivalents:
+Use macOS with Xcode and JDK 21. Base library versions are in `scripts/tvos-versions.sh`.
+Choose a new dev suffix for each upload; existing remote versions cannot be overwritten.
 
 ```bash
 export JAVA_HOME=/path/to/jdk-21/Contents/Home
 export ANDROIDX_JDK21="$JAVA_HOME"
+export DEV_SUFFIX=-dev.20260910.1 # example: choose an unused suffix
 bash scripts/publish-tvos-fork-reposilite.sh --local-only --dry-run
 bash scripts/publish-tvos-fork-reposilite.sh --local-only
 ```
+
+The first command only prints the plan. The second builds both tvOS targets and audits
+the dependency closure, without credentials or uploads. For an actual upload:
+
+```bash
+set -a
+source "$HOME/.config/tvos-reposilite.env"
+set +a
+bash scripts/publish-tvos-fork-reposilite.sh
+```
+
+The credentials file supplies `REPOSILITE_URL`, `REPOSILITE_USER`, and `REPOSILITE_TOKEN`.
+The upload command checks version availability, builds, audits, uploads, and verifies
+remote metadata. When `DEV_SUFFIX` is omitted, it selects an unused dated suffix.
+Audit warnings remain visible and do not prove matching stable dependencies exist.
+The script rejects CI execution. Your existing local credentials stay on your Mac.
 
 ## Maven Central: manual, explicit versions
 

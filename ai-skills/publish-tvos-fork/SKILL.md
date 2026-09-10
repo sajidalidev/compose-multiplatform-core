@@ -13,10 +13,9 @@ artifacts, in three stages: mavenLocal (fast, local, safe to repeat), the closur
 
 See `docs/tvos-releasing.md` for the operator instructions.
 
-- Reposilite: `.github/workflows/tvos-reposilite.yml` uses the self-hosted Mac for `tvos-main` (automatic uploads require
-  `REPOSILITE_AUTO_PUBLISH=true`; dispatch can request a build-only rehearsal).
-  `--local-only` builds and audits without Reposilite credentials. `--dry-run` is offline
-  and never probes Reposilite; remote publication checks availability before upload.
+- Reposilite: run `scripts/publish-tvos-fork-reposilite.sh` manually on your Mac.
+  It rejects CI. `--local-only` builds and audits without credentials or uploads;
+  `--dry-run` prints an offline plan. No GitHub publishing workflow or runner is used.
 - Maven Central: `scripts/release-central.sh --ledger FILE --plugin-version VERSION`
   is manual only and rejects CI. Explicit ledger versions are mandatory. It stages a signed
   bundle, runs strict bundle validation and the consumer probe, and uploads only with
