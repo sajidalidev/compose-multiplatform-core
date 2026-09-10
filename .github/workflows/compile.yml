@@ -29,7 +29,7 @@ jobs:
   compose-native-publish:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.sourceSetsIos == 'true' || needs.changes.outputs.sourceSetsNativeNonIos == 'true' || needs.changes.outputs.sourceSetsUnknown == 'true'
-    runs-on: macos-26-xlarge
+    runs-on: macos-26
     name: Darwin + Native Linux
     steps:
       - name: Checkout Repository

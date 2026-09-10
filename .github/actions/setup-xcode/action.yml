@@ -1,4 +1,5 @@
 name: 'Setup Xcode'
+description: Select Xcode and cache DerivedData for hosted Apple-platform CI.
 inputs:
   xcode-path:
     description: 'Path to the Xcode app bundle to select.'

@@ -25,12 +25,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NO_SUFFIX=0
 SKIP_LOCAL_AUDIT=0
 DRY_RUN=0
+LOCAL_ONLY=0
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [--no-suffix] [--skip-local-audit] [--dry-run] [-h|--help]
+Usage: $(basename "$0") [--local-only] [--no-suffix] [--skip-local-audit] [--dry-run] [-h|--help]
 
-Required environment:
+Required environment for remote publishing (not --local-only or --dry-run):
   REPOSILITE_URL     full repository URL, e.g. https://maven.example.com/releases
   REPOSILITE_USER    Reposilite user name
   REPOSILITE_TOKEN   Reposilite token (never echoed)
@@ -42,6 +43,7 @@ Optional environment:
                      refused before the build starts.
 
 Flags:
+  --local-only        build and audit locally without credentials or Reposilite probes.
   --no-suffix          publish the exact pinned versions with no dev qualifier.
                        Only allowed on a release-*-tvos* or tvos-main branch.
   --skip-local-audit   skip the mavenLocal rehearsal + closure audit.
@@ -51,6 +53,7 @@ EOF
 
 while [ $# -gt 0 ]; do
     case "$1" in
+        --local-only) LOCAL_ONLY=1 ;;
         --no-suffix) NO_SUFFIX=1 ;;
         --skip-local-audit) SKIP_LOCAL_AUDIT=1 ;;
         --dry-run) DRY_RUN=1 ;;
@@ -87,13 +90,22 @@ if ! "$JDK21_HOME/bin/java" -version 2>&1 | grep -q 'version "21'; then
     exit 1
 fi
 
-for var in REPOSILITE_URL REPOSILITE_USER REPOSILITE_TOKEN; do
-    if [ -z "${!var:-}" ]; then
-        echo "ERROR: $var is required but not set." >&2
-        usage >&2
-        exit 1
-    fi
-done
+if [ "$LOCAL_ONLY" = "1" ] && [ "$SKIP_LOCAL_AUDIT" = "1" ]; then
+    echo "ERROR: --local-only cannot be combined with --skip-local-audit." >&2
+    exit 1
+fi
+if [ "$LOCAL_ONLY" = "0" ] && [ "$DRY_RUN" = "0" ]; then
+    for var in REPOSILITE_URL REPOSILITE_USER REPOSILITE_TOKEN; do
+        if [ -z "${!var:-}" ]; then
+            echo "ERROR: $var is required but not set." >&2
+            usage >&2
+            exit 1
+        fi
+    done
+fi
+
+REPOSILITE_URL="${REPOSILITE_URL:-https://maven.example.com/releases}"
+REPOSILITE_USER="${REPOSILITE_USER:-<not-required>}"
 
 # Strip a trailing slash so the verification URLs below concatenate cleanly.
 REPOSILITE_URL="${REPOSILITE_URL%/}"
@@ -145,6 +157,9 @@ runtime_pom_url() {
 
 if [ "$NO_SUFFIX" = "1" ]; then
     DEV_SUFFIX=""
+elif [ "$LOCAL_ONLY" = "1" ] || [ "$DRY_RUN" = "1" ]; then
+    DEV_SUFFIX="${DEV_SUFFIX:--dev.$(date +%Y%m%d).1}"
+    echo "Local plan: $DEV_SUFFIX (remote availability has not been checked)."
 elif [ -n "${DEV_SUFFIX:-}" ]; then
     # Explicit suffix: a Reposilite release repository answers 409 on redeploy, which would
     # only surface after the (long) build. Refuse up front instead.
@@ -159,7 +174,8 @@ elif [ -n "${DEV_SUFFIX:-}" ]; then
         exit 1
     fi
     if [ "$STATUS" = "000" ]; then
-        echo "WARNING: $REPOSILITE_URL is unreachable; skipping the collision check." >&2
+        echo "ERROR: $REPOSILITE_URL is unreachable; cannot check version availability." >&2
+        exit 1
     fi
 else
     DATE_STAMP="$(date +%Y%m%d)"
@@ -225,6 +241,13 @@ COMMON_ARGS=(
     "${VERSION_PROPS[@]}"
 )
 
+# Keep self-hosted CI output separate from the developer's Maven local repository.
+AUDIT_ARGS=(--group-prefix dev/sajidali)
+if [ -n "${TVOS_MAVEN_LOCAL:-}" ]; then
+    COMMON_ARGS+=("-Dmaven.repo.local=$TVOS_MAVEN_LOCAL")
+    AUDIT_ARGS+=(--repo-root "$TVOS_MAVEN_LOCAL")
+fi
+
 echo "About to publish to Reposilite with:"
 echo "  repository     = $REPOSILITE_URL"
 echo "  user           = $REPOSILITE_USER"
@@ -251,10 +274,12 @@ if [ "$DRY_RUN" = "1" ]; then
         echo "  (c) skipped (--skip-local-audit)"
     else
         echo "  (c) ./gradlew -p mpp publishComposeJbToMavenLocal ${COMMON_ARGS[*]}"
-        echo "      python3 scripts/audit-tvos-closure.py --group-prefix dev/sajidali"
+        echo "      python3 scripts/audit-tvos-closure.py ${AUDIT_ARGS[*]}"
     fi
     echo
-    echo "  (d) ./gradlew -p mpp publishComposeJbToRemote ${COMMON_ARGS[*]}"
+    if [ "$LOCAL_ONLY" = "0" ]; then
+        echo "  (d) ./gradlew -p mpp publishComposeJbToRemote ${COMMON_ARGS[*]}"
+    fi
     echo
     exit 0
 fi
@@ -281,8 +306,13 @@ else
     echo "Step 2/3: auditing the local dependency closure..."
     (
         cd "$ROOT_DIR"
-        python3 scripts/audit-tvos-closure.py --group-prefix dev/sajidali
+        python3 scripts/audit-tvos-closure.py "${AUDIT_ARGS[@]}"
     )
+fi
+
+if [ "$LOCAL_ONLY" = "1" ]; then
+    echo "Local rehearsal and closure audit passed. Nothing uploaded."
+    exit 0
 fi
 
 # ------------------------------------------------------------ (d) publish
