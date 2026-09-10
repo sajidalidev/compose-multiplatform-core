@@ -6,9 +6,24 @@
 ## THIS SCRIPT NEVER UPLOADS ANYTHING TO MAVEN CENTRAL. It stops after producing a bundle
 ## zip on local disk and printing (as inert, commented-out text) the curl command that
 ## WOULD upload it. There is no flag, environment variable, or code path in this script
-## that performs the upload -- see the hard refusal check right after the usage banner.
+## that performs the upload -- see the hard refusal check right after argument parsing.
 ## Actually uploading is a separate, explicit, human-run step (see "Manual next step"
 ## printed at the end).
+##
+## Ledger-driven and per-module, exactly like scripts/publish-tvos-fork.sh: versions come
+## ONLY from the release ledger (`--ledger` or $TVOS_LEDGER), the module list comes from
+## scripts/publish_set.py, and the bundle is assembled from that explicit module list (the
+## umbrella plus one leaf per tvOS target, at the ledger version) rather than from whatever
+## happens to sit in ~/.m2 at a version directory name.
+##
+## Usage:
+##   stage-central-bundle.sh [--ledger <json>] [--only-group <org.jetbrains group>[,...]]
+##                           [--modules <:path>[,<:path>...]] [--force-modules]
+##                           [--include-tests] [--include-tooling-preview] [--ignore-central]
+##                           [--clean] [--dry-run]
+##   --clean deletes a previous build/central-staging-repo + central-bundle.zip first;
+##   without it a previous bundle is left alone and the script refuses to overwrite it.
+##   --dry-run prints the Gradle command and the intended bundle contents, runs nothing.
 ##
 ## ---------------------------------------------------------------------------------------
 ## Prerequisites (the user provides these; this script only READS them, never stores them):
@@ -73,7 +88,7 @@
 ##     `.../ui-tvosarm64/1.12.0-beta01/`) shows `.jar`/`.klib`, `-sources.jar`, `.module`,
 ##     `.pom` -- and NO `-javadoc.jar` anywhere, for either the JVM-style umbrella artifact
 ##     or the native tvOS variant artifact. `MavenUploadHelper.kt` (read directly for this
-##     task) has no javadoc-jar generation logic at all. Step 3 below generates a trivial,
+##     task) has no javadoc-jar generation logic at all. Step 2 below generates a trivial,
 ##     empty (single placeholder text file) javadoc jar for every module directory found to
 ##     be missing one -- this is the standard, Sonatype-sanctioned workaround for
 ##     non-Java-doc-able artifacts (native klibs, resource-only modules, etc.); it satisfies
@@ -88,39 +103,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$ROOT_DIR/scripts"
 STAGING_REPO_DIR="$ROOT_DIR/build/central-staging-repo"
 JAVADOC_STAGING_DIR="$ROOT_DIR/build/central-staging-javadoc-stubs"
 BUNDLE_ZIP="$ROOT_DIR/build/central-bundle.zip"
 
-# Same version pins as scripts/publish-tvos-fork.sh (kept in sync manually -- see that
-# script's own header comment for the libraryversions.toml provenance note).
-VERSION_COMPOSE="1.12.0-beta01"
-VERSION_COMPOSE_MATERIAL3="1.5.0-alpha22"
-VERSION_COMPOSE_MATERIAL3_ADAPTIVE="1.3.0-beta02"
-VERSION_NAVIGATION="2.10.0-alpha05"
-VERSION_NAVIGATION_3="1.2.0-alpha04"
-VERSION_WINDOW="1.6.0-alpha02"
-VERSION_TV_MATERIAL="1.1.0-alpha01"
-
-COORDINATE_ROOT="dev.sajidali"
-LIBRARIES="COMPOSE,COMPOSE_MATERIAL3,COMPOSE_MATERIAL3_ADAPTIVE,NAVIGATION,NAVIGATION_3,WINDOW,TV_MATERIAL"
-PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
-
-# NOTE on "8 libraries": this script's own -Pjetbrains.publication.libraries set (above,
-# matching publish-tvos-fork.sh) now covers 7 JetBrainsPublication library keys (COMPOSE_
-# MATERIAL3_ADAPTIVE and WINDOW were added in task 18b/18a respectively, TV_MATERIAL in task
-# 23a; LIFECYCLE, NAVIGATION_EVENT and SAVEDSTATE were dropped 2026-09-02 after upstream #3357
-# removed them from fork mode -- see publish-tvos-fork.sh's header). The `dev.sajidali.compose:compose-gradle-plugin`
-# artifact (the tvOS-patched org.jetbrains.compose Gradle plugin fork, referenced by
-# task-9a/9b and already present in this machine's mavenLocal at 1.12.0-beta01) is built and
-# published from a DIFFERENT repository than this one (compose-multiplatform-core has no
-# compose-gradle-plugin subproject) -- it is NOT something this script can stage. If the task
-# brief's "8 libraries" count is meant to include it, that component needs its own staging
-# script in whichever repo actually builds it; flagged here rather than silently fabricated.
-
-## --- Hard refusal: this script NEVER uploads, no matter what flag is passed. ---------
-for arg in "$@"; do
-    case "$arg" in
+LEDGER="${TVOS_LEDGER:-}"
+MODULES_OVERRIDE=""
+FORCE_MODULES=0
+DRY_RUN=0
+CLEAN=0
+PSET_ARGS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        ## --- Hard refusal: this script NEVER uploads, no matter what flag is passed. -----
         --upload|--publish|--push)
             echo "REFUSED: stage-central-bundle.sh does not perform uploads under any flag." >&2
             echo "This is intentional (Phase 5 gate: Central Portal upload requires explicit," >&2
@@ -128,8 +124,37 @@ for arg in "$@"; do
             echo "section this script prints on a successful run for the actual command." >&2
             exit 1
             ;;
+        --ledger) LEDGER="$2"; shift 2 ;;
+        --ledger=*) LEDGER="${1#--ledger=}"; shift ;;
+        --only-group)
+            for g in ${2//,/ }; do PSET_ARGS+=(--only-group "$g"); done; shift 2 ;;
+        --only-group=*)
+            v="${1#--only-group=}"
+            for g in ${v//,/ }; do PSET_ARGS+=(--only-group "$g"); done; shift ;;
+        --modules) MODULES_OVERRIDE="$2"; shift 2 ;;
+        --modules=*) MODULES_OVERRIDE="${1#--modules=}"; shift ;;
+        --force-modules) FORCE_MODULES=1; shift ;;
+        --include-tests|--include-tooling-preview|--ignore-central) PSET_ARGS+=("$1"); shift ;;
+        --clean) CLEAN=1; shift ;;
+        --dry-run) DRY_RUN=1; shift ;;
+        -h|--help) sed -n '/^## Usage:/,/^##$/p' "$0" | sed 's/^## \{0,1\}//'; exit 0 ;;
+        *) echo "ERROR: unknown argument: $1" >&2; exit 2 ;;
     esac
 done
+
+if [ -z "$LEDGER" ]; then
+    echo "ERROR: no ledger. Pass --ledger <json> or export TVOS_LEDGER." >&2
+    echo "  (compose-tvos-redirect/tools/release/release-ledger/<version>.json)" >&2
+    exit 1
+fi
+if [ ! -f "$LEDGER" ]; then
+    echo "ERROR: ledger not found: $LEDGER" >&2
+    exit 1
+fi
+
+COORDINATE_ROOT="dev.sajidali"
+PLATFORMS="KotlinMultiplatform,TvosArm64,TvosSimulatorArm64"
+M2_REPO="${HOME}/.m2/repository"
 
 echo "=== Step 0: preconditions ==="
 if [ ! -x "$ROOT_DIR/gradlew" ]; then
@@ -138,8 +163,12 @@ if [ ! -x "$ROOT_DIR/gradlew" ]; then
 fi
 JDK21_HOME="${ANDROIDX_JDK21:-${JAVA_HOME:-}}"
 if [ -z "$JDK21_HOME" ] || [ ! -x "$JDK21_HOME/bin/java" ] || ! "$JDK21_HOME/bin/java" -version 2>&1 | grep -q 'version "21'; then
-    echo "ERROR: JDK 21 required (ANDROIDX_JDK21/JAVA_HOME). See publish-tvos-fork.sh's own check." >&2
-    exit 1
+    if [ "$DRY_RUN" -eq 1 ]; then
+        echo "WARNING (dry-run, not fatal): JDK 21 required (ANDROIDX_JDK21/JAVA_HOME)." >&2
+    else
+        echo "ERROR: JDK 21 required (ANDROIDX_JDK21/JAVA_HOME). See publish-tvos-fork.sh's own check." >&2
+        exit 1
+    fi
 fi
 if [ -z "${PUBLISH_SIGNING_KEY:-}" ]; then
     echo "WARNING: PUBLISH_SIGNING_KEY is not set -- Step 1 will publish UNSIGNED artifacts" >&2
@@ -150,8 +179,109 @@ if [ -z "${PUBLISH_SIGNING_KEY:-}" ]; then
     echo "         before treating a successful run of this script as upload-ready." >&2
 fi
 
-rm -rf "$STAGING_REPO_DIR" "$JAVADOC_STAGING_DIR" "$BUNDLE_ZIP"
-mkdir -p "$STAGING_REPO_DIR" "$JAVADOC_STAGING_DIR"
+# A previous bundle is only removed on --clean; otherwise it is left untouched and this run
+# refuses to build on top of (or silently replace) it.
+previous_outputs=""
+for f in "$STAGING_REPO_DIR" "$JAVADOC_STAGING_DIR" "$BUNDLE_ZIP"; do
+    [ -e "$f" ] && previous_outputs="$previous_outputs $f"
+done
+if [ -n "$previous_outputs" ]; then
+    if [ "$CLEAN" -eq 1 ]; then
+        echo "  --clean: removing previous outputs:$previous_outputs"
+        [ "$DRY_RUN" -eq 1 ] || rm -rf "$STAGING_REPO_DIR" "$JAVADOC_STAGING_DIR" "$BUNDLE_ZIP"
+    else
+        echo "ERROR: previous bundle outputs exist:$previous_outputs" >&2
+        echo "       Re-run with --clean to delete them, or move them aside first." >&2
+        [ "$DRY_RUN" -eq 1 ] || exit 1
+        echo "       (dry-run: continuing anyway)" >&2
+    fi
+fi
+
+# Derive the publish set. publish_set.py exits non-zero (and prints why) when any library
+# key the build registers has no version in the ledger; the eval below then never runs.
+echo "=== Step 0b: publish set (from ledger) ==="
+python3 "$SCRIPT_DIR/publish_set.py" --ledger "$LEDGER" --format table ${PSET_ARGS[@]+"${PSET_ARGS[@]}"}
+shell_out="$(python3 "$SCRIPT_DIR/publish_set.py" --ledger "$LEDGER" --format shell ${PSET_ARGS[@]+"${PSET_ARGS[@]}"})" || exit 1
+eval "$shell_out"
+# eval defines: LEDGER_FILE LEDGER_CMP_VERSION LEDGER_KOTLIN VERSION_PROPS[] PUBLISH_LIBRARIES
+#               PUBLISH_MODULES[] PUBLISH_COORDS[] UNBUILDABLE_COORDS[]
+
+# MODULES and COORDS stay index-aligned: COORDS[i] is the org.jetbrains coordinate that
+# MODULES[i] publishes (group rewritten to $COORDINATE_ROOT below when locating output).
+MODULES=(${PUBLISH_MODULES[@]+"${PUBLISH_MODULES[@]}"})
+COORDS=(${PUBLISH_COORDS[@]+"${PUBLISH_COORDS[@]}"})
+if [ -n "$MODULES_OVERRIDE" ]; then
+    MODULES=()
+    COORDS=()
+    for m in ${MODULES_OVERRIDE//,/ }; do
+        found=""
+        i=0
+        for p in ${PUBLISH_MODULES[@]+"${PUBLISH_MODULES[@]}"}; do
+            [ "$p" = "$m" ] && found="${PUBLISH_COORDS[$i]}"
+            i=$((i + 1))
+        done
+        if [ -z "$found" ]; then
+            if [ "$FORCE_MODULES" -eq 1 ]; then
+                echo "!!! WARNING: $m is NOT in the ledger-derived publish set; staging it anyway" >&2
+                echo "!!!          because --force-modules was given. Its upstream either already ships" >&2
+                echo "!!!          usable tvOS klibs, or its dev.sajidali twin is already on Central," >&2
+                echo "!!!          or it is on the NEVER_PUBLISH list. Central will reject a re-upload." >&2
+                # No ledger coordinate for a forced module: derive it from the project path the
+                # same way JetBrainsPublication.mavenGroupFor does, with the library version
+                # looked up by asking publish_set.py for the ignore-central view.
+                found="$(python3 "$SCRIPT_DIR/publish_set.py" --ledger "$LEDGER" --format json --ignore-central --include-tests --include-tooling-preview \
+                    | python3 -c 'import json,sys; m=sys.argv[1]; r=json.load(sys.stdin); print(next(("%s:%s:%s"%(p["group"],p["artifact"],p["version"]) for p in r["publish"] if p["project"]==m), ""))' "$m")"
+                if [ -z "$found" ]; then
+                    echo "ERROR: $m has no coordinate in the ledger at all; cannot stage it." >&2
+                    exit 1
+                fi
+            else
+                echo "ERROR: --modules entry $m is not in the derived publish set (see table above)." >&2
+                echo "       Pass --force-modules to override, or --ignore-central for a rebuild view." >&2
+                exit 1
+            fi
+        fi
+        MODULES+=("$m")
+        COORDS+=("$found")
+    done
+fi
+if [ "${#MODULES[@]}" -eq 0 ]; then
+    echo "ERROR: nothing to stage: every ledger artifact is either usable upstream, already" >&2
+    echo "       on Central as dev.sajidali, or on NEVER_PUBLISH. Use --ignore-central to see" >&2
+    echo "       the full rebuild set, or --modules with --force-modules." >&2
+    exit 1
+fi
+
+# Per-module task set: mirrors what ComposePublishingTask.publishMultiplatform wires into the
+# aggregate (publish<Platform>PublicationToMavenLocal for KotlinMultiplatform plus each
+# requested target, then jbVerifyDependencyVersions), just for the modules chosen here.
+TASKS=()
+for m in "${MODULES[@]}"; do
+    for p in ${PLATFORMS//,/ }; do
+        TASKS+=("$m:publish${p}PublicationToMavenLocal")
+    done
+    TASKS+=("$m:jbVerifyDependencyVersions")
+done
+
+# Intended bundle contents: for each module, the umbrella directory plus one leaf directory
+# per native target (<artifact>-<target lowercased>), all at the ledger version, under the
+# $COORDINATE_ROOT-rewritten group. This list, not a `find -name <version>` over ~/.m2, is
+# what Step 1b copies: ~/.m2/dev/sajidali also holds every previously released version and
+# other fork groups, and Central rejects any coordinate it has already published.
+BUNDLE_DIRS=()
+i=0
+for c in "${COORDS[@]}"; do
+    group="${c%%:*}"; rest="${c#*:}"; artifact="${rest%%:*}"; version="${rest#*:}"
+    group="${group/#org.jetbrains./$COORDINATE_ROOT.}"
+    group_path="${group//.//}"
+    BUNDLE_DIRS+=("$group_path/$artifact/$version")
+    for p in ${PLATFORMS//,/ }; do
+        [ "$p" = "KotlinMultiplatform" ] && continue
+        leaf="$(printf '%s' "$p" | tr '[:upper:]' '[:lower:]')"
+        BUNDLE_DIRS+=("$group_path/$artifact-$leaf/$version")
+    done
+    i=$((i + 1))
+done
 
 # --- Step 1 mechanism note ---
 # MavenUploadHelper.kt's `configureMavenArtifactUpload` registers exactly two named
@@ -159,85 +289,96 @@ mkdir -p "$STAGING_REPO_DIR" "$JAVADOC_STAGING_DIR"
 # pointed at AndroidX's own internal out/repository staging directory -- not something
 # this script's -Ppublish.maven.url can redirect, since that property only ever adds a
 # SEPARATE, named "Remote" repository) and MavenLocal (via the standard maven-publish
-# plugin mechanism, task suffix "ToMavenLocal"). `mpp/build.gradle.kts` only pre-registers
-# aggregate tasks for the latter two ("publishComposeJb" -> the internal MavenRepository,
-# "publishComposeJbToMavenLocal" -> real ~/.m2) -- there is no pre-registered aggregate
-# task wired to a custom "Remote"/file:// URL, and adding one would be a build-logic change
+# plugin mechanism, task suffix "ToMavenLocal"). There is no pre-registered publish task
+# wired to a custom "Remote"/file:// URL, and adding one would be a build-logic change
 # outside this script's scope.
 #
-# So: reuse `publishComposeJbToMavenLocal` -- the exact task scripts/publish-tvos-fork.sh
-# already uses and task-8c already proved works end-to-end (BUILD SUCCESSFUL, full closure
-# audit clean) -- with signing properties added (signing applies to every MavenPublication
-# regardless of which repository task publishes it, so real ~/.m2 output IS signed when
-# PUBLISH_SIGNING_KEY is set). Step 1b below then copies ONLY the newly-published
-# `dev/sajidali/**` subtree out of ~/.m2 into an isolated staging directory -- this both
-# gives us the same "local file:// repo, ready to zip" shape the Central Portal bundle
-# needs AND avoids ever bundling unrelated, pre-existing ~/.m2 content (other groups this
-# machine's mavenLocal happens to also contain -- see task-10c/10-report's own documented
-# mavenLocal-pollution concern).
-echo "=== Step 1: signed publish to mavenLocal (real ~/.m2, same task as publish-tvos-fork.sh) ==="
+# So: run the same per-module ...ToMavenLocal tasks scripts/publish-tvos-fork.sh uses, with
+# signing properties added (signing applies to every MavenPublication regardless of which
+# repository task publishes it, so real ~/.m2 output IS signed when PUBLISH_SIGNING_KEY is
+# set). Step 1b below then copies ONLY the explicit module directories out of ~/.m2 into an
+# isolated staging directory -- this both gives us the same "local file:// repo, ready to
+# zip" shape the Central Portal bundle needs AND avoids ever bundling unrelated,
+# pre-existing ~/.m2 content.
+#
+# --no-configuration-cache is REQUIRED here, not an optimisation. Several fork-mode
+# publishing decisions live in mutable state on Kotlin `object`s that is assigned during
+# configuration -- JetBrainsPublication.coordinateRoot most importantly, which
+# jbVerifyDependencyVersions reads from an execution-time onlyIf. A build that REUSES a
+# configuration cache entry in a fresh daemon never re-runs configuration, so those objects
+# hold their defaults ("org.jetbrains") and the publish fails with e.g.
+#   Project with version 1.12.0 may not take a dependency on less-stable artifact
+#   dev.sajidali.androidx.navigation:navigation-compose:2.10.0-alpha05
+# which is exactly the verbatim upstream pin a fork republish is meant to carry. A warm
+# daemon hides it (the object still holds the previously configured value), so this only
+# bites on the first publish after a daemon restart. Reproduced and confirmed 2026-09-01.
+GRADLE_CMD=(./gradlew -p mpp "${TASKS[@]}" --no-configuration-cache
+    -Ppublication.coordinateRoot="$COORDINATE_ROOT"
+    "-Pcompose.platforms=$PLATFORMS"
+    -Pjetbrains.publication.libraries="$PUBLISH_LIBRARIES"
+    "${VERSION_PROPS[@]}")
+SIGNING_ARGS=()
+SIGNING_ARGS_SHOWN=()
+if [ -n "${PUBLISH_SIGNING_KEY:-}" ]; then
+    SIGNING_ARGS+=(-Ppublish.signing.key="$PUBLISH_SIGNING_KEY")
+    SIGNING_ARGS_SHOWN+=('-Ppublish.signing.key=<PUBLISH_SIGNING_KEY>')
+fi
+if [ -n "${PUBLISH_SIGNING_PASSWORD:-}" ]; then
+    SIGNING_ARGS+=(-Ppublish.signing.password="$PUBLISH_SIGNING_PASSWORD")
+    SIGNING_ARGS_SHOWN+=('-Ppublish.signing.password=<PUBLISH_SIGNING_PASSWORD>')
+fi
+
+echo
+echo "Plan:"
+echo "  ledger         = $LEDGER_FILE (CMP $LEDGER_CMP_VERSION, Kotlin $LEDGER_KOTLIN)"
+echo "  coordinateRoot = $COORDINATE_ROOT"
+echo "  platforms      = $PLATFORMS"
+echo "  modules        = ${MODULES[*]}"
+echo "  signing        = $([ -n "${PUBLISH_SIGNING_KEY:-}" ] && echo yes || echo no)"
+echo "  versions:"
+for v in "${VERSION_PROPS[@]}"; do echo "    ${v#-Pjetbrains.publication.version.}"; done
+echo
+echo "Gradle command (cwd $ROOT_DIR):"
+printf '  %q' "${GRADLE_CMD[@]}" ${SIGNING_ARGS_SHOWN[@]+"${SIGNING_ARGS_SHOWN[@]}"}; echo
+echo
+echo "Intended bundle contents ($STAGING_REPO_DIR, ${#BUNDLE_DIRS[@]} module dirs):"
+for d in "${BUNDLE_DIRS[@]}"; do
+    if [ -d "$M2_REPO/$d" ]; then state="present in ~/.m2"; else state="not yet in ~/.m2"; fi
+    echo "  $d  ($state)"
+done
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo
+    echo "=== DRY RUN: no Gradle invoked, nothing copied, no bundle written ==="
+    exit 0
+fi
+
+mkdir -p "$STAGING_REPO_DIR" "$JAVADOC_STAGING_DIR"
+
+echo "=== Step 1: signed publish to mavenLocal (real ~/.m2, same tasks as publish-tvos-fork.sh) ==="
 (
     cd "$ROOT_DIR"
-    # --no-configuration-cache is REQUIRED here, not an optimisation. Several fork-mode
-    # publishing decisions live in mutable state on Kotlin `object`s that is assigned during
-    # configuration -- JetBrainsPublication.coordinateRoot most importantly, which
-    # jbVerifyDependencyVersions reads from an execution-time onlyIf. A build that REUSES a
-    # configuration cache entry in a fresh daemon never re-runs configuration, so those objects
-    # hold their defaults ("org.jetbrains") and the publish fails with e.g.
-    #   Project with version 1.12.0 may not take a dependency on less-stable artifact
-    #   dev.sajidali.androidx.navigation:navigation-compose:2.10.0-alpha05
-    # which is exactly the verbatim upstream pin a fork republish is meant to carry. A warm
-    # daemon hides it (the object still holds the previously configured value), so this only
-    # bites on the first publish after a daemon restart. Reproduced and confirmed 2026-09-01.
-    ./gradlew -p mpp publishComposeJbToMavenLocal --no-configuration-cache \
-        -Ppublication.coordinateRoot="$COORDINATE_ROOT" \
-        "-Pcompose.platforms=$PLATFORMS" \
-        -Pjetbrains.publication.libraries="$LIBRARIES" \
-        -Pjetbrains.publication.version.COMPOSE="$VERSION_COMPOSE" \
-        -Pjetbrains.publication.version.COMPOSE_MATERIAL3="$VERSION_COMPOSE_MATERIAL3" \
-        -Pjetbrains.publication.version.COMPOSE_MATERIAL3_ADAPTIVE="$VERSION_COMPOSE_MATERIAL3_ADAPTIVE" \
-        -Pjetbrains.publication.version.NAVIGATION="$VERSION_NAVIGATION" \
-        -Pjetbrains.publication.version.NAVIGATION_3="$VERSION_NAVIGATION_3" \
-        -Pjetbrains.publication.version.WINDOW="$VERSION_WINDOW" \
-        -Pjetbrains.publication.version.TV_MATERIAL="$VERSION_TV_MATERIAL" \
-        ${PUBLISH_SIGNING_KEY:+-Ppublish.signing.key="$PUBLISH_SIGNING_KEY"} \
-        ${PUBLISH_SIGNING_PASSWORD:+-Ppublish.signing.password="$PUBLISH_SIGNING_PASSWORD"}
+    "${GRADLE_CMD[@]}" ${SIGNING_ARGS[@]+"${SIGNING_ARGS[@]}"}
 )
 
-echo "=== Step 1b: copy dev/sajidali/** out of ~/.m2 into an isolated staging repo ==="
-M2_REPO="${HOME}/.m2/repository"
-echo "  from: $M2_REPO/dev/sajidali"
-echo "  to:   $STAGING_REPO_DIR/dev/sajidali"
-mkdir -p "$STAGING_REPO_DIR/dev"
-# Scope the copy to the versions actually published by THIS run (one version directory
-# per library in $LIBRARIES). ~/.m2/dev/sajidali also holds every previously released
-# version (earlier release sets, koin, coil3, tv-material, ...) and Central rejects a bundle
-# that re-uploads any already-published coordinate, so a blanket copy is never correct.
-staged_versions=""
-for lib in ${LIBRARIES//,/ }; do
-    eval "v=\${VERSION_$lib}"
-    staged_versions="$staged_versions $v"
+echo "=== Step 1b: copy the explicit module directories out of ~/.m2 into an isolated staging repo ==="
+echo "  from: $M2_REPO"
+echo "  to:   $STAGING_REPO_DIR"
+missing_dirs=0
+for d in "${BUNDLE_DIRS[@]}"; do
+    if [ ! -d "$M2_REPO/$d" ]; then
+        echo "  MISSING after publish: $M2_REPO/$d" >&2
+        missing_dirs=$((missing_dirs + 1))
+        continue
+    fi
+    mkdir -p "$STAGING_REPO_DIR/$(dirname "$d")"
+    cp -R "$M2_REPO/$d" "$STAGING_REPO_DIR/$d"
 done
-echo "  versions in scope:$staged_versions"
-# Artifacts this repository does NOT build must never be swept into this bundle even when
-# they share a version directory name: `dev.sajidali.compose.components:components-resources*`
-# and `dev.sajidali.compose:compose-gradle-plugin` are built and staged by the SEPARATE
-# compose-multiplatform repo (its own scripts/stage-central-bundle.sh). Both bundles are
-# uploaded to Central independently, and Central rejects a coordinate that a previous bundle
-# already published -- so a module appearing in both bundles breaks the second upload.
-skipped_foreign=0
-for v in $staged_versions; do
-    while IFS= read -r -d '' vdir; do
-        rel="${vdir#$M2_REPO/}"
-        case "$rel" in
-            dev/sajidali/compose/components/*|dev/sajidali/compose/compose-gradle-plugin/*)
-                skipped_foreign=$((skipped_foreign + 1)); continue ;;
-        esac
-        mkdir -p "$STAGING_REPO_DIR/$(dirname "$rel")"
-        cp -R "$vdir" "$STAGING_REPO_DIR/$rel"
-    done < <(find "$M2_REPO/dev/sajidali" -type d -name "$v" -print0)
-done
-echo "  module dirs skipped (built by the compose-multiplatform repo): $skipped_foreign"
+if [ "$missing_dirs" -gt 0 ]; then
+    echo "ERROR: $missing_dirs expected module directory(ies) were not produced by Step 1." >&2
+    exit 1
+fi
+echo "  module dirs staged: ${#BUNDLE_DIRS[@]}"
 
 echo "=== Step 2: validate bundle completeness (+ generate stub javadoc jars) ==="
 missing_sources=0
@@ -246,10 +387,10 @@ generated_javadoc=0
 
 # One iteration per published module directory (identified by its .pom file) --
 # a module directory holds one version of one artifact, e.g.
-# dev/sajidali/compose/ui/ui-tvosarm64/1.12.0-beta01/.
+# dev/sajidali/compose/ui/ui-tvosarm64/1.12.0/.
 while IFS= read -r -d '' pom_file; do
     module_dir="$(dirname "$pom_file")"
-    base="${pom_file%.pom}"          # .../ui-tvosarm64-1.12.0-beta01
+    base="${pom_file%.pom}"          # .../ui-tvosarm64-1.12.0
     artifact_base="$(basename "$base")"
 
     # pom-packaging components (e.g. Gradle plugin markers) are POM-only by design;
@@ -268,11 +409,11 @@ while IFS= read -r -d '' pom_file; do
 
     if [ "$pom_only" -eq 0 ] && [ ! -f "$base-javadoc.jar" ]; then
         stub_readme="$JAVADOC_STAGING_DIR/README-$artifact_base.txt"
-        cat > "$stub_readme" <<EOF
+        cat > "$stub_readme" <<STUB
 No API documentation is generated for this Kotlin/Native or resource-only artifact.
 This placeholder javadoc jar exists solely to satisfy Maven Central Portal's bundle
 validation, which requires a -javadoc.jar to be present for every published component.
-EOF
+STUB
         jar cf "$base-javadoc.jar" -C "$JAVADOC_STAGING_DIR" "README-$artifact_base.txt"
         echo "  Generated stub javadoc jar: $base-javadoc.jar"
         generated_javadoc=$((generated_javadoc + 1))
@@ -381,7 +522,7 @@ echo
 echo "# curl --request POST \\"
 echo "#   --header \"Authorization: Bearer \$CENTRAL_TOKEN\" \\"
 echo "#   --form bundle=@\"$BUNDLE_ZIP\" \\"
-echo "#   \"https://central.sonatype.com/api/v1/publisher/upload?name=dev.sajidali-compose-tvos-fork-$VERSION_COMPOSE&publishingType=USER_MANAGED\""
+echo "#   \"https://central.sonatype.com/api/v1/publisher/upload?name=dev.sajidali-compose-tvos-fork-$LEDGER_CMP_VERSION&publishingType=USER_MANAGED\""
 echo
 echo "(USER_MANAGED means the upload lands in Central Portal's review UI for manual"
 echo "'Publish' confirmation rather than auto-publishing on validation success -- an extra,"

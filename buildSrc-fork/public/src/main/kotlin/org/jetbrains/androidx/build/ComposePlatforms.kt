@@ -5,11 +5,10 @@
 package org.jetbrains.androidx.build
 
 import java.util.*
-import org.gradle.api.Project
 
 /**
- * The name or alternative names can be used in gradle.properties of the modules (in arbitrary case).
- * That means we need to be careful if/when renaming or deleting any enum value or its name.
+ * The name or alternative names can be used in gradle.properties of the modules (in arbitrary
+ * case). That means we need to be careful if/when renaming or deleting any enum value or its name.
  */
 enum class ComposePlatforms(vararg val alternativeNames: String) {
     KotlinMultiplatform("Common", "Metadata"),
@@ -27,8 +26,7 @@ enum class ComposePlatforms(vararg val alternativeNames: String) {
     WatchosSimulatorArm64("WatchOs"),
     LinuxX64("Linux"),
     LinuxArm64("Linux"),
-    MingwX64("Mingw"),
-    ;
+    MingwX64("Mingw");
 
     private val namesLowerCased by lazy {
         listOf(name, *alternativeNames).map { it.lowercase() }.toSet()
@@ -43,61 +41,36 @@ enum class ComposePlatforms(vararg val alternativeNames: String) {
         listOf(name, *alternativeNames).any { it.equals(nameCandidate, ignoreCase = true) }
 
     companion object {
-        val JVM_BASED = EnumSet.of(
-            Desktop,
-            Android
-        )
+        val JVM_BASED = EnumSet.of(Desktop, Android)
 
-        val IOS = EnumSet.of(
-            IosArm64,
-            IosSimulatorArm64
-        )
+        val IOS = EnumSet.of(IosArm64, IosSimulatorArm64)
 
-        val TV_OS = EnumSet.of(
-            TvosArm64,
-            TvosSimulatorArm64
-        )
+        val TV_OS = EnumSet.of(TvosArm64, TvosSimulatorArm64)
 
-        val WATCH_OS = EnumSet.of(
-            WatchosArm64,
-            WatchosArm32,
-            WatchosSimulatorArm64
-        )
+        val WATCH_OS = EnumSet.of(WatchosArm64, WatchosArm32, WatchosSimulatorArm64)
 
-        val ANDROID = EnumSet.of(
-            Android
-        )
+        val ANDROID = EnumSet.of(Android)
 
-        val WINDOWS_NATIVE = EnumSet.of(
-            MingwX64
-        )
+        val WINDOWS_NATIVE = EnumSet.of(MingwX64)
 
-        val LINUX_NATIVE = EnumSet.of(
-            LinuxX64,
-            LinuxArm64
-        )
+        val LINUX_NATIVE = EnumSet.of(LinuxX64, LinuxArm64)
 
-        val MACOS_NATIVE = EnumSet.of(
-            MacosArm64
-        )
+        val MACOS_NATIVE = EnumSet.of(MacosArm64)
 
-        val WEB = EnumSet.of(
-            Js,
-            WasmJs
-        )
+        val WEB = EnumSet.of(Js, WasmJs)
 
         val DARWIN = IOS + WATCH_OS + TV_OS + MACOS_NATIVE
 
         val GENERATE_KLIB = WEB + LINUX_NATIVE + WINDOWS_NATIVE + DARWIN
 
         val SKIKO_SUPPORT =
-            EnumSet.of(KotlinMultiplatform) + JVM_BASED + IOS + MACOS_NATIVE + WEB
+            EnumSet.of(KotlinMultiplatform) + JVM_BASED + IOS + TV_OS + MACOS_NATIVE + WEB
 
         val ALL = EnumSet.allOf(ComposePlatforms::class.java)
 
         /**
-         * Maps comma separated list of platforms into a set of [ComposePlatforms]
-         * The function is case- and whitespace-insensetive.
+         * Maps comma separated list of platforms into a set of [ComposePlatforms] The function is
+         * case- and whitespace-insensetive.
          *
          * Special value: all
          */

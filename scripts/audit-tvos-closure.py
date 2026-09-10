@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Audits the dependency closure of the dev.sajidali.* tvOS-relevant Gradle Module
+"""DEPRECATED (2026-09-04): superseded by the ledger-driven release gates in
+compose-tvos-redirect/tools/release (gate_prebuild.py before a publish, gate_bundle.py on
+the staged bundle, plus the consumer probe). Its WARN classification predates the
+no-mappings policy and must not be read as input to manifest `mappings`. Kept for reference
+only; do not add it to a release procedure.
+
+Audits the dependency closure of the dev.sajidali.* tvOS-relevant Gradle Module
 Metadata (.module) files published to a local Maven repository.
 
 For every tvOS-relevant variant (a variant whose attributes advertise a

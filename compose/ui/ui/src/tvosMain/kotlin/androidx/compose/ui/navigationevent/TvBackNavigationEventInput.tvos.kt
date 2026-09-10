@@ -26,19 +26,20 @@ import androidx.navigationevent.NavigationEventInput
 /**
  * tvOS flavour of [BackNavigationEventInput].
  *
- * The common implementation reports every Back/Escape KeyDown as consumed, even when no
- * navigation handler is registered. That is wrong on tvOS: the Siri Remote's Menu button maps
- * to [Key.Back], and Apple's HIG requires an unhandled Menu press to reach `UIApplication` so
- * the system can move the app to the background. If Compose swallowed it, the app would appear
- * frozen at the root screen with no way out.
+ * The common implementation reports every Back/Escape KeyDown as consumed, even when no navigation
+ * handler is registered. That is wrong on tvOS: the Siri Remote's Menu button maps to [Key.Back],
+ * and Apple's HIG requires an unhandled Menu press to reach `UIApplication` so the system can move
+ * the app to the background. If Compose swallowed it, the app would appear frozen at the root
+ * screen with no way out.
  *
- * Therefore this input only consumes the key while at least one enabled navigation handler
- * exists ([onHasEnabledHandlersChanged]); otherwise it reports the press as unconsumed, which
- * lets [androidx.compose.ui.scene.ComposeSceneMediator] forward the [platform.UIKit.UIPress] up
- * the responder chain via `super.pressesBegan`.
+ * Therefore this input only consumes the key while at least one enabled navigation handler exists
+ * ([onHasEnabledHandlersChanged]); otherwise it reports the KeyDown as unconsumed. That alone does
+ * not release the press: [androidx.compose.ui.scene.ComposeSceneMediator] holds it back, still
+ * offers the KeyUp to Compose, and only replays the [platform.UIKit.UIPress] to the responder chain
+ * when that is unconsumed too.
  *
- * The logic of [BackNavigationEventInput.onKeyEvent] is duplicated instead of overridden
- * because that member is final.
+ * The logic of [BackNavigationEventInput.onKeyEvent] is duplicated instead of overridden because
+ * that member is final.
  */
 internal class TvBackNavigationEventInput : NavigationEventInput() {
     private var hasEnabledHandlers: Boolean = false
@@ -52,8 +53,8 @@ internal class TvBackNavigationEventInput : NavigationEventInput() {
             // Nothing to navigate back to: let tvOS handle the Menu press.
             return false
         }
-        return if (event.type == KeyEventType.KeyDown &&
-            (event.key == Key.Escape || event.key == Key.Back)
+        return if (
+            event.type == KeyEventType.KeyDown && (event.key == Key.Escape || event.key == Key.Back)
         ) {
             dispatchOnBackCompleted()
             true

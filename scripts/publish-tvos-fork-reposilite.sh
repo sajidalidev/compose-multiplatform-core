@@ -352,7 +352,8 @@ in DEV_SUFFIX and update these mappings.
 
     composeTvos {
         manifestUrl.set("")
-        versionMappings.put("org.jetbrains.compose:$VERSION_COMPOSE", "$DEV_VERSION_COMPOSE")
+        // Wildcard: the compose libraries publish under per-module groups (org.jetbrains.compose.ui, .foundation, ...), which an exact-group key never matches.
+        versionMappings.put("org.jetbrains.compose.*:$VERSION_COMPOSE", "$DEV_VERSION_COMPOSE")
         versionMappings.put("org.jetbrains.compose.material3:$VERSION_COMPOSE_MATERIAL3", "$DEV_VERSION_COMPOSE_MATERIAL3")
         versionMappings.put("org.jetbrains.compose.material3.adaptive:$VERSION_COMPOSE_MATERIAL3_ADAPTIVE", "$DEV_VERSION_COMPOSE_MATERIAL3_ADAPTIVE")
         versionMappings.put("org.jetbrains.androidx.navigation:$VERSION_NAVIGATION", "$DEV_VERSION_NAVIGATION")
