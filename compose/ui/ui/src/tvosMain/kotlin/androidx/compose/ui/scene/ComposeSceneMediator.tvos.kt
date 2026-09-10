@@ -1269,8 +1269,19 @@ internal class ComposeSceneMediator(
         }
     }
 
+    private var initialFocusPending = true
+
     fun measureAndLayout() {
         scene.measureAndLayout()
+        // UIKit does not focus the Compose input views on tvOS. Enter the Compose focus tree
+        // once layout has placed its targets, without replacing an application's focus request.
+        // Keep this pending for screens that initially have no focusable content, but stop after
+        // focus is established so a later clearFocus() is not undone by another layout pass.
+        if (initialFocusPending && isFocusEnabled && _overlayView.window != null) {
+            if (scene.focusManager.hasFocus || scene.focusManager.takeFocus(FocusDirection.Enter)) {
+                initialFocusPending = false
+            }
+        }
     }
 
     fun draw(canvas: Canvas) {
@@ -1353,7 +1364,9 @@ internal class ComposeSceneMediator(
     }
 
     fun didUpdateFocusInContext() {
-        scene.focusManager.takeFocus(FocusDirection.Enter)
+        if (!scene.focusManager.hasFocus) {
+            scene.focusManager.takeFocus(FocusDirection.Enter)
+        }
     }
 
     // The overlay view needs to be the first responder to handle keyboard/Siri Remote key events.

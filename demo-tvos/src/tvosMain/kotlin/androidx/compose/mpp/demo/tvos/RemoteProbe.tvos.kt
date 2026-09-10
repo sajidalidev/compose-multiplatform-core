@@ -63,7 +63,7 @@ private fun bit(pressed: Boolean): String = if (pressed) "1" else "0"
 
 private fun attach(controller: GCController) {
     if (!attached.add(controller)) return
-    val micro = controller.microGamepad
+    val micro = controller.physicalInputProfile as? GCMicroGamepad
     probeLog(
         "PROBE controller connected: ${controller.vendorName} " +
             "class=${controller::class.simpleName} " +
