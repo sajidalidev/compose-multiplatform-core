@@ -50,7 +50,7 @@ jobs:
             echo "JAVA_HOME=$JAVA_HOME"
             echo "ANDROIDX_JDK21=$JAVA_HOME"
             echo "GRADLE_USER_HOME=$RUNNER_TOOL_CACHE/tvos-gradle"
-            echo "TVOS_MAVEN_LOCAL=$RUNNER_TOOL_CACHE/tvos-maven"
+            echo "TVOS_MAVEN_LOCAL=$RUNNER_TEMP/tvos-maven-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
             echo "DEV_SUFFIX=-dev.$(date -u +%Y%m%d).${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
           } >> "$GITHUB_ENV"
           mkdir -p build/release
