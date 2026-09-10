@@ -37,8 +37,8 @@ import platform.darwin.NSObjectProtocol
  * Reports where the finger physically is on the Siri Remote clickpad.
  *
  * UIKit indirect touches ([platform.UIKit.UITouchTypeIndirect]) carry a relative location in a
- * space that is re-centred on every new contact, so they cannot tell a movement that started on
- * the centre pad from one that started on the outer ring of the second generation remote. The
+ * space that is re-centred on every new contact, so they cannot tell a movement that started on the
+ * centre pad from one that started on the outer ring of the second generation remote. The
  * GameController micro gamepad does: with `reportsAbsoluteDpadValues` its dpad axes are the
  * absolute finger position in [-1, 1] on both axes.
  *
@@ -46,11 +46,11 @@ import platform.darwin.NSObjectProtocol
  * `controllerUserInteractionEnabled` is never touched, so UIKit keeps delivering presses and
  * touches through the responder chain exactly as before.
  *
- * The gamepad is polled at the touch event that needs it rather than through
- * `valueChangedHandler`. GameController keeps a single handler per element, so the last writer
- * wins: an app that installs its own handler on the same remote would silently replace the
- * oracle's and leave it without samples. Polling reads the live element values, so the oracle
- * coexists with app-level GameController usage and never overwrites an app's handler.
+ * The gamepad is polled at the touch event that needs it rather than through `valueChangedHandler`.
+ * GameController keeps a single handler per element, so the last writer wins: an app that installs
+ * its own handler on the same remote would silently replace the oracle's and leave it without
+ * samples. Polling reads the live element values, so the oracle coexists with app-level
+ * GameController usage and never overwrites an app's handler.
  *
  * UIKit reports indirect movement sparsely: polling only inside `touchesBegan`/`touchesMoved`
  * samples the origin of a contact up to 0.2 normalised units after the finger landed, which makes
@@ -63,6 +63,7 @@ internal class SiriRemoteTouchOracle {
     private var disconnectObserver: NSObjectProtocol? = null
 
     private var controller: GCController? = null
+    private var remoteGamepad: GCMicroGamepad? = null
     private var productCategory: String? = null
     // The gamepad's own rotation mode, restored when the oracle lets go of it.
     private var previousAllowsRotation: Boolean? = null
@@ -80,24 +81,23 @@ internal class SiriRemoteTouchOracle {
     }
 
     /** `true` while a micro gamepad, i.e. a Siri Remote, is connected and reporting. */
-    val isAvailable: Boolean get() = controller?.microGamepad != null
+    val isAvailable: Boolean
+        get() = remoteGamepad != null
 
     /**
      * `true` for remotes whose clickpad has an outer ring of arrow buttons.
      *
-     * tvOS coalesces every paired remote into a single controller reporting the
-     * "Coalesced Remote" product category, so a physical remote's generation cannot be
-     * distinguished once connected. The ring gate is therefore the default, applying to the
-     * coalesced controller and any other unrecognised micro gamepad category. First-generation
-     * remotes have no ring and let a swipe start anywhere on the pad, so they are exempted here;
-     * so are genuine game controllers, which report an extended gamepad rather than a bare micro
-     * gamepad.
+     * tvOS coalesces every paired remote into a single controller reporting the "Coalesced Remote"
+     * product category, so a physical remote's generation cannot be distinguished once connected.
+     * The ring gate is therefore the default, applying to the coalesced controller and any other
+     * unrecognised micro gamepad category. First-generation remotes have no ring and let a swipe
+     * start anywhere on the pad, so they are exempted here; so are genuine game controllers, which
+     * report an extended gamepad rather than a bare micro gamepad.
      */
     val hasRing: Boolean
         get() {
             val category = productCategory ?: return false
             if (category == GCProductCategorySiriRemote1stGen) return false
-            if (controller?.extendedGamepad != null) return false
             return true
         }
 
@@ -105,16 +105,22 @@ internal class SiriRemoteTouchOracle {
         if (connectObserver != null) return
         val center = NSNotificationCenter.defaultCenter
         val queue = NSOperationQueue.mainQueue
-        connectObserver = center.addObserverForName(
-            name = GCControllerDidConnectNotification,
-            `object` = null,
-            queue = queue,
-        ) { refresh() }
-        disconnectObserver = center.addObserverForName(
-            name = GCControllerDidDisconnectNotification,
-            `object` = null,
-            queue = queue,
-        ) { refresh() }
+        connectObserver =
+            center.addObserverForName(
+                name = GCControllerDidConnectNotification,
+                `object` = null,
+                queue = queue,
+            ) {
+                refresh()
+            }
+        disconnectObserver =
+            center.addObserverForName(
+                name = GCControllerDidDisconnectNotification,
+                `object` = null,
+                queue = queue,
+            ) {
+                refresh()
+            }
         refresh()
     }
 
@@ -139,10 +145,11 @@ internal class SiriRemoteTouchOracle {
     fun beginSampling(): Int {
         samplingCount++
         if (displayLink != null) return samplingGeneration
-        val link = CADisplayLink.displayLinkWithTarget(
-            target = displayLinkTarget,
-            selector = NSSelectorFromString("tick:")
-        )
+        val link =
+            CADisplayLink.displayLinkWithTarget(
+                target = displayLinkTarget,
+                selector = NSSelectorFromString("tick:"),
+            )
         link.preferredFramesPerSecond = 60L
         link.addToRunLoop(NSRunLoop.mainRunLoop, NSRunLoopCommonModes)
         displayLink = link
@@ -183,15 +190,14 @@ internal class SiriRemoteTouchOracle {
     }
 
     /**
-     * Current absolute finger position in [-1, 1] on both axes, `null` if no remote is connected
-     * or if the pad is at rest. The pad reports exactly (0, 0) whenever no finger is touching it,
-     * and no touching sample is ever exactly (0, 0), so an exact-zero sample is treated as "no
-     * finger": otherwise a BEGAN sampled before the pad reports a real position would be
-     * classified as a centre-pad contact at radius 0 using a stale origin instead of falling to
-     * fallback mode.
+     * Current absolute finger position in [-1, 1] on both axes, `null` if no remote is connected or
+     * if the pad is at rest. The pad reports exactly (0, 0) whenever no finger is touching it, and
+     * no touching sample is ever exactly (0, 0), so an exact-zero sample is treated as "no finger":
+     * otherwise a BEGAN sampled before the pad reports a real position would be classified as a
+     * centre-pad contact at radius 0 using a stale origin instead of falling to fallback mode.
      */
     fun position(): Offset? {
-        val microGamepad = controller?.microGamepad ?: return null
+        val microGamepad = remoteGamepad ?: return null
         // An app is free to reset this flag on the shared gamepad; setting it back only takes
         // effect from the next sample, so the sample read right after such a reset may still be
         // relative.
@@ -207,30 +213,25 @@ internal class SiriRemoteTouchOracle {
 
     /** `true` while the clickpad or one of the ring buttons is physically held down. */
     fun anyButtonPressed(): Boolean {
-        val microGamepad = controller?.microGamepad ?: return false
+        val microGamepad = remoteGamepad ?: return false
         return isAnyButtonPressed(microGamepad)
     }
 
     private fun refresh() {
-        // The remote reports a bare micro gamepad; a game controller reports an extended gamepad
-        // and its micro gamepad projection, whose dpad is the thumbstick rather than a clickpad.
-        // Reevaluated on every connect and disconnect, so plugging a game controller in does not
-        // steal the oracle from the remote.
-        val controllers = GCController.controllers().filterIsInstance<GCController>()
-        val connected = controllers.firstOrNull {
-            it.microGamepad != null && it.extendedGamepad == null
-        } ?: controllers.firstOrNull { it.microGamepad != null }
-        if (connected == null) {
+        // Read the generic profile: the simulator can return an extended gamepad from the
+        // typed microGamepad getter, throwing before Kotlin can apply a safe cast.
+        for (connected in GCController.controllers().filterIsInstance<GCController>()) {
+            val profile = connected.physicalInputProfile as? GCMicroGamepad ?: continue
+            if (connected == controller && profile == remoteGamepad) return
             detach()
+            attach(connected, profile)
             return
         }
-        if (connected == controller) return
         detach()
-        attach(connected)
     }
 
-    private fun attach(connected: GCController) {
-        val microGamepad = connected.microGamepad ?: return
+    private fun attach(connected: GCController, microGamepad: GCMicroGamepad) {
+        remoteGamepad = microGamepad
         controller = connected
         productCategory = connected.productCategory
         previousAllowsRotation = microGamepad.allowsRotation
@@ -242,9 +243,10 @@ internal class SiriRemoteTouchOracle {
         // No handler is installed, so nothing is cleared here: an app's own
         // `valueChangedHandler` on the same gamepad is never touched. The rotation mode is
         // restored, since an app that enabled it did so for its own reading of the gamepad.
-        previousAllowsRotation?.let { controller?.microGamepad?.allowsRotation = it }
+        previousAllowsRotation?.let { remoteGamepad?.allowsRotation = it }
         previousAllowsRotation = null
         controller = null
+        remoteGamepad = null
         productCategory = null
     }
 
@@ -259,9 +261,7 @@ internal class SiriRemoteTouchOracle {
             microGamepad.buttonMenu.pressed
 }
 
-private class SampleDisplayLinkTarget(
-    private val onTick: () -> Unit
-) : NSObject() {
+private class SampleDisplayLinkTarget(private val onTick: () -> Unit) : NSObject() {
     @OptIn(BetaInteropApi::class)
     @ObjCAction
     fun tick(link: CADisplayLink) {
