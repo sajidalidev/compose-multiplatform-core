@@ -16,15 +16,16 @@
 
 package androidx.compose.ui.scene
 
+import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.annotation.VisibleForTesting
+import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -38,10 +39,10 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.PointerKeyboardModifiers
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.copy
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.toComposeEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.HistoricalChange
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerButtons
@@ -50,6 +51,7 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.navigationevent.TvBackNavigationEventInput
 import androidx.compose.ui.platform.AccessibilityMediator
+import androidx.compose.ui.platform.ApplicationIdleTimer
 import androidx.compose.ui.platform.CUPERTINO_TOUCH_SLOP
 import androidx.compose.ui.platform.DefaultInputModeManager
 import androidx.compose.ui.platform.DelegateRootForTestListener
@@ -58,41 +60,39 @@ import androidx.compose.ui.platform.PlatformArchitectureComponentsOwner
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.PlatformScreenReader
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
-import androidx.compose.ui.platform.WindowContext
-import androidx.compose.ui.platform.TvOSTextInputService
-import androidx.compose.ui.platform.ApplicationIdleTimer
 import androidx.compose.ui.platform.TaskDispatchers
-import androidx.compose.ui.platform.WindowInsetsManager
+import androidx.compose.ui.platform.TvOSTextInputService
 import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.platform.WindowContext
 import androidx.compose.ui.platform.WindowInfo
+import androidx.compose.ui.platform.WindowInsetsManager
+import androidx.compose.ui.semantics.SemanticsOwner
 import androidx.compose.ui.text.input.EditCommand
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.ImeOptions
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.semantics.SemanticsOwner
 import androidx.compose.ui.uikit.InterfaceOrientation
 import androidx.compose.ui.uikit.LocalUIView
 import androidx.compose.ui.uikit.OnFocusBehavior
 import androidx.compose.ui.uikit.density
-import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.toDpOffset
-import androidx.compose.ui.unit.toDpRect
-import androidx.compose.ui.unit.toDpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
 import androidx.compose.ui.unit.roundToIntRect
 import androidx.compose.ui.unit.roundToIntSize
+import androidx.compose.ui.unit.toDpOffset
+import androidx.compose.ui.unit.toDpRect
+import androidx.compose.ui.unit.toDpSize
 import androidx.compose.ui.unit.toOffset
 import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.viewinterop.InteropSyncTransaction
+import androidx.compose.ui.viewinterop.IosInteropContainer
 import androidx.compose.ui.viewinterop.LocalInteropContainer
 import androidx.compose.ui.viewinterop.TrackInteropPlacementContainer
-import androidx.compose.ui.viewinterop.IosInteropContainer
-import androidx.compose.ui.viewinterop.InteropSyncTransaction
 import androidx.compose.ui.window.FocusedViewsList
 import androidx.compose.ui.window.IosPrefetchScheduler
 import kotlin.coroutines.CoroutineContext
@@ -103,10 +103,10 @@ import kotlinx.cinterop.CValue
 import kotlinx.cinterop.readValue
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
@@ -183,27 +183,33 @@ private inline fun swipeDebug(message: () -> String) {
     }
 }
 
-private fun directionName(key: Key): String = when (key) {
-    Key.DirectionRight -> "DirectionRight"
-    Key.DirectionLeft -> "DirectionLeft"
-    Key.DirectionDown -> "DirectionDown"
-    else -> "DirectionUp"
-}
+private fun directionName(key: Key): String =
+    when (key) {
+        Key.DirectionRight -> "DirectionRight"
+        Key.DirectionLeft -> "DirectionLeft"
+        Key.DirectionDown -> "DirectionDown"
+        else -> "DirectionUp"
+    }
 
 /**
  * The state of one Siri Remote indirect contact.
  *
- * A contact produces at most one directional key: it starts as a [CANDIDATE] (or as [IGNORED]
- * when it started on the ring), becomes [ARMED] with a direction once it travelled far enough,
- * and leaves that state for good once the swipe is [DISPATCHED] or a clickpad press or an
- * overlong contact makes it [CANCELLED].
+ * A contact produces at most one directional key: it starts as a [CANDIDATE] (or as [IGNORED] when
+ * it started on the ring), becomes [ARMED] with a direction once it travelled far enough, and
+ * leaves that state for good once the swipe is [DISPATCHED] or a clickpad press or an overlong
+ * contact makes it [CANCELLED].
  *
  * A contact whose BEGAN arrives before the oracle reported any position of that contact starts as
  * [PENDING]: the pad reads exactly (0, 0) between contacts, so there is nothing to compare the
  * origin against yet. The first later sample decides the origin and the verdict.
  */
 private enum class IndirectTouchVerdict {
-    PENDING, CANDIDATE, ARMED, IGNORED, CANCELLED, DISPATCHED
+    PENDING,
+    CANDIDATE,
+    ARMED,
+    IGNORED,
+    CANCELLED,
+    DISPATCHED,
 }
 
 private class IndirectTouchState(
@@ -223,21 +229,23 @@ private class IndirectTouchState(
 }
 
 /**
- * A reason for why touches are sent to Compose.
- * Mirrors the iOS [TouchesEventKind] which is not available in tvosMain.
+ * A reason for why touches are sent to Compose. Mirrors the iOS [TouchesEventKind] which is not
+ * available in tvosMain.
  */
 internal enum class TouchesEventKind {
     BEGAN,
     MOVED,
-    ENDED
+    ENDED,
 }
 
 /**
- * tvOS specific-implementation of [PlatformContext.SemanticsOwnerListener] used to track changes in [SemanticsOwner].
+ * tvOS specific-implementation of [PlatformContext.SemanticsOwnerListener] used to track changes in
+ * [SemanticsOwner].
  *
  * @property view The UI container associated with the semantics owner.
  * @property coroutineContext The coroutine context to use for handling semantics changes.
- * @property performEscape A lambda to delegate accessibility escape operation. Returns true if the escape was handled, false otherwise.
+ * @property performEscape A lambda to delegate accessibility escape operation. Returns true if the
+ *   escape was handled, false otherwise.
  */
 private class SemanticsOwnerListenerImpl(
     private val view: UIView,
@@ -256,15 +264,15 @@ private class SemanticsOwnerListenerImpl(
 
     override fun onSemanticsOwnerAppended(semanticsOwner: SemanticsOwner) {
         if (accessibilityMediator == null) {
-            accessibilityMediator = AccessibilityMediator(
-                view,
-                semanticsOwner,
-                coroutineContext,
-                performEscape,
-                onScreenReaderActive
-            ).also {
-                it.isEnabled = isEnabled
-            }
+            accessibilityMediator =
+                AccessibilityMediator(
+                        view,
+                        semanticsOwner,
+                        coroutineContext,
+                        performEscape,
+                        onScreenReaderActive,
+                    )
+                    .also { it.isEnabled = isEnabled }
         }
     }
 
@@ -288,7 +296,8 @@ private class SemanticsOwnerListenerImpl(
         }
     }
 
-    val hasInvalidations: Boolean get() = accessibilityMediator?.hasPendingInvalidations ?: false
+    val hasInvalidations: Boolean
+        get() = accessibilityMediator?.hasPendingInvalidations ?: false
 
     fun dispose() {
         accessibilityMediator?.dispose()
@@ -297,16 +306,17 @@ private class SemanticsOwnerListenerImpl(
 }
 
 /**
- * A simple overlay view for tvOS that handles touch events from the Siri Remote touch surface
- * and keyboard presses. Unlike the iOS [OverlayInputView], this does not handle hover gestures,
- * scroll gestures, or native text input, as those are not applicable on tvOS.
+ * A simple overlay view for tvOS that handles touch events from the Siri Remote touch surface and
+ * keyboard presses. Unlike the iOS [OverlayInputView], this does not handle hover gestures, scroll
+ * gestures, or native text input, as those are not applicable on tvOS.
  */
 private class TvOverlayInputView(
     private var hitTestInteropView: (point: CValue<CGPoint>) -> UIView?,
     private var isPointInsideInteractionBounds: (CValue<CGPoint>) -> Boolean,
-    private var onTouchesEvent: (touches: Set<*>, event: UIEvent?, phase: TouchesEventKind) -> PointerEventResult,
+    private var onTouchesEvent:
+        (touches: Set<*>, event: UIEvent?, phase: TouchesEventKind) -> PointerEventResult,
     private var onCancelAllTouches: (touches: Set<*>) -> Unit,
-    private var onKeyboardPresses: (presses: Set<*>, event: UIPressesEvent?) -> Set<*>,
+    private var onKeyboardPresses: (presses: Set<*>, event: UIPressesEvent?) -> TvPressForwarding,
 ) : UIView(CGRectZero.readValue()) {
 
     var isInterceptingOutsideEvents: Boolean = false
@@ -323,48 +333,77 @@ private class TvOverlayInputView(
     override fun canBecomeFocused(): Boolean = false
 
     override fun pressesBegan(presses: Set<*>, withEvent: UIPressesEvent?) {
-        // `super` is called only for the presses Compose did not consume, so that tvOS can act
-        // on them, e.g. suspend the app when the Menu button isn't handled by any Compose
-        // back handler. Consumed presses are never forwarded up the responder chain.
-        val unconsumed = onKeyboardPresses(presses, withEvent)
-        if (unconsumed.isNotEmpty()) super.pressesBegan(unconsumed, withEvent)
+        // Compose gets every press in both phases; the only press that can reach tvOS is a Menu
+        // press no Compose handler wanted on either phase, and it is replayed from its Ended
+        // phase (see [replayToSystem]), never forwarded from here.
+        val forwarding = onKeyboardPresses(presses, withEvent)
+        if (forwarding.passThrough.isNotEmpty()) {
+            super.pressesBegan(forwarding.passThrough, withEvent)
+        }
     }
 
     override fun pressesEnded(presses: Set<*>, withEvent: UIPressesEvent?) {
-        val unconsumed = onKeyboardPresses(presses, withEvent)
-        if (unconsumed.isNotEmpty()) super.pressesEnded(unconsumed, withEvent)
+        val forwarding = onKeyboardPresses(presses, withEvent)
+        if (forwarding.passThrough.isNotEmpty()) {
+            super.pressesEnded(forwarding.passThrough, withEvent)
+        }
+        replayToSystem(forwarding, withEvent)
     }
 
     override fun pressesCancelled(presses: Set<*>, withEvent: UIPressesEvent?) {
-        val unconsumed = onKeyboardPresses(presses, withEvent)
-        if (unconsumed.isNotEmpty()) super.pressesCancelled(unconsumed, withEvent)
+        val forwarding = onKeyboardPresses(presses, withEvent)
+        if (forwarding.passThrough.isNotEmpty()) {
+            super.pressesCancelled(forwarding.passThrough, withEvent)
+        }
+    }
+
+    override fun pressesChanged(presses: Set<*>, withEvent: UIPressesEvent?) {
+        // Analog buttons of an MFi controller report their pressure through this phase. Compose
+        // has no event for it, so it is swallowed rather than left to UIResponder's default
+        // implementation, which would send it up the chain behind Compose's back.
+        val forwarding = onKeyboardPresses(presses, withEvent)
+        if (forwarding.passThrough.isNotEmpty()) {
+            super.pressesChanged(forwarding.passThrough, withEvent)
+        }
+    }
+
+    /**
+     * Sends [TvPressForwarding.replay] up the responder chain as a Began immediately followed by an
+     * Ended, for a press that was held back while Compose was given a chance to handle its KeyUp.
+     *
+     * Assumption to verify on a simulator: UIKit acts on the *completed* press, so both phases have
+     * to be replayed for the system to move the app to the background on Menu. The replayed
+     * [platform.UIKit.UIPress] still carries `phase == Ended`; if UIKit keys on `press.phase`
+     * rather than on the selector, the Began leg is a no-op and forwarding only the real Ended is
+     * the fallback.
+     */
+    private fun replayToSystem(forwarding: TvPressForwarding, event: UIPressesEvent?) {
+        if (forwarding.replay.isEmpty()) return
+        for (press in forwarding.replay) {
+            val single = setOf(press)
+            super.pressesBegan(single, event)
+            super.pressesEnded(single, event)
+        }
+        forwarding.onReplayFinished()
     }
 
     override fun touchesBegan(touches: Set<*>, withEvent: UIEvent?) {
-        withEvent?.let { event ->
-            onTouchesEvent(touches, event, TouchesEventKind.BEGAN)
-        }
+        withEvent?.let { event -> onTouchesEvent(touches, event, TouchesEventKind.BEGAN) }
         super.touchesBegan(touches, withEvent)
     }
 
     override fun touchesMoved(touches: Set<*>, withEvent: UIEvent?) {
-        withEvent?.let { event ->
-            onTouchesEvent(touches, event, TouchesEventKind.MOVED)
-        }
+        withEvent?.let { event -> onTouchesEvent(touches, event, TouchesEventKind.MOVED) }
         super.touchesMoved(touches, withEvent)
     }
 
     override fun touchesEnded(touches: Set<*>, withEvent: UIEvent?) {
-        withEvent?.let { event ->
-            onTouchesEvent(touches, event, TouchesEventKind.ENDED)
-        }
+        withEvent?.let { event -> onTouchesEvent(touches, event, TouchesEventKind.ENDED) }
         super.touchesEnded(touches, withEvent)
     }
 
     override fun touchesCancelled(touches: Set<*>, withEvent: UIEvent?) {
-        touches?.let { t ->
-            onCancelAllTouches(t)
-        }
+        touches?.let { t -> onCancelAllTouches(t) }
         super.touchesCancelled(touches, withEvent)
     }
 
@@ -387,7 +426,7 @@ private class TvOverlayInputView(
         endEditing(force = true)
         hitTestInteropView = { null }
         isPointInsideInteractionBounds = { false }
-        onKeyboardPresses = { presses, _ -> presses }
+        onKeyboardPresses = { _, _ -> TvPressForwarding.None }
         onOutsidePointerEvent = {}
         onTouchesEvent = { _, _, _ -> PointerEventResult() }
         onCancelAllTouches = {}
@@ -395,9 +434,9 @@ private class TvOverlayInputView(
 }
 
 /**
- * A simple background view for tvOS that handles touch events directed at interop views
- * located below the rendering canvas. Unlike the iOS [BackgroundInputView], this does not use
- * gesture recognizers.
+ * A simple background view for tvOS that handles touch events directed at interop views located
+ * below the rendering canvas. Unlike the iOS [BackgroundInputView], this does not use gesture
+ * recognizers.
  */
 private class TvBackgroundInputView(
     private var onMovedToWindow: () -> Unit,
@@ -450,12 +489,7 @@ private class TvBackgroundInputView(
         }
         return hitTestInteropView(point)
             ?.takeIf { it.superview == this }
-            ?.let {
-                it.hitTest(
-                    point = convertPoint(point, toView = it),
-                    withEvent = withEvent
-                )
-            }
+            ?.let { it.hitTest(point = convertPoint(point, toView = it), withEvent = withEvent) }
     }
 
     fun dispose() {
@@ -489,12 +523,6 @@ internal class ComposeSceneMediator(
     // Key repeat state: repeatedly dispatch KeyDown while a key is held
     private val repeatingKeys = mutableMapOf<Long, Job>()
 
-    // Key ids whose KeyDown was consumed by Compose. Consumption is decided once, on the
-    // Began phase, and remembered so that the matching KeyUp is dispatched to the same
-    // destination: dispatching a KeyUp whose KeyDown never reached the scene would be dropped
-    // by FocusOwnerImpl.validateKeyEvent and would break `clickable()`.
-    private val consumedKeyIds = mutableSetOf<Long>()
-
     // Id of the Select press whose KeyDown was swallowed to open the tvOS keyboard; the matching
     // KeyUp must be swallowed too so the scene never observes an unmatched KeyUp. Keyed by press
     // id rather than a flag, so a KeyUp delivered elsewhere (e.g. to the keyboard overlay) can't
@@ -516,61 +544,63 @@ internal class ComposeSceneMediator(
     private var oracleSamplingToken = 0
     private val keyRepeatInitialDelayMs = 500L
     private val keyRepeatIntervalMs = 50L
-    private val platformScreenReader = object : PlatformScreenReader {
-        override var isActive by mutableStateOf(false)
-    }
+    private val platformScreenReader =
+        object : PlatformScreenReader {
+            override var isActive by mutableStateOf(false)
+        }
     private val activitiesHandler = frameChoreographer.createActivitiesHandler()
 
-    private val isActive get() = coroutineContext.isActive
+    private val isActive
+        get() = coroutineContext.isActive
 
-    private var isPrefetchVoteActive: Boolean = false // TODO CMP-10587: Move inside the IosPrefetchScheduler
-    private val prefetchScheduler = IosPrefetchScheduler(
-        onHasWorkScheduled = { hasWork ->
-            if (hasWork != isPrefetchVoteActive) {
-                isPrefetchVoteActive = hasWork
-                if (hasWork) {
-                    activitiesHandler.onActivitiesStarted()
-                } else {
-                    activitiesHandler.onActivitiesEnded()
+    private var isPrefetchVoteActive: Boolean =
+        false // TODO CMP-10587: Move inside the IosPrefetchScheduler
+    private val prefetchScheduler =
+        IosPrefetchScheduler(
+            onHasWorkScheduled = { hasWork ->
+                if (hasWork != isPrefetchVoteActive) {
+                    isPrefetchVoteActive = hasWork
+                    if (hasWork) {
+                        activitiesHandler.onActivitiesStarted()
+                    } else {
+                        activitiesHandler.onActivitiesEnded()
+                    }
                 }
             }
-        }
-    )
+        )
 
     /**
      * Indicates that a draw happened in the current display-link interval so
-     * [FrameChoreographer.Listener.onOutOfFrame] can determine whether pending interop view
-     * updates still need a host draw, and the prefetch scheduler can tell whether the draw loop
-     * was idle.
+     * [FrameChoreographer.Listener.onOutOfFrame] can determine whether pending interop view updates
+     * still need a host draw, and the prefetch scheduler can tell whether the draw loop was idle.
      */
     private var didDrawSinceDisplayLink = false
-    private val frameChoreographerListener = object : FrameChoreographer.Listener {
-        override fun onDisplayLinkTick() {
-            didDrawSinceDisplayLink = false
-        }
-
-        override fun onOutOfFrame(
-            lastFrameTimestamp: NSTimeInterval,
-            targetTimestamp: NSTimeInterval
-        ) {
-            if (!didDrawSinceDisplayLink && interopContainer.hasPendingViewUpdatesOnly) {
-                schedulePendingInteropViewUpdates()
+    private val frameChoreographerListener =
+        object : FrameChoreographer.Listener {
+            override fun onDisplayLinkTick() {
+                didDrawSinceDisplayLink = false
             }
 
-            prefetchScheduler.execute(
-                lastFrameTimestamp = lastFrameTimestamp,
-                targetTimestamp = targetTimestamp,
-                didDraw = didDrawSinceDisplayLink,
-            )
+            override fun onOutOfFrame(
+                lastFrameTimestamp: NSTimeInterval,
+                targetTimestamp: NSTimeInterval,
+            ) {
+                if (!didDrawSinceDisplayLink && interopContainer.hasPendingViewUpdatesOnly) {
+                    schedulePendingInteropViewUpdates()
+                }
+
+                prefetchScheduler.execute(
+                    lastFrameTimestamp = lastFrameTimestamp,
+                    targetTimestamp = targetTimestamp,
+                    didDraw = didDrawSinceDisplayLink,
+                )
+            }
         }
-    }
 
     private val viewConfiguration: ViewConfiguration =
         object : ViewConfiguration by PlatformContext.DefaultViewConfiguration {
             override val touchSlop: Float
-                get() = with(screenDensity) {
-                    CUPERTINO_TOUCH_SLOP.dp.toPx()
-                }
+                get() = with(screenDensity) { CUPERTINO_TOUCH_SLOP.dp.toPx() }
         }
 
     private val scene: ComposeScene by lazy {
@@ -598,7 +628,8 @@ internal class ComposeSceneMediator(
      * composeSceneDensity without regressions (merging [screenDensity] and [composeSceneDensity]
      * into one causes rendering and interaction issues because they are semantically different).
      */
-    val composeSceneDensity: Density get() = scene.density
+    val composeSceneDensity: Density
+        get() = scene.density
 
     fun setComposeSceneFontScale(fontScale: Float) {
         if (isActive) {
@@ -619,7 +650,8 @@ internal class ComposeSceneMediator(
      * This value is intentionally separate from [composeSceneDensity] so we can support setting
      * [composeSceneDensity] without regressions.
      */
-    private val screenDensity: Density get() = windowContext.screenDensity
+    private val screenDensity: Density
+        get() = windowContext.screenDensity
 
     var layoutDirection: LayoutDirection
         get() = scene.layoutDirection
@@ -637,56 +669,57 @@ internal class ComposeSceneMediator(
             }
         }
 
-    val hasInteropViews: Boolean get() = interopContainer.hasInteropViews
+    val hasInteropViews: Boolean
+        get() = interopContainer.hasInteropViews
 
     /**
-     * Primary view to handle user input from the Siri Remote touch surface.
-     * Also used as a root container view for accessibility.
+     * Primary view to handle user input from the Siri Remote touch surface. Also used as a root
+     * container view for accessibility.
      */
-    private val _overlayView = TvOverlayInputView(
-        hitTestInteropView = ::hitTestInteropView,
-        isPointInsideInteractionBounds = ::isPointInsideInteractionBounds,
-        onTouchesEvent = ::onTouchesEvent,
-        onCancelAllTouches = ::onCancelAllTouches,
-        onKeyboardPresses = ::onKeyboardPresses,
-    )
+    private val _overlayView =
+        TvOverlayInputView(
+            hitTestInteropView = ::hitTestInteropView,
+            isPointInsideInteractionBounds = ::isPointInsideInteractionBounds,
+            onTouchesEvent = ::onTouchesEvent,
+            onCancelAllTouches = ::onCancelAllTouches,
+            onKeyboardPresses = ::onKeyboardPresses,
+        )
 
-    val overlayView: UIView get() = _overlayView
+    val overlayView: UIView
+        get() = _overlayView
 
     /**
-     * A holder for interop views that located below the Metal canvas.
-     * The view handles user touches that occur only over the interop views located on it.
+     * A holder for interop views that located below the Metal canvas. The view handles user touches
+     * that occur only over the interop views located on it.
      */
-    private val _backgroundView = TvBackgroundInputView(
-        onMovedToWindow = ::focusOverlayViewIfNeeded,
-        onLayoutSubviews = ::updateLayout,
-        hitTestInteropView = ::hitTestInteropView,
-        isPointInsideInteractionBounds = ::isPointInsideInteractionBounds,
-    )
+    private val _backgroundView =
+        TvBackgroundInputView(
+            onMovedToWindow = ::focusOverlayViewIfNeeded,
+            onLayoutSubviews = ::updateLayout,
+            hitTestInteropView = ::hitTestInteropView,
+            isPointInsideInteractionBounds = ::isPointInsideInteractionBounds,
+        )
 
-    val backgroundView: UIView get() = _backgroundView
+    val backgroundView: UIView
+        get() = _backgroundView
 
-    /**
-     * Container for managing UIKitView and UIKitViewController
-     */
-    private val interopContainer = IosInteropContainer(
-        overlayContainer = _overlayView,
-        backgroundContainer = _backgroundView,
-        requestRedraw = frameChoreographer::requestFrame,
-    )
+    /** Container for managing UIKitView and UIKitViewController */
+    private val interopContainer =
+        IosInteropContainer(
+            overlayContainer = _overlayView,
+            backgroundContainer = _backgroundView,
+            requestRedraw = frameChoreographer::requestFrame,
+        )
 
-    private val windowInsetsManager = WindowInsetsManager(
-        windowInsetsViews = listOf(
-            { _overlayView },
-            { windowContext.window?.rootViewController?.view },
-        ),
-        interfaceOrientation = interfaceOrientationState
-    )
+    private val windowInsetsManager =
+        WindowInsetsManager(
+            windowInsetsViews =
+                listOf({ _overlayView }, { windowContext.window?.rootViewController?.view }),
+            interfaceOrientation = interfaceOrientationState,
+        )
 
-    private val tvOSTextInputService = TvOSTextInputService(
-        view = _overlayView,
-        focusedViewsList = focusedViewsList,
-    )
+    private val tvOSTextInputService =
+        TvOSTextInputService(view = _overlayView, focusedViewsList = focusedViewsList)
 
     /**
      * A callback to define whether the precondition for the user input view hit test is met.
@@ -709,7 +742,7 @@ internal class ComposeSceneMediator(
 
                 down || up
             },
-            onScreenReaderActive = { platformScreenReader.isActive = it }
+            onScreenReaderActive = { platformScreenReader.isActive = it },
         )
     }
 
@@ -724,12 +757,13 @@ internal class ComposeSceneMediator(
             }
         }
 
-    val hasInvalidations: Boolean get() {
-        return scene.hasInvalidations() ||
-            frameChoreographer.frameRecomposer.hasPendingWork() ||
-            isLayoutTransitionAnimating ||
-            semanticsOwnerListener.hasInvalidations
-    }
+    val hasInvalidations: Boolean
+        get() {
+            return scene.hasInvalidations() ||
+                frameChoreographer.frameRecomposer.hasPendingWork() ||
+                isLayoutTransitionAnimating ||
+                semanticsOwnerListener.hasInvalidations
+        }
 
     init {
         coroutineContext.job.invokeOnCompletion { dispose() }
@@ -743,9 +777,7 @@ internal class ComposeSceneMediator(
             val interopView = scene.hitTestInteropView(position)
 
             // Find a group of a holder associated with a given interop view or view controller
-            interopView?.let {
-                interopContainer.groupForInteropView(it)
-            }
+            interopView?.let { interopContainer.groupForInteropView(it) }
         }
 
     private fun onCancelAllTouches(touches: Set<*>) {
@@ -762,52 +794,54 @@ internal class ComposeSceneMediator(
      * events. Those contacts are never forwarded to the Compose pointer input pipeline.
      *
      * When [touchOracle] reports a controller the contact is tracked in the absolute clickpad
-     * space, so a movement that starts on the outer ring of arrow buttons is ignored the way
-     * native tvOS ignores it, and the swipe is dispatched as soon as it is long enough. Without a
-     * controller (the simulator, or the first frames before the remote connects) the relative
-     * UIKit location is the only signal and the contact is evaluated once, when it ends.
+     * space, so a movement that starts on the outer ring of arrow buttons is ignored the way native
+     * tvOS ignores it, and the swipe is dispatched as soon as it is long enough. Without a
+     * controller (the simulator, or the first frames before the remote connects) the relative UIKit
+     * location is the only signal and the contact is evaluated once, when it ends.
      */
     private fun onIndirectTouchEvent(touch: UITouch, eventKind: TouchesEventKind) {
         val key = touch.hashCode()
         when (eventKind) {
             TouchesEventKind.BEGAN -> {
-                val state = if (touchOracle.isAvailable) {
-                    val oraclePosition = touchOracle.position()
-                    if (oraclePosition == null) {
-                        // No sample of this contact yet: stay pending until one arrives, so the
-                        // ring gate still applies instead of dropping to the ungated fallback.
-                        swipeDebug { "SWIPE began verdict=pending" }
-                        IndirectTouchState(
-                            origin = Offset.Zero,
-                            startTimestamp = touch.timestamp,
-                            beginTimestamp = touch.timestamp,
-                            usesOracle = true,
-                            verdict = IndirectTouchVerdict.PENDING,
-                        )
-                    } else {
-                        IndirectTouchState(
-                            origin = oraclePosition,
-                            startTimestamp = touch.timestamp,
-                            beginTimestamp = touch.timestamp,
-                            usesOracle = true,
-                            verdict = IndirectTouchVerdict.PENDING,
-                        ).also {
-                            resolveIndirectTouchOrigin(it, oraclePosition, touch.timestamp)
+                val state =
+                    if (touchOracle.isAvailable) {
+                        val oraclePosition = touchOracle.position()
+                        if (oraclePosition == null) {
+                            // No sample of this contact yet: stay pending until one arrives, so the
+                            // ring gate still applies instead of dropping to the ungated fallback.
+                            swipeDebug { "SWIPE began verdict=pending" }
+                            IndirectTouchState(
+                                origin = Offset.Zero,
+                                startTimestamp = touch.timestamp,
+                                beginTimestamp = touch.timestamp,
+                                usesOracle = true,
+                                verdict = IndirectTouchVerdict.PENDING,
+                            )
+                        } else {
+                            IndirectTouchState(
+                                    origin = oraclePosition,
+                                    startTimestamp = touch.timestamp,
+                                    beginTimestamp = touch.timestamp,
+                                    usesOracle = true,
+                                    verdict = IndirectTouchVerdict.PENDING,
+                                )
+                                .also {
+                                    resolveIndirectTouchOrigin(it, oraclePosition, touch.timestamp)
+                                }
                         }
+                    } else {
+                        val position = touch.offsetInView(_backgroundView, screenDensity.density)
+                        swipeDebug {
+                            "SWIPE began origin=(${position.x}, ${position.y}) r=0.0 verdict=fallback"
+                        }
+                        IndirectTouchState(
+                            origin = position,
+                            startTimestamp = touch.timestamp,
+                            beginTimestamp = touch.timestamp,
+                            usesOracle = false,
+                            verdict = IndirectTouchVerdict.CANDIDATE,
+                        )
                     }
-                } else {
-                    val position = touch.offsetInView(_backgroundView, screenDensity.density)
-                    swipeDebug {
-                        "SWIPE began origin=(${position.x}, ${position.y}) r=0.0 verdict=fallback"
-                    }
-                    IndirectTouchState(
-                        origin = position,
-                        startTimestamp = touch.timestamp,
-                        beginTimestamp = touch.timestamp,
-                        usesOracle = false,
-                        verdict = IndirectTouchVerdict.CANDIDATE,
-                    )
-                }
                 indirectTouches[key] = state
                 updateIndirectSampling()
             }
@@ -852,9 +886,9 @@ internal class ComposeSceneMediator(
     }
 
     /**
-     * Decides the origin and the verdict of a pending oracle contact from [sample], its first
-     * known position. The contact keeps the timestamp of its BEGAN as start, so its duration is
-     * measured from the finger landing rather than from the first sample.
+     * Decides the origin and the verdict of a pending oracle contact from [sample], its first known
+     * position. The contact keeps the timestamp of its BEGAN as start, so its duration is measured
+     * from the finger landing rather than from the first sample.
      */
     private fun resolveIndirectTouchOrigin(
         state: IndirectTouchState,
@@ -865,17 +899,19 @@ internal class ComposeSceneMediator(
         state.restAnchor = sample
         state.lastSignificantMoveTime = timestamp
         val radius = hypot(sample.x, sample.y)
-        state.verdict = if (touchOracle.hasRing && radius >= CENTER_PAD_RADIUS) {
-            IndirectTouchVerdict.IGNORED
-        } else {
-            IndirectTouchVerdict.CANDIDATE
-        }
-        swipeDebug {
-            val verdict = if (state.verdict == IndirectTouchVerdict.IGNORED) {
-                "ignored-ring"
+        state.verdict =
+            if (touchOracle.hasRing && radius >= CENTER_PAD_RADIUS) {
+                IndirectTouchVerdict.IGNORED
             } else {
-                "candidate"
+                IndirectTouchVerdict.CANDIDATE
             }
+        swipeDebug {
+            val verdict =
+                if (state.verdict == IndirectTouchVerdict.IGNORED) {
+                    "ignored-ring"
+                } else {
+                    "candidate"
+                }
             val sinceBegin = (timestamp - state.beginTimestamp) * 1000.0
             "SWIPE origin=(${sample.x}, ${sample.y}) r=$radius verdict=$verdict " +
                 "t=${sinceBegin}ms"
@@ -900,16 +936,15 @@ internal class ComposeSceneMediator(
                 resolveIndirectTouchOrigin(state, sample, timestamp)
             IndirectTouchVerdict.CANDIDATE ->
                 evaluateIndirectTouch(state, sample, timestamp, logSample)
-            IndirectTouchVerdict.ARMED ->
-                holdArmedIndirectTouch(state, timestamp)
+            IndirectTouchVerdict.ARMED -> holdArmedIndirectTouch(state, timestamp)
             else -> {}
         }
     }
 
     /**
      * Feeds one display-link sample of the clickpad to every live oracle contact. UIKit reports
-     * indirect movement sparsely, so this is what catches the origin of a contact in time and
-     * what dispatches a swipe as soon as it is long enough.
+     * indirect movement sparsely, so this is what catches the origin of a contact in time and what
+     * dispatches a swipe as soon as it is long enough.
      */
     private fun onOracleSample(sample: Offset?) {
         if (sample == null || isEvaluatingOracleSample) return
@@ -940,12 +975,13 @@ internal class ComposeSceneMediator(
         val iterator = indirectTouches.values.iterator()
         while (iterator.hasNext()) {
             val state = iterator.next()
-            val maxAge = when (state.verdict) {
-                IndirectTouchVerdict.IGNORED,
-                IndirectTouchVerdict.CANCELLED,
-                IndirectTouchVerdict.DISPATCHED -> SWIPE_MAX_DURATION_S + DISPATCH_HOLD_S
-                else -> INDIRECT_CONTACT_MAX_AGE_S
-            }
+            val maxAge =
+                when (state.verdict) {
+                    IndirectTouchVerdict.IGNORED,
+                    IndirectTouchVerdict.CANCELLED,
+                    IndirectTouchVerdict.DISPATCHED -> SWIPE_MAX_DURATION_S + DISPATCH_HOLD_S
+                    else -> INDIRECT_CONTACT_MAX_AGE_S
+                }
             // The tick stamps with CACurrentMediaTime and the contacts with UITouch.timestamp,
             // both of which are the system uptime.
             if (timestamp - state.beginTimestamp > maxAge) {
@@ -997,11 +1033,12 @@ internal class ComposeSceneMediator(
             swipeDebug { "SWIPE cancelled reason=duration" }
             return
         }
-        val distance = if (state.usesOracle) {
-            SWIPE_DISTANCE_NORMALIZED
-        } else {
-            with(screenDensity) { SWIPE_DISTANCE_FALLBACK_DP.dp.toPx() }
-        }
+        val distance =
+            if (state.usesOracle) {
+                SWIPE_DISTANCE_NORMALIZED
+            } else {
+                with(screenDensity) { SWIPE_DISTANCE_FALLBACK_DP.dp.toPx() }
+            }
         val absDx = abs(dx)
         val absDy = abs(dy)
         val dominant = maxOf(absDx, absDy)
@@ -1013,13 +1050,14 @@ internal class ComposeSceneMediator(
         // absolute clickpad y, which is positive toward the top of the remote, so a positive dy
         // is an upward swipe. The fallback dy is a UIKit relative view location, positive
         // downward as usual for screen coordinates, so a positive dy there is a downward swipe.
-        val key = if (absDx >= absDy) {
-            if (dx > 0) Key.DirectionRight else Key.DirectionLeft
-        } else if (state.usesOracle) {
-            if (dy > 0) Key.DirectionUp else Key.DirectionDown
-        } else {
-            if (dy > 0) Key.DirectionDown else Key.DirectionUp
-        }
+        val key =
+            if (absDx >= absDy) {
+                if (dx > 0) Key.DirectionRight else Key.DirectionLeft
+            } else if (state.usesOracle) {
+                if (dy > 0) Key.DirectionUp else Key.DirectionDown
+            } else {
+                if (dy > 0) Key.DirectionDown else Key.DirectionUp
+            }
         state.verdict = IndirectTouchVerdict.ARMED
         state.armedKey = key
         state.armedAt = timestamp
@@ -1060,9 +1098,9 @@ internal class ComposeSceneMediator(
 
     /**
      * Tracks whether the finger of [state] is resting: as long as it stays within
-     * [REST_ANCHOR_TOLERANCE] of its anchor for longer than [REST_RESET_DURATION_S], the origin
-     * and the swipe timer move to where it rests, so a rest followed by a real movement still
-     * swipes and a slow drift never accumulates into one.
+     * [REST_ANCHOR_TOLERANCE] of its anchor for longer than [REST_RESET_DURATION_S], the origin and
+     * the swipe timer move to where it rests, so a rest followed by a real movement still swipes
+     * and a slow drift never accumulates into one.
      *
      * Returns `true` when the origin was just moved, i.e. when there is no displacement left to
      * evaluate for this sample.
@@ -1088,8 +1126,8 @@ internal class ComposeSceneMediator(
     /**
      * `true` if a clickpad press is held, or if one began during the contact that started at
      * [startTimestamp] or shortly before it. Press and touch timestamps are hardware event times
-     * rather than delivery times, so comparing them is immune to UIKit delivering the press and
-     * the touch callbacks of one click out of order.
+     * rather than delivery times, so comparing them is immune to UIKit delivering the press and the
+     * touch callbacks of one click out of order.
      */
     private fun isClickpadPressOverlapping(startTimestamp: Double, timestamp: Double): Boolean =
         touchOracle.anyButtonPressed() ||
@@ -1097,15 +1135,18 @@ internal class ComposeSceneMediator(
             pressDispatchLog.clickpadPressTimestamp >= startTimestamp - PRESS_SUPPRESSION_WINDOW_S
 
     /**
-     * Converts [UITouch] objects from [touches] to [ComposeScenePointer] and dispatches them to the appropriate handlers.
-     * @param touches a [Set] of [UITouch] objects. Erasure happens due to K/N not supporting Obj-C lightweight generics.
+     * Converts [UITouch] objects from [touches] to [ComposeScenePointer] and dispatches them to the
+     * appropriate handlers.
+     *
+     * @param touches a [Set] of [UITouch] objects. Erasure happens due to K/N not supporting Obj-C
+     *   lightweight generics.
      * @param event the [UIEvent] associated with the touches
      * @param eventKind the [TouchesEventKind] of the touches
      */
     private fun onTouchesEvent(
         touches: Set<*>,
         event: UIEvent?,
-        eventKind: TouchesEventKind
+        eventKind: TouchesEventKind,
     ): PointerEventResult {
         when (eventKind) {
             TouchesEventKind.BEGAN -> activitiesHandler.onActivitiesStarted(touches.count())
@@ -1131,67 +1172,66 @@ internal class ComposeSceneMediator(
             return PointerEventResult(anyMovementConsumed = false)
         }
 
-        val pointers = pointerTouches.mapIndexed { index, touch ->
-            val position = touch.offsetInView(_backgroundView, screenDensity.density)
-            val pointerType = when (touch.type) {
-                UITouchTypeDirect -> PointerType.Touch
-                UITouchTypeIndirectPointer -> PointerType.Mouse
-                else -> PointerType.Touch
+        val pointers =
+            pointerTouches.mapIndexed { index, touch ->
+                val position = touch.offsetInView(_backgroundView, screenDensity.density)
+                val pointerType =
+                    when (touch.type) {
+                        UITouchTypeDirect -> PointerType.Touch
+                        UITouchTypeIndirectPointer -> PointerType.Mouse
+                        else -> PointerType.Touch
+                    }
+                val id =
+                    touch.hashCode().toLong().takeIf { pointerType != PointerType.Mouse }
+                        ?: index.toLong()
+                ComposeScenePointer(
+                    id = PointerId(id),
+                    position = position,
+                    pressed = touch.isPressed,
+                    type = pointerType,
+                    pressure = touch.force.toFloat(),
+                    historical =
+                        event?.historicalChangesForTouch(touch, _overlayView, screenDensity.density)
+                            ?: emptyList(),
+                )
             }
-            val id = touch.hashCode().toLong().takeIf {
-                pointerType != PointerType.Mouse
-            } ?: index.toLong()
-            ComposeScenePointer(
-                id = PointerId(id),
-                position = position,
-                pressed = touch.isPressed,
-                type = pointerType,
-                pressure = touch.force.toFloat(),
-                historical = event?.historicalChangesForTouch(
-                    touch,
-                    _overlayView,
-                    screenDensity.density
-                ) ?: emptyList()
-            )
-        }
 
         // UIKit sends buttonMask that was before the release action. It should be empty if no
         // pressed pointers left.
-        val pointerButtonsMask = event.buttonMaskOrZero.takeIf {
-            pointers.any { it.pressed }
-        } ?: 0L
+        val pointerButtonsMask = event.buttonMaskOrZero.takeIf { pointers.any { it.pressed } } ?: 0L
 
-        return scene.sendPointerEvent(
-            eventType = eventKind.toPointerEventType(),
-            pointers = pointers,
-            timeMillis = event.timeMillis,
-            nativeEvent = event,
-            button = event?.getButton(previousButtonMask, eventKind, previousTouchEventKind),
-            buttons = PointerButtons(pointerButtonsMask),
-            keyboardModifiers = PointerKeyboardModifiers(modifierFlags =event.modifierFlagsOrZero)
-        ).also {
-            previousButtonMask = event.buttonMaskOrZero
-            if (eventKind != TouchesEventKind.MOVED) previousTouchEventKind = eventKind
-        }
+        return scene
+            .sendPointerEvent(
+                eventType = eventKind.toPointerEventType(),
+                pointers = pointers,
+                timeMillis = event.timeMillis,
+                nativeEvent = event,
+                button = event?.getButton(previousButtonMask, eventKind, previousTouchEventKind),
+                buttons = PointerButtons(pointerButtonsMask),
+                keyboardModifiers =
+                    PointerKeyboardModifiers(modifierFlags = event.modifierFlagsOrZero),
+            )
+            .also {
+                previousButtonMask = event.buttonMaskOrZero
+                if (eventKind != TouchesEventKind.MOVED) previousTouchEventKind = eventKind
+            }
     }
+
     private var previousButtonMask: Long = 0L
     private var previousTouchEventKind: TouchesEventKind? = null
 
     private var lastFocusedRect: Rect? = null
+
     private fun getFocusedRect(): Rect? {
-        return scene.focusManager.getFocusRect(afterLayout = false)?.also {
-            lastFocusedRect = it
-        } ?: lastFocusedRect
+        return scene.focusManager.getFocusRect(afterLayout = false)?.also { lastFocusedRect = it }
+            ?: lastFocusedRect
     }
 
     var onOutsidePointerEvent: (PointerEventType) -> Unit by _overlayView::onOutsidePointerEvent
     var isInterceptingOutsideEvents: Boolean by _overlayView::isInterceptingOutsideEvents
     var interactionBounds = IntRect.Zero
 
-    fun setContent(
-        parentCompositionContext: CompositionContext,
-        content: @Composable () -> Unit
-    ) {
+    fun setContent(parentCompositionContext: CompositionContext, content: @Composable () -> Unit) {
         _backgroundView.runOnceOnAppeared {
             scene.setContent(parentCompositionContext) {
                 ProvideComposeSceneMediatorCompositionLocals {
@@ -1202,7 +1242,10 @@ internal class ComposeSceneMediator(
     }
 
     private var isLayoutTransitionAnimating = false
-    fun prepareAndGetSizeTransitionAnimation(withProgress: suspend ((Float) -> Unit) -> Unit): suspend () -> Unit {
+
+    fun prepareAndGetSizeTransitionAnimation(
+        withProgress: suspend ((Float) -> Unit) -> Unit
+    ): suspend () -> Unit {
         isLayoutTransitionAnimating = true
 
         val initialWindowInsets = windowInsetsManager.windowInsetsSnapshot()
@@ -1213,13 +1256,11 @@ internal class ComposeSceneMediator(
                 withProgress { progress ->
                     windowInsetsManager.updateInsetsForAnimation(
                         initialWindowInsets = initialWindowInsets,
-                        progress = progress
+                        progress = progress,
                     )
-                    composeSceneSize = lerp(
-                        start = initialSize,
-                        stop = currentViewSize,
-                        fraction = progress
-                    ).roundToIntSize()
+                    composeSceneSize =
+                        lerp(start = initialSize, stop = currentViewSize, fraction = progress)
+                            .roundToIntSize()
                 }
             } finally {
                 isLayoutTransitionAnimating = false
@@ -1252,7 +1293,7 @@ internal class ComposeSceneMediator(
         CompositionLocalProvider(
             LocalInteropContainer provides interopContainer,
             LocalUIView provides _overlayView,
-            content = content
+            content = content,
         )
 
     private fun dispose() {
@@ -1264,7 +1305,6 @@ internal class ComposeSceneMediator(
         indirectTouches.clear()
         repeatingKeys.values.forEach { it.cancel() }
         repeatingKeys.clear()
-        consumedKeyIds.clear()
         swallowedSelectKeyId = null
         focusedViewsList?.remove(_overlayView)
 
@@ -1286,25 +1326,23 @@ internal class ComposeSceneMediator(
         semanticsOwnerListener.dispose()
     }
 
-    /**
-     * Updates the [ComposeScene] with the properties derived from the [_overlayView].
-     */
+    /** Updates the [ComposeScene] with the properties derived from the [_overlayView]. */
     private fun updateLayout() {
         if (isLayoutTransitionAnimating) {
             return
         }
         windowInsetsManager.updateInsets()
         composeSceneSize = currentViewSize.roundToIntSize()
-        interactionBounds = with(screenDensity) {
-            _overlayView.bounds.toDpRect().toRect().roundToIntRect()
-        }
+        interactionBounds =
+            with(screenDensity) { _overlayView.bounds.toDpRect().toRect().roundToIntRect() }
     }
 
-    private val currentViewSize: Size get() {
-        return with(screenDensity) {
-            _overlayView.frame.useContents { size.toDpSize() }.toSize()
+    private val currentViewSize: Size
+        get() {
+            return with(screenDensity) {
+                _overlayView.frame.useContents { size.toDpSize() }.toSize()
+            }
         }
-    }
 
     fun sceneDidAppear() {
         focusedViewsList?.addAndFocus(_overlayView)
@@ -1346,15 +1384,15 @@ internal class ComposeSceneMediator(
 
     fun setKeyEventListener(
         onPreviewKeyEvent: ((KeyEvent) -> Boolean)?,
-        onKeyEvent: ((KeyEvent) -> Boolean)?
+        onKeyEvent: ((KeyEvent) -> Boolean)?,
     ) {
         this.onPreviewKeyEvent = onPreviewKeyEvent ?: { false }
         this.onKeyEvent = onKeyEvent ?: { false }
     }
 
     /**
-     * Measures the scene for a UIKit size proposal. [ComposeSceneSizing] derives [constraints]
-     * from the hosting view's [screenDensity], but the tvOS scene is laid out at the squared
+     * Measures the scene for a UIKit size proposal. [ComposeSceneSizing] derives [constraints] from
+     * the hosting view's [screenDensity], but the tvOS scene is laid out at the squared
      * [composeSceneDensity] (see ComposeContainer), so rescale the constraints on the way in and
      * the measured size on the way out to keep the result in screen pixels.
      */
@@ -1362,14 +1400,15 @@ internal class ComposeSceneMediator(
         val scale = composeSceneDensity.density / screenDensity.density
         if (scale == 1f) return scene.measureContent(constraints)
         fun Int.scaleIn() = if (this == Constraints.Infinity) this else (this * scale).roundToInt()
-        val measured = scene.measureContent(
-            Constraints(
-                minWidth = constraints.minWidth.scaleIn(),
-                maxWidth = constraints.maxWidth.scaleIn(),
-                minHeight = constraints.minHeight.scaleIn(),
-                maxHeight = constraints.maxHeight.scaleIn(),
+        val measured =
+            scene.measureContent(
+                Constraints(
+                    minWidth = constraints.minWidth.scaleIn(),
+                    maxWidth = constraints.maxWidth.scaleIn(),
+                    minHeight = constraints.minHeight.scaleIn(),
+                    maxHeight = constraints.maxHeight.scaleIn(),
+                )
             )
-        )
         return IntSize(
             (measured.width / scale).roundToInt(),
             (measured.height / scale).roundToInt(),
@@ -1378,18 +1417,34 @@ internal class ComposeSceneMediator(
 
     /**
      * Converts [UIPress] objects to [KeyEvent] and dispatches them to the appropriate handlers.
-     * Handles key repeat by starting a coroutine that repeatedly dispatches KeyDown while a key
-     * is held, similar to Android's key repeat behavior.
-     * Returns the presses Compose did not consume, so the caller can forward them to `super`
-     * and let tvOS act on them (e.g. suspend the app on an unhandled Menu press).
-     * @param presses a [Set] of [UIPress] objects. Erasure happens due to K/N not supporting Obj-C lightweight generics.
+     * Handles key repeat by starting a coroutine that repeatedly dispatches KeyDown while a key is
+     * held, similar to Android's key repeat behavior. Every press is dispatched to Compose as a
+     * KeyDown on Began and as a KeyUp on Ended, whether or not the KeyDown was consumed, so
+     * handlers that act on [KeyEventType.KeyUp] (back navigation, overlays) always see their KeyUp.
+     * A Cancelled press dispatches nothing: the system claimed it, it is not a release.
+     *
+     * Returns what the caller must hand to `super`: only the Menu button can reach the system, and
+     * only when Compose consumed neither of its phases (the app is at its root screen), in which
+     * case the press is returned in [TvPressForwarding.replay] from its Ended phase. Every other
+     * press is swallowed, so tvOS never suspends the app behind Compose's back.
+     *
+     * @param presses a [Set] of [UIPress] objects. Erasure happens due to K/N not supporting Obj-C
+     *   lightweight generics.
      * @param pressesEvent the event the presses belong to, used to recognize presses that the
-     * responder chain delivers to this mediator twice.
+     *   responder chain delivers to this mediator twice.
      */
-    fun onKeyboardPresses(presses: Set<*>, pressesEvent: UIPressesEvent?): Set<*> {
-        var unconsumed: MutableSet<Any?>? = null
-        fun reportUnconsumed(press: Any?) {
-            val set = unconsumed ?: mutableSetOf<Any?>().also { unconsumed = it }
+    fun onKeyboardPresses(presses: Set<*>, pressesEvent: UIPressesEvent?): TvPressForwarding {
+        var replay: MutableSet<Any?>? = null
+        var replayKeyIds: MutableList<Long>? = null
+        var passThrough: MutableSet<Any?>? = null
+        fun replayToSystem(press: Any?, keyId: Long) {
+            val set = replay ?: mutableSetOf<Any?>().also { replay = it }
+            set.add(press)
+            val ids = replayKeyIds ?: mutableListOf<Long>().also { replayKeyIds = it }
+            ids.add(keyId)
+        }
+        fun passToSystem(press: Any?) {
+            val set = passThrough ?: mutableSetOf<Any?>().also { passThrough = it }
             set.add(press)
         }
 
@@ -1397,9 +1452,25 @@ internal class ComposeSceneMediator(
             val press = anyPress as UIPress
             val rawEvent = press.toComposeEvent()
             // Siri Remote's Menu button is tvOS's back gesture.
-            val event = if (rawEvent.key == Key.Menu) rawEvent.copy(key = Key.Back) else rawEvent
+            val isMenu = rawEvent.key == Key.Menu
+            val event = if (isMenu) rawEvent.copy(key = Key.Back) else rawEvent
             val keyId = press.key?.keyCode?.toLong() ?: -(press.type.toLong() + 1L)
             val phase = press.phase
+
+            if (pressDispatchLog.isForwardedToSystem(pressesEvent, keyId)) {
+                // The replay of a Menu press nothing in Compose wanted, travelling up the
+                // responder chain: keep it moving towards UIApplication without dispatching it
+                // to the scene again.
+                passToSystem(anyPress)
+                return@forEach
+            }
+
+            if (phase == UIPressPhase.UIPressPhaseChanged) {
+                // An analog button reporting its pressure: Compose has no event for it, and it
+                // must not be recorded in the dispatch log — that would overwrite the phase
+                // remembered for the press that is still down.
+                return@forEach
+            }
 
             // The Siri Remote clickpad doubles as its buttons (Select in the middle, arrows
             // on the outer ring): clicking it produces a press alongside an indirect touch that
@@ -1407,8 +1478,11 @@ internal class ComposeSceneMediator(
             // so the mediator that sees the echo rather than the original still latches it.
             if (
                 when (event.key) {
-                    Key.DirectionCenter, Key.DirectionUp, Key.DirectionDown,
-                    Key.DirectionLeft, Key.DirectionRight -> true
+                    Key.DirectionCenter,
+                    Key.DirectionUp,
+                    Key.DirectionDown,
+                    Key.DirectionLeft,
+                    Key.DirectionRight -> true
                     else -> false
                 }
             ) {
@@ -1416,10 +1490,7 @@ internal class ComposeSceneMediator(
             }
 
             if (!pressDispatchLog.shouldEvaluate(pressesEvent, keyId, phase)) {
-                // Already evaluated for this UIPressesEvent, by this mediator or by another
-                // mediator of the same container: this is the responder chain echoing back a
-                // press an overlay view forwarded to `super`.
-                reportUnconsumed(anyPress)
+                // Already evaluated by another mediator for this event; do not dispatch twice.
                 return@forEach
             }
 
@@ -1430,47 +1501,77 @@ internal class ComposeSceneMediator(
                     // clear here what the Ended phase would have cleared.
                     if (swallowedSelectKeyId == keyId) {
                         swallowedSelectKeyId = null
-                        consumedKeyIds.remove(keyId)
                         repeatingKeys.remove(keyId)?.cancel()
                     }
-                    if (!onKeyboardEvent(event, keyId)) {
-                        // Not consumed: no key repeat, and the press goes to tvOS instead.
-                        reportUnconsumed(anyPress)
-                        return@forEach
+                    pressDispatchLog.takePendingMenu(keyId)
+                    if (!onKeyboardEvent(event, keyId) && isMenu) {
+                        // A Menu press is held back until its KeyUp has been offered to Compose
+                        // as well; anything else is simply swallowed, tvOS must not act on it.
+                        pressDispatchLog.setPendingMenu(keyId)
                     }
-                    consumedKeyIds.add(keyId)
 
-                    // A KeyDown swallowed to open the system keyboard never reached the scene,
-                    // so it must not key-repeat.
-                    if (swallowedSelectKeyId != keyId && repeatingKeys[keyId]?.isActive != true) {
+                    // Key repeat runs whether or not the KeyDown was consumed: a directional key
+                    // is unconsumed at a focus boundary and while `isKeyRepeat` long-press
+                    // handlers return false on the first KeyDown, and both must keep repeating.
+                    // Menu is excluded — repeating it would re-dispatch Back every interval —
+                    // and so is a KeyDown swallowed to open the system keyboard, which never
+                    // reached the scene.
+                    if (
+                        !isMenu &&
+                            swallowedSelectKeyId != keyId &&
+                            repeatingKeys[keyId]?.isActive != true
+                    ) {
                         val repeatEvent = event.copy(isRepeat = true)
-                        repeatingKeys[keyId] = CoroutineScope(coroutineContext).launch {
-                            delay(keyRepeatInitialDelayMs)
-                            while (isActive) {
-                                onKeyboardEvent(repeatEvent, keyId)
-                                delay(keyRepeatIntervalMs)
+                        repeatingKeys[keyId] =
+                            CoroutineScope(coroutineContext).launch {
+                                delay(keyRepeatInitialDelayMs)
+                                while (isActive) {
+                                    onKeyboardEvent(repeatEvent, keyId)
+                                    delay(keyRepeatIntervalMs)
+                                }
                             }
-                        }
                     }
                 }
-                UIPressPhase.UIPressPhaseEnded, UIPressPhase.UIPressPhaseCancelled -> {
+                UIPressPhase.UIPressPhaseEnded,
+                UIPressPhase.UIPressPhaseCancelled -> {
                     repeatingKeys.remove(keyId)?.cancel()
-                    // Consumption is never re-evaluated on KeyUp: the KeyUp follows its
-                    // KeyDown. Cancelled presses dispatch the KeyUp too, otherwise the
-                    // scene would keep the key pressed forever.
-                    if (consumedKeyIds.remove(keyId)) {
-                        onKeyboardEvent(event, keyId)
-                    } else {
-                        reportUnconsumed(anyPress)
+                    val isEnded = phase == UIPressPhase.UIPressPhaseEnded
+                    // Two-way policy:
+                    //  - Ended: the KeyUp is dispatched whatever happened on the KeyDown, so a
+                    //    handler that only acts on KeyUp still gets it.
+                    //  - Cancelled: nothing is dispatched. The system took the press away, it is
+                    //    not a release, and a KeyUp would make `clickable()` fire onClick and a
+                    //    KeyUp-gated Back handler pop a screen. The key left behind in
+                    //    FocusOwnerImpl.keysCurrentlyDown and the interaction left in
+                    //    `currentKeyPressInteractions` heal by themselves: validateKeyEvent never
+                    //    rejects a KeyDown, so the next press of that key is dispatched normally
+                    //    and its KeyUp removes both entries.
+                    val consumed = isEnded && onKeyboardEvent(event, keyId)
+                    val wasPendingMenu = pressDispatchLog.takePendingMenu(keyId)
+                    if (wasPendingMenu && !consumed && isEnded) {
+                        // Nothing in Compose wanted the Menu press on either phase: the app is
+                        // at its root screen and tvOS has to move it to the background. A
+                        // cancelled press is dropped instead — the user let go of the button
+                        // outside of a completed press.
+                        pressDispatchLog.markForwardedToSystem(pressesEvent, keyId)
+                        replayToSystem(anyPress, keyId)
                     }
                 }
-                else -> reportUnconsumed(anyPress)
+                else -> Unit
             }
         }
 
-        val result = unconsumed ?: return emptySet<Any?>()
-        // Avoid allocating a copy when nothing was consumed at all.
-        return if (result.size == presses.size) presses else result
+        if (replay == null && passThrough == null) {
+            return TvPressForwarding.None
+        }
+        val replayedKeyIds = replayKeyIds.orEmpty()
+        return TvPressForwarding(
+            replay = replay.orEmpty(),
+            passThrough = passThrough.orEmpty(),
+            // The short-circuit must not outlive the replay: `pressesEvent` can be null, and
+            // then the log can't tell one event from the next.
+            onReplayFinished = { replayedKeyIds.forEach(pressDispatchLog::unmarkForwardedToSystem) },
+        )
     }
 
     private fun onKeyboardEvent(keyEvent: KeyEvent, keyId: Long? = null): Boolean {
@@ -1482,21 +1583,26 @@ internal class ComposeSceneMediator(
         // (The alternative is to send the KeyDown to the scene first and only open the
         // keyboard if nothing consumed it; that changes more behaviour, so it isn't done.)
         if (keyEvent.key == Key.DirectionCenter) {
-            if (keyEvent.type == KeyEventType.KeyUp &&
-                keyId != null && keyId == swallowedSelectKeyId
+            if (
+                keyEvent.type == KeyEventType.KeyUp &&
+                    keyId != null &&
+                    keyId == swallowedSelectKeyId
             ) {
                 swallowedSelectKeyId = null
                 return true
             }
-            if (keyEvent.type == KeyEventType.KeyDown &&
-                keyId != null && keyId == swallowedSelectKeyId
+            if (
+                keyEvent.type == KeyEventType.KeyDown &&
+                    keyId != null &&
+                    keyId == swallowedSelectKeyId
             ) {
                 // A repeat of the KeyDown that was already swallowed to open the keyboard.
                 return true
             }
-            if (tvOSTextInputService.activeRequest != null &&
-                !tvOSTextInputService.isKeyboardVisible &&
-                keyEvent.type == KeyEventType.KeyDown
+            if (
+                tvOSTextInputService.activeRequest != null &&
+                    !tvOSTextInputService.isKeyboardVisible &&
+                    keyEvent.type == KeyEventType.KeyDown
             ) {
                 swallowedSelectKeyId = keyId
                 tvOSTextInputService.showKeyboard()
@@ -1508,9 +1614,7 @@ internal class ComposeSceneMediator(
         // tvOS, so consuming the key would trap focus inside the field. While a Compose
         // text field holds input focus, route D-pad directly to focus traversal instead
         // of letting `scene.sendKeyEvent` deliver it to the field.
-        if (tvOSTextInputService.activeRequest != null &&
-            !tvOSTextInputService.isKeyboardVisible
-        ) {
+        if (tvOSTextInputService.activeRequest != null && !tvOSTextInputService.isKeyboardVisible) {
             val direction = keyEvent.toFocusDirection()
             if (direction != null) {
                 if (onPreviewKeyEvent(keyEvent)) return true
@@ -1521,32 +1625,38 @@ internal class ComposeSceneMediator(
             }
         }
 
-        return onPreviewKeyEvent(keyEvent)
-            || scene.sendKeyEvent(keyEvent)
-            || onKeyEvent(keyEvent)
-            || navigationEventInput.onKeyEvent(keyEvent)
+        return onPreviewKeyEvent(keyEvent) ||
+            scene.sendKeyEvent(keyEvent) ||
+            onKeyEvent(keyEvent) ||
+            navigationEventInput.onKeyEvent(keyEvent)
     }
 
-    private fun KeyEvent.toFocusDirection(): FocusDirection? = when (key) {
-        Key.DirectionUp -> FocusDirection.Up
-        Key.DirectionDown -> FocusDirection.Down
-        Key.DirectionLeft -> FocusDirection.Left
-        Key.DirectionRight -> FocusDirection.Right
-        else -> null
-    }
+    private fun KeyEvent.toFocusDirection(): FocusDirection? =
+        when (key) {
+            Key.DirectionUp -> FocusDirection.Up
+            Key.DirectionDown -> FocusDirection.Down
+            Key.DirectionLeft -> FocusDirection.Left
+            Key.DirectionRight -> FocusDirection.Right
+            else -> null
+        }
 
     private inner class IosPlatformContext : PlatformContext {
-        override val windowInfo: WindowInfo get() = windowContext.windowInfo
-        override val taskDispatchers: TaskDispatchers = object : TaskDispatchers {
-            override val Default = Dispatchers.Default
-            override val IO = Dispatchers.IO
-        }
-        override val architectureComponentsOwner get() = this@ComposeSceneMediator.architectureComponentsOwner
-        override val screenReader: PlatformScreenReader get() = platformScreenReader
+        override val windowInfo: WindowInfo
+            get() = windowContext.windowInfo
 
-        override val hapticFeedback: HapticFeedback by lazy(LazyThreadSafetyMode.NONE) {
-            TvOSHapticFeedback()
-        }
+        override val taskDispatchers: TaskDispatchers =
+            object : TaskDispatchers {
+                override val Default = Dispatchers.Default
+                override val IO = Dispatchers.IO
+            }
+        override val architectureComponentsOwner
+            get() = this@ComposeSceneMediator.architectureComponentsOwner
+
+        override val screenReader: PlatformScreenReader
+            get() = platformScreenReader
+
+        override val hapticFeedback: HapticFeedback by
+            lazy(LazyThreadSafetyMode.NONE) { TvOSHapticFeedback() }
 
         override fun convertLocalToWindowPosition(localPosition: Offset): Offset =
             windowContext.convertLocalToWindowPosition(_overlayView, localPosition)
@@ -1560,37 +1670,50 @@ internal class ComposeSceneMediator(
         override fun convertScreenToLocalPosition(positionOnScreen: Offset): Offset =
             windowContext.convertScreenToLocalPosition(_overlayView, positionOnScreen)
 
-        override val viewConfiguration get() = this@ComposeSceneMediator.viewConfiguration
+        override val viewConfiguration
+            get() = this@ComposeSceneMediator.viewConfiguration
 
         // tvOS has no touch surface: the Siri Remote is a directional input device. Starting in
         // InputMode.Touch would make Focusability.SystemDefined resolve to "cannot focus", so
         // requestFocus() and moveFocus() would be no-ops until the first remote key event.
-        override val inputModeManager by lazy(LazyThreadSafetyMode.NONE) {
-            DefaultInputModeManager(InputMode.Keyboard)
-        }
-        override val semanticsOwnerListener get() = this@ComposeSceneMediator.semanticsOwnerListener
-        override val rootForTestListener get() = this@ComposeSceneMediator.rootForTestListener
-        override val windowInsets get() = this@ComposeSceneMediator.windowInsetsManager.windowInsets
-        override val outOfFrameExecutor get() = this@ComposeSceneMediator.frameChoreographer.outOfFrameExecutor
-        override val prefetchScheduler get() = this@ComposeSceneMediator.prefetchScheduler
+        override val inputModeManager by
+            lazy(LazyThreadSafetyMode.NONE) { DefaultInputModeManager(InputMode.Keyboard) }
+        override val semanticsOwnerListener
+            get() = this@ComposeSceneMediator.semanticsOwnerListener
+
+        override val rootForTestListener
+            get() = this@ComposeSceneMediator.rootForTestListener
+
+        override val windowInsets
+            get() = this@ComposeSceneMediator.windowInsetsManager.windowInsets
+
+        override val outOfFrameExecutor
+            get() = this@ComposeSceneMediator.frameChoreographer.outOfFrameExecutor
+
+        override val prefetchScheduler
+            get() = this@ComposeSceneMediator.prefetchScheduler
+
         // On tvOS, Siri Remote touches are UITouchTypeIndirect which map to PointerType.Mouse.
         // Clearing focus on mouse-down would lose Compose focus on every remote swipe.
-        override val isClearFocusOnMouseDownEnabled: Boolean get() = false
+        override val isClearFocusOnMouseDownEnabled: Boolean
+            get() = false
 
         override var isKeepScreenOnEnabled: Boolean
             get() = ApplicationIdleTimer.isDisabled
-            set(value) { ApplicationIdleTimer.setIdleTimerState(this@ComposeSceneMediator, value) }
+            set(value) {
+                ApplicationIdleTimer.setIdleTimerState(this@ComposeSceneMediator, value)
+            }
 
         override fun voteFrameRate(frameRate: Float, frameRateCategory: Float) {
             frameChoreographer.voteFrameRate(frameRate, frameRateCategory)
         }
 
         /**
-         * Makes `LocalSoftwareKeyboardController.show()/hide()` functional on tvOS by
-         * forwarding to the tvOS keyboard overlay. The controller only forwards while a text
-         * session is active on the focused field, so `show()` is a no-op when no Compose text
-         * field requested input; [TvOSTextInputService.showKeyboard] guards that case too.
-         * Text state itself flows through [startInputMethod], hence the no-op session methods.
+         * Makes `LocalSoftwareKeyboardController.show()/hide()` functional on tvOS by forwarding to
+         * the tvOS keyboard overlay. The controller only forwards while a text session is active on
+         * the focused field, so `show()` is a no-op when no Compose text field requested input;
+         * [TvOSTextInputService.showKeyboard] guards that case too. Text state itself flows through
+         * [startInputMethod], hence the no-op session methods.
          */
         @Suppress("DEPRECATION")
         override val textInputService: androidx.compose.ui.text.input.PlatformTextInputService =
@@ -1599,7 +1722,7 @@ internal class ComposeSceneMediator(
                     value: TextFieldValue,
                     imeOptions: ImeOptions,
                     onEditCommand: (List<EditCommand>) -> Unit,
-                    onImeActionPerformed: (ImeAction) -> Unit
+                    onImeActionPerformed: (ImeAction) -> Unit,
                 ) = Unit
 
                 override fun stopInput() = Unit
@@ -1623,9 +1746,7 @@ internal class ComposeSceneMediator(
                 // we do NOT cancel here on keyboard dismissal so the user can re-open the
                 // keyboard by pressing Select on the same field without losing and regaining focus.
                 kotlinx.coroutines.suspendCancellableCoroutine<Nothing> { continuation ->
-                    continuation.invokeOnCancellation {
-                        tvOSTextInputService.stopInput(sessionId)
-                    }
+                    continuation.invokeOnCancellation { tvOSTextInputService.stopInput(sessionId) }
                 }
             } finally {
                 tvOSTextInputService.stopInput(sessionId)
@@ -1637,29 +1758,34 @@ internal class ComposeSceneMediator(
 private fun UIEvent.getButton(
     previousButtonMask: Long,
     eventKind: TouchesEventKind,
-    previousEventKind: TouchesEventKind?
+    previousEventKind: TouchesEventKind?,
 ): PointerButton? =
     if (eventKind == TouchesEventKind.MOVED) {
         null
-    } else if (buttonMaskOrZero and UIEventButtonMaskPrimary != 0L &&
-        (previousButtonMask and UIEventButtonMaskPrimary == 0L ||
-            eventKind != previousEventKind)) {
+    } else if (
+        buttonMaskOrZero and UIEventButtonMaskPrimary != 0L &&
+            (previousButtonMask and UIEventButtonMaskPrimary == 0L ||
+                eventKind != previousEventKind)
+    ) {
         PointerButton.Primary
-    } else if (buttonMaskOrZero and UIEventButtonMaskSecondary != 0L &&
-        (previousButtonMask and UIEventButtonMaskSecondary == 0L ||
-            eventKind != previousEventKind)) {
+    } else if (
+        buttonMaskOrZero and UIEventButtonMaskSecondary != 0L &&
+            (previousButtonMask and UIEventButtonMaskSecondary == 0L ||
+                eventKind != previousEventKind)
+    ) {
         PointerButton.Secondary
     } else {
         null
     }
 
-private val UIEvent?.timeMillis: Long get() {
-    // If the touches were cancelled due to gesture failure, the timestamp is not available,
-    // because no actual event with touch updates happened. We just use the current time in
-    // this case.
-    val timestamp = this?.timestamp ?: CACurrentMediaTime()
-    return (timestamp * 1e3).toLong()
-}
+private val UIEvent?.timeMillis: Long
+    get() {
+        // If the touches were cancelled due to gesture failure, the timestamp is not available,
+        // because no actual event with touch updates happened. We just use the current time in
+        // this case.
+        val timestamp = this?.timestamp ?: CACurrentMediaTime()
+        return (timestamp * 1e3).toLong()
+    }
 
 private fun TouchesEventKind.toPointerEventType(): PointerEventType =
     when (this) {
@@ -1671,7 +1797,7 @@ private fun TouchesEventKind.toPointerEventType(): PointerEventType =
 private fun UIEvent.historicalChangesForTouch(
     touch: UITouch,
     view: UIView,
-    density: Float
+    density: Float,
 ): List<HistoricalChange> {
     val touches = coalescedTouchesForTouch(touch) ?: return emptyList()
 
@@ -1693,18 +1819,19 @@ private fun UIEvent.historicalChangesForTouch(
     }
 }
 
-private val UIEvent?.buttonMaskOrZero: Long get() = 0L
+private val UIEvent?.buttonMaskOrZero: Long
+    get() = 0L
 
-private val UIEvent?.modifierFlagsOrZero: Long get() =
-    this?.modifierFlags ?: 0L
+private val UIEvent?.modifierFlagsOrZero: Long
+    get() = this?.modifierFlags ?: 0L
 
 private val UITouch.isPressed
-    get() = when (phase) {
-        UITouchPhase.UITouchPhaseEnded, UITouchPhase.UITouchPhaseCancelled -> false
-        else -> true
-    }
+    get() =
+        when (phase) {
+            UITouchPhase.UITouchPhaseEnded,
+            UITouchPhase.UITouchPhaseCancelled -> false
+            else -> true
+        }
 
 private fun UITouch.offsetInView(view: UIView, density: Float): Offset =
-    locationInView(view).useContents {
-        Offset(x.toFloat() * density, y.toFloat() * density)
-    }
+    locationInView(view).useContents { Offset(x.toFloat() * density, y.toFloat() * density) }
