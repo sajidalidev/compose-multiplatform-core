@@ -45,6 +45,7 @@ data class DemoItem(val id: Int, val title: String, val description: String, val
 
 private const val TEXT_INPUT_DEMO_ID = 19
 private const val INPUT_CHECKS_DEMO_ID = 20
+private const val REMOTE_SWIPE_DEMO_ID = 21
 
 @Composable
 fun TvOSDemoApp() {
@@ -65,7 +66,21 @@ fun TvOSDemoApp() {
                     false
                 }
         ) {
-            Box(modifier = Modifier.fillMaxSize().padding(48.dp)) {
+            // The grid stays composed behind an overlay screen so its scroll and focus state
+            // survive, but its cards are hidden, so a focus search from the overlay must not
+            // reach them. This must stay conditional: an ancestor focusProperties scope overrides
+            // every descendant focus target's own focusability, so an unconditional scope would
+            // force canFocus=true onto non-focusable containers, like the grid's scroll container,
+            // and the initial focus search would stop there instead of on a card.
+            Box(
+                modifier =
+                    Modifier.fillMaxSize()
+                        .padding(48.dp)
+                        .then(
+                            if (selectedItem != null) Modifier.focusProperties { canFocus = false }
+                            else Modifier
+                        )
+            ) {
                 FocusableCardGrid { item -> selectedItem = item }
             }
 
@@ -77,6 +92,11 @@ fun TvOSDemoApp() {
                     )
                 } else if (item.id == INPUT_CHECKS_DEMO_ID) {
                     InputChecksScreen(
+                        focusRequester = overlayFocus,
+                        onDismiss = { selectedItem = null },
+                    )
+                } else if (item.id == REMOTE_SWIPE_DEMO_ID) {
+                    RemoteSwipeScreen(
                         focusRequester = overlayFocus,
                         onDismiss = { selectedItem = null },
                     )
@@ -203,6 +223,12 @@ private val demoItems: List<DemoItem> =
             "Input Checks",
             "Density, Click, Keyboard, Dialog",
             Color(0xFF8BC34A),
+        ),
+        DemoItem(
+            REMOTE_SWIPE_DEMO_ID,
+            "Remote Swipe",
+            "Modifier.remoteSwipe vs D-pad",
+            Color(0xFF00ACC1),
         ),
     )
 

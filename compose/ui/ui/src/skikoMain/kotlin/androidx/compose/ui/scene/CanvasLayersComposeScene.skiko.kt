@@ -35,6 +35,8 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerInputEvent
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.node.RootNodeOwner
 import androidx.compose.ui.platform.FrameRecomposer
@@ -294,6 +296,10 @@ private class CanvasLayersComposeSceneImpl(
 
     override fun processRotaryScrollEvent(event: RotaryScrollEvent): Boolean =
         focusedLayer?.onRotaryEvent(event) ?: mainOwner.onRotaryEvent(event)
+
+    // tvOS fork: swipes on the touch surface of a remote.
+    override fun processRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? =
+        focusedLayer?.onRemoteSwipe(event) ?: mainOwner.onRemoteSwipe(event)
 
     override fun doMeasureAndLayout() {
         forEachOwner { it.measureAndLayout() }
@@ -657,6 +663,11 @@ private class CanvasLayersComposeSceneImpl(
 
         fun onRotaryEvent(event: RotaryScrollEvent): Boolean {
             return owner.onRotaryEvent(event)
+        }
+
+        // tvOS fork: swipes on the touch surface of a remote.
+        fun onRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? {
+            return owner.onRemoteSwipe(event)
         }
 
         override fun setOutsidePointerEventListener(

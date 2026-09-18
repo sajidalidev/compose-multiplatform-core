@@ -24,6 +24,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerInputEvent
+import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.node.LayoutNode
 import androidx.compose.ui.node.RootNodeOwner
@@ -192,6 +194,10 @@ private class PlatformLayersComposeSceneImpl(
 
     override fun processRotaryScrollEvent(event: RotaryScrollEvent): Boolean =
         mainOwner.onRotaryEvent(event)
+
+    // tvOS fork: swipes on the touch surface of a remote.
+    override fun processRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? =
+        mainOwner.onRemoteSwipe(event)
 
     override fun doMeasureAndLayout() {
         mainOwner.measureAndLayout()

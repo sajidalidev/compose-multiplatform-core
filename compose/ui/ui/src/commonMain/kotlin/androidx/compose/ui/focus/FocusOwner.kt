@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.indirect.IndirectPointerEvent
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 
 internal const val FocusWarning = "FocusRelatedWarning"
@@ -168,6 +170,15 @@ internal interface FocusOwner : FocusManager {
         event: RotaryScrollEvent,
         onFocusedItem: () -> Boolean = { false },
     ): Boolean
+
+    /**
+     * tvOS fork: dispatches a swipe made on the touch surface of a remote to the
+     * [RemoteSwipeModifierNode]s on the focused item and on its ancestors, from the innermost one
+     * outwards, and returns the first node that claimed it. A node that returns `false` passes the
+     * swipe to the next one further out, and `null` is returned when no node received it or every
+     * node left it to the keys.
+     */
+    fun dispatchRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode?
 
     /** Dispatches an indirect pointer event through the compose hierarchy. */
     fun dispatchIndirectPointerEvent(event: IndirectPointerEvent): Boolean

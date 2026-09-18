@@ -49,6 +49,10 @@ import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeDirection
+import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
+import androidx.compose.ui.input.remote.RemoteSwipeOrigin
 import androidx.compose.ui.navigationevent.TvBackNavigationEventInput
 import androidx.compose.ui.platform.AccessibilityMediator
 import androidx.compose.ui.platform.ApplicationIdleTimer
@@ -185,6 +189,15 @@ private inline fun swipeDebug(message: () -> String) {
     }
 }
 
+/** The direction a swipe that dispatched [key] travelled in. */
+private fun remoteSwipeDirection(key: Key): RemoteSwipeDirection =
+    when (key) {
+        Key.DirectionRight -> RemoteSwipeDirection.Right
+        Key.DirectionLeft -> RemoteSwipeDirection.Left
+        Key.DirectionDown -> RemoteSwipeDirection.Down
+        else -> RemoteSwipeDirection.Up
+    }
+
 private fun directionName(key: Key): String =
     when (key) {
         Key.DirectionRight -> "DirectionRight"
@@ -240,6 +253,27 @@ private class IndirectTouchState(
 
     /** The direction the contact dispatched, which is the direction a fling continues in. */
     var dispatchedKey: Key? = null
+
+    /**
+     * Whether a `Modifier.remoteSwipe` took the move of this contact. Resolved once, when the move
+     * is dispatched, and then honoured for the rest of the contact: a traverse recognised after a
+     * move that no modifier took keeps going to the keys.
+     */
+    var remoteSwipeHandled: Boolean = false
+
+    /**
+     * The node that took the move, which the momentum of the same contact belongs to. It is held
+     * rather than looked up again so the momentum reaches the node the move went to even when the
+     * callback moved focus somewhere else.
+     */
+    var remoteSwipeNode: RemoteSwipeModifierNode? = null
+
+    /**
+     * The momentum this contact earned at the far ring, when it is already known while the move is
+     * being dispatched, so the move can carry it.
+     */
+    var traverseSpeed: Float? = null
+    var traverseSteps: Int = 0
 
     /** Trailing positions of the contact, for the speed a fling is planned from. */
     val flingSamples = FlingSampleBuffer()
@@ -1230,16 +1264,31 @@ internal class ComposeSceneMediator(
             return
         }
         state.farRingReached = true
-        if (state.verdict == IndirectTouchVerdict.ARMED) {
+        // Measured before the move goes out, so a move dispatched here can carry the momentum it
+        // earned. The dispatch adds no samples, so the reading is the same either way.
+        val velocity = state.flingSamples.velocityAlong(horizontal, FLING_VELOCITY_WINDOW_S)
+        val signedSpeed = velocity?.let { signedSpeedAlongKey(key, it) }
+        val plan = if (signedSpeed == null) null else planFling(signedSpeed, key)
+        val moveWasPending = state.verdict == IndirectTouchVerdict.ARMED
+        if (moveWasPending) {
+            state.traverseSpeed = signedSpeed
+            state.traverseSteps = plan?.steps ?: 0
             dispatchArmedIndirectTouch(state, timestamp)
         }
         // The dispatch above runs key event handlers, which can dispose this mediator or cancel
         // everything.
         if (indirectTouches.isEmpty()) return
         if (state.verdict != IndirectTouchVerdict.DISPATCHED) return
-        val velocity = state.flingSamples.velocityAlong(horizontal, FLING_VELOCITY_WINDOW_S)
-        val signedSpeed = velocity?.let { signedSpeedAlongKey(key, it) }
-        val plan = if (signedSpeed == null) null else planFling(signedSpeed, key)
+        if (state.remoteSwipeHandled) {
+            // The move went to a Modifier.remoteSwipe, so the momentum belongs to it too rather
+            // than to the keys. A traverse recognised only now arrives there as a second swipe.
+            if (!moveWasPending && plan != null) {
+                state.traverseSpeed = signedSpeed
+                state.traverseSteps = plan.steps
+                dispatchRemoteSwipeMomentum(state, key, plan)
+            }
+            return
+        }
         if (plan == null) {
             swipeDebug { "FLING none reason=far-ring speed=$signedSpeed" }
             return
@@ -1377,8 +1426,70 @@ internal class ComposeSceneMediator(
         swipeDebug { "SWIPE dispatch ${directionName(key)}" }
         state.verdict = IndirectTouchVerdict.DISPATCHED
         state.dispatchedKey = key
+        if (dispatchRemoteSwipe(state, key)) return
         onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
         onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp))
+    }
+
+    /**
+     * Offers the move of [state] to the nearest `Modifier.remoteSwipe` on the focused element or on
+     * one of its ancestors, and records on the contact whether one took it. That answer stands for
+     * the whole contact: a traverse recognised later sends nothing to the keys when the move was
+     * taken, and keeps the key momentum when it was not.
+     */
+    private fun dispatchRemoteSwipe(state: IndirectTouchState, key: Key): Boolean {
+        val traverseSpeed = state.traverseSpeed
+        val isTraverse = traverseSpeed != null && state.traverseSteps > 0
+        val velocity =
+            if (isTraverse) {
+                abs(traverseSpeed!!)
+            } else {
+                val axis =
+                    state.flingSamples.velocityAlong(
+                        isHorizontalFlingKey(key),
+                        FLING_VELOCITY_WINDOW_S,
+                    )
+                if (axis == null) 0f else abs(axis)
+            }
+        val node =
+            scene.dispatchRemoteSwipe(
+                RemoteSwipe(
+                    direction = remoteSwipeDirection(key),
+                    velocity = velocity,
+                    isTraverse = isTraverse,
+                    momentumSteps = if (isTraverse) state.traverseSteps else 0,
+                    origin =
+                        if (state.ringOrigin) RemoteSwipeOrigin.Ring else RemoteSwipeOrigin.Center,
+                )
+            )
+        state.remoteSwipeNode = node
+        state.remoteSwipeHandled = node != null
+        if (node != null) {
+            swipeDebug { "SWIPE taken by remoteSwipe traverse=$isTraverse" }
+        }
+        return node != null
+    }
+
+    /**
+     * Delivers the momentum of a traverse whose move already went to a `Modifier.remoteSwipe`, as a
+     * second swipe with the speed the key momentum would have been sized from. It goes straight to
+     * the node the move went to, and is dropped when that node has left the hierarchy since.
+     */
+    private fun dispatchRemoteSwipeMomentum(state: IndirectTouchState, key: Key, plan: FlingPlan) {
+        val node = state.remoteSwipeNode ?: return
+        if (!node.node.isAttached) {
+            swipeDebug { "SWIPE momentum dropped reason=detached" }
+            return
+        }
+        node.onRemoteSwipe(
+            RemoteSwipe(
+                direction = remoteSwipeDirection(key),
+                velocity = abs(state.traverseSpeed ?: 0f),
+                isTraverse = true,
+                momentumSteps = plan.steps,
+                origin = if (state.ringOrigin) RemoteSwipeOrigin.Ring else RemoteSwipeOrigin.Center,
+            )
+        )
     }
 
     /**
@@ -1934,10 +2045,16 @@ internal class ComposeSceneMediator(
             }
         }
 
-        return onPreviewKeyEvent(keyEvent) ||
-            scene.sendKeyEvent(keyEvent) ||
-            onKeyEvent(keyEvent) ||
-            navigationEventInput.onKeyEvent(keyEvent)
+        val consumed =
+            onPreviewKeyEvent(keyEvent) ||
+                scene.sendKeyEvent(keyEvent) ||
+                onKeyEvent(keyEvent) ||
+                navigationEventInput.onKeyEvent(keyEvent)
+        swipeDebug {
+            "KEY ${keyEvent.key} ${keyEvent.type} consumed=$consumed " +
+                "hasFocus=${scene.focusManager.hasFocus}"
+        }
+        return consumed
     }
 
     private fun KeyEvent.toFocusDirection(): FocusDirection? =

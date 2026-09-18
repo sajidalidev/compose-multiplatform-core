@@ -43,6 +43,8 @@ import androidx.compose.ui.input.key.KeyEventType.Companion.KeyUp
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.internal.requirePrecondition
 import androidx.compose.ui.node.DelegatableNode
@@ -424,6 +426,26 @@ internal class FocusOwnerImpl(
         return false
     }
 
+    /**
+     * tvOS fork: dispatches a swipe made on the touch surface of a remote to the
+     * [RemoteSwipeModifierNode]s around the focused item, from the innermost one outwards, and
+     * returns the first one that claimed the swipe. A node that leaves it alone passes it to the
+     * next one further out, and `null` is returned when none of them claimed it. There is no node
+     * kind for it, so the chain around the focused item is walked and type checked instead.
+     */
+    override fun dispatchRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? {
+        if (focusInvalidationManager.hasPendingInvalidation()) return null
+
+        val focusTargetNode = findFocusTargetNode() ?: return null
+        focusTargetNode.localRemoteSwipeNodes().fastForEach {
+            if (it.onRemoteSwipe(event)) return it
+        }
+        focusTargetNode.remoteSwipeNodesIncludingSelf().fastForEach {
+            if (it.onRemoteSwipe(event)) return it
+        }
+        return null
+    }
+
     override fun dispatchIndirectPointerEvent(event: IndirectPointerEvent): Boolean {
         if (focusInvalidationManager.hasPendingInvalidation()) {
             // Ignoring this to unblock b/379289347.
@@ -578,6 +600,30 @@ internal class FocusOwnerImpl(
             focusedKeyInputNode = modifierNode
         }
         return focusedKeyInputNode
+    }
+
+    /**
+     * tvOS fork: the [RemoteSwipeModifierNode]s on the same layout node as the focus target and
+     * below it, which is where `Modifier.focusable().remoteSwipe { }` puts one, innermost first. The
+     * next focus target down ends the list.
+     */
+    private fun DelegatableNode.localRemoteSwipeNodes(): List<RemoteSwipeModifierNode> {
+        val remoteSwipeNodes = mutableListOf<RemoteSwipeModifierNode>()
+        visitLocalDescendants(Nodes.FocusTarget or Nodes.Any) { modifierNode ->
+            if (modifierNode.isKind(Nodes.FocusTarget)) return remoteSwipeNodes
+
+            if (modifierNode is RemoteSwipeModifierNode) remoteSwipeNodes.add(0, modifierNode)
+        }
+        return remoteSwipeNodes
+    }
+
+    /** tvOS fork: the [RemoteSwipeModifierNode]s on the node itself or above it, nearest first. */
+    private fun DelegatableNode.remoteSwipeNodesIncludingSelf(): List<RemoteSwipeModifierNode> {
+        val remoteSwipeNodes = mutableListOf<RemoteSwipeModifierNode>()
+        visitAncestors(Nodes.Any, includeSelf = true) {
+            if (it is RemoteSwipeModifierNode) remoteSwipeNodes.add(it)
+        }
+        return remoteSwipeNodes
     }
 
     // TODO(b/307580000) Factor this out into a class to manage key inputs.

@@ -61,6 +61,8 @@ import androidx.compose.ui.input.pointer.PointerInputEventProcessor
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.PositionCalculator
+import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.layout.RootMeasurePolicy
 import androidx.compose.ui.layout.RulerProviderModifierElement
@@ -387,6 +389,11 @@ internal class RootNodeOwner(
 
     fun onRotaryEvent(event: RotaryScrollEvent): Boolean {
         return _owner.focusOwner.dispatchRotaryEvent(event)
+    }
+
+    // tvOS fork: swipes on the touch surface of a remote, delivered by the platform mediator.
+    fun onRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? {
+        return _owner.focusOwner.dispatchRemoteSwipe(event)
     }
 
     /**

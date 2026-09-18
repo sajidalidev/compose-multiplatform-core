@@ -34,6 +34,8 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerInputEvent
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.platform.FrameRecomposer
 import androidx.compose.ui.platform.ProvidePlatformCompositionLocals
@@ -255,6 +257,16 @@ internal abstract class BaseComposeScene(
         inputHandler.cancelPointerInput()
     }
 
+    // tvOS fork: entry point for a swipe made on the touch surface of a remote. Unlike a key event,
+    // which always trampolines, a swipe only does so when a modifier took it: a scene with no such
+    // modifier sends key events for its swipes and keeps exactly the timing the key path had.
+    internal fun sendRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? =
+        postponeInvalidation("BaseComposeScene:sendRemoteSwipe") {
+            processRemoteSwipe(event)?.also {
+                frameRecomposer.performTrampolineDispatch()
+            }
+        }
+
     override fun sendKeyEvent(keyEvent: KeyEvent): Boolean =
         postponeInvalidation("BaseComposeScene:sendKeyEvent") {
             inputHandler.onKeyEvent(keyEvent).also {
@@ -302,6 +314,10 @@ internal abstract class BaseComposeScene(
 
     protected abstract fun processRotaryScrollEvent(event: RotaryScrollEvent): Boolean
 
+    // tvOS fork: swipes on the touch surface of a remote reach the scene from the platform
+    // mediator rather than from the composition, on the same path as a key event.
+    protected abstract fun processRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode?
+
     protected abstract fun doMeasureAndLayout()
 
     protected abstract fun doDraw(canvas: Canvas)
@@ -316,3 +332,8 @@ internal val ComposeScene.lastKnownPointerPosition: Offset?
         this as BaseComposeScene
         return lastKnownPointerPosition
     }
+
+// tvOS fork: lets a platform mediator, which holds a [ComposeScene], deliver a swipe made on the
+// touch surface of a remote.
+internal fun ComposeScene.dispatchRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? =
+    (this as? BaseComposeScene)?.sendRemoteSwipe(event)
