@@ -61,3 +61,28 @@ intermediate upstream alpha/beta; consumer requests for those intermediate versi
 onto the published fork version via the compose-tvos plugin's remote version manifest. This
 cadence exists because Maven Central's publishing quota makes publishing every upstream
 pre-release impractical for a single-maintainer fork.
+
+## Keyboard and focus scrolling
+
+While the native keyboard is visible, remote input stays in UIKit. Compose's
+mediator does not forward those events to the text field or focus navigation
+behind the keyboard; it still consumes the paired Select event that opened it.
+
+Foundation uses a 30% focus pivot on tvOS, matching Android TV. Focused items
+scroll away from the viewport edge, including when returning toward the first
+row. Other Skiko platforms retain minimum-distance scrolling. Applications may
+still override `LocalBringIntoViewSpec` for a different layout policy.
+
+## Root Back / Menu forwarding
+
+The tvOS input bridge forwards an unhandled Menu press's original Began phase to
+UIKit, then forwards Ended only if Compose also leaves KeyUp unhandled. UIKit
+requires the real native press sequence to return to Home; replaying Began after
+the UIPress has already ended does not work on the physical Apple TV. In-app Back
+handlers must consume KeyDown even when their action runs on KeyUp: UIKit can act
+once Began reaches the system. Native cancellations propagate as Cancelled, without
+dispatching a Compose KeyUp. Both the overlay input view and hosting controller
+use the shared dispatch log to avoid delivering forwarded presses to Compose twice.
+
+Applications must leave root Back unconsumed when they want tvOS to return Home.
+An always-consuming no-op exit callback prevents this system behavior.

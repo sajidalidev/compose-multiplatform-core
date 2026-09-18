@@ -29,7 +29,7 @@ private const val HELD_PRESS_MAX_AGE_S = 1.0
  * mediator of one [ComposeContainer] (the root one and the one owned by each
  * [IosComposeSceneLayer]).
  *
- * A mediator replays an unhandled Menu press to `super`, so UIKit walks the responder chain and
+ * A mediator forwards an unhandled Menu press to `super`, so UIKit walks the responder chain and
  * delivers the very same press to the views and controllers above it, which route it back into
  * another mediator of the same container. Sharing the log makes those echoes visible: a press that
  * is already on its way to UIApplication is passed straight on ([isForwardedToSystem]) instead of
@@ -71,8 +71,8 @@ internal class TvPressDispatchLog {
     }
 
     /**
-     * Records that the press identified by [keyId] is being replayed to the responder chain, so
-     * that the responders above the one replaying it forward it towards `UIApplication` instead of
+     * Records that the press identified by [keyId] is being forwarded to the responder chain, so
+     * that the responders above the one forwarding it forward it towards `UIApplication` instead of
      * dispatching it to Compose a second time.
      */
     fun markForwardedToSystem(event: UIPressesEvent?, keyId: Long) {
@@ -87,7 +87,7 @@ internal class TvPressDispatchLog {
     }
 
     /**
-     * Stops short-circuiting [keyId] once its replay has travelled the whole responder chain.
+     * Stops short-circuiting [keyId] once its phase has travelled the whole responder chain.
      * Relying on the next event to clear it isn't enough: the presses may arrive with a null
      * `UIPressesEvent`, and then every event looks like the same one.
      */
@@ -172,17 +172,12 @@ internal class TvPressDispatchLog {
  */
 internal class TvPressForwarding(
     /**
-     * Presses to replay to the responder chain as a Began immediately followed by an Ended, so that
-     * UIKit sees a completed press.
-     */
-    val replay: Set<Any?> = emptySet(),
-    /**
      * Presses that are already travelling to the system: forward them unchanged, in the phase they
      * arrived in.
      */
     val passThrough: Set<Any?> = emptySet(),
-    /** Called once [replay] has been sent up the responder chain, to drop its bookkeeping. */
-    val onReplayFinished: () -> Unit = {},
+    /** Called after forwarding this phase up the responder chain, to drop its bookkeeping. */
+    val onForwardingFinished: () -> Unit = {},
 ) {
     companion object {
         val None = TvPressForwarding()

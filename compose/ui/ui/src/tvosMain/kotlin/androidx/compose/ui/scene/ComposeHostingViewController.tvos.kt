@@ -106,15 +106,13 @@ internal class ComposeHostingViewController(
     }
 
     override fun pressesBegan(presses: Set<*>, withEvent: UIPressesEvent?) {
-        // Mirrors the overlay input view: Compose gets every press in both phases, and the only
-        // press that can reach tvOS is a Menu press no Compose handler wanted on either phase.
-        // Such a press is either replayed from here (when this controller saw it first, because
-        // no overlay view was first responder) or passed on unchanged while it travels up the
-        // responder chain from the view that replayed it.
+        // Forward a real Menu Began when Compose leaves KeyDown unhandled. UIKit needs
+        // this phase to recognize a later unhandled Ended as a request to return Home.
         val forwarding = container.onKeyboardPresses(presses, withEvent)
         if (forwarding.passThrough.isNotEmpty()) {
             super.pressesBegan(forwarding.passThrough, withEvent)
         }
+        forwarding.onForwardingFinished()
     }
 
     override fun pressesEnded(presses: Set<*>, withEvent: UIPressesEvent?) {
@@ -122,7 +120,7 @@ internal class ComposeHostingViewController(
         if (forwarding.passThrough.isNotEmpty()) {
             super.pressesEnded(forwarding.passThrough, withEvent)
         }
-        replayToSystem(forwarding, withEvent)
+        forwarding.onForwardingFinished()
     }
 
     override fun pressesCancelled(presses: Set<*>, withEvent: UIPressesEvent?) {
@@ -130,6 +128,7 @@ internal class ComposeHostingViewController(
         if (forwarding.passThrough.isNotEmpty()) {
             super.pressesCancelled(forwarding.passThrough, withEvent)
         }
+        forwarding.onForwardingFinished()
     }
 
     override fun pressesChanged(presses: Set<*>, withEvent: UIPressesEvent?) {
@@ -140,26 +139,7 @@ internal class ComposeHostingViewController(
         if (forwarding.passThrough.isNotEmpty()) {
             super.pressesChanged(forwarding.passThrough, withEvent)
         }
-    }
-
-    /**
-     * Sends [TvPressForwarding.replay] up the responder chain as a Began immediately followed by an
-     * Ended.
-     *
-     * Assumption to verify on a simulator: UIKit acts on the *completed* press, so both phases have
-     * to be replayed for the system to move the app to the background on Menu. The replayed
-     * [platform.UIKit.UIPress] still carries `phase == Ended`; if UIKit keys on `press.phase`
-     * rather than on the selector, the Began leg is a no-op and forwarding only the real Ended is
-     * the fallback.
-     */
-    private fun replayToSystem(forwarding: TvPressForwarding, event: UIPressesEvent?) {
-        if (forwarding.replay.isEmpty()) return
-        for (press in forwarding.replay) {
-            val single = setOf(press)
-            super.pressesBegan(single, event)
-            super.pressesEnded(single, event)
-        }
-        forwarding.onReplayFinished()
+        forwarding.onForwardingFinished()
     }
 
     override fun didUpdateFocusInContext(
