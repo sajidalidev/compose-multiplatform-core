@@ -75,14 +75,22 @@ still override `LocalBringIntoViewSpec` for a different layout policy.
 
 ## Root Back / Menu forwarding
 
-The tvOS input bridge forwards an unhandled Menu press's original Began phase to
-UIKit, then forwards Ended only if Compose also leaves KeyUp unhandled. UIKit
-requires the real native press sequence to return to Home; replaying Began after
-the UIPress has already ended does not work on the physical Apple TV. In-app Back
-handlers must consume KeyDown even when their action runs on KeyUp: UIKit can act
-once Began reaches the system. Native cancellations propagate as Cancelled, without
-dispatching a Compose KeyUp. Both the overlay input view and hosting controller
-use the shared dispatch log to avoid delivering forwarded presses to Compose twice.
+The tvOS input bridge forwards the real Menu Began as soon as Compose leaves a
+KeyDown unhandled, while still offering the KeyUp to Compose. UIKit only arms
+its Home gesture on a Began delivered while the press is live, so a Began
+replayed later from `pressesEnded` is ignored on the physical Apple TV: the
+forward has to happen at KeyDown time, and the press stays pending until its
+KeyUp is resolved.
+
+An unconsumed KeyUp completes the pending press by forwarding its real Ended,
+and the app goes Home. A KeyUp that an in-app Back handler consumes forwards
+the press as Cancelled instead, from inside that same live call, so UIKit sees
+Began then Cancelled and disarms the gesture rather than exiting. In-app Back
+handlers may consume either KeyDown or KeyUp; consuming either phase keeps the
+press in the app. The common pattern of acting on KeyUp alone therefore needs
+no KeyDown handler. Native cancellations are forwarded as Cancelled too. Both
+the overlay input view and hosting controller use the shared dispatch log to
+avoid delivering forwarded presses to Compose twice.
 
 Applications must leave root Back unconsumed when they want tvOS to return Home.
 An always-consuming no-op exit callback prevents this system behavior.

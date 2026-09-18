@@ -67,6 +67,9 @@ fun RemoteSwipeScreen(focusRequester: FocusRequester, onDismiss: () -> Unit) {
                     lastOuterSwipe = swipe
                     false
                 }
+                // Back is consumed on KeyUp only, the pattern most apps use. It is kept that way
+                // on purpose: a Menu press here must return to the grid without the press also
+                // reaching UIKit and backgrounding the app.
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyUp && event.key == Key.Back) {
                         onDismiss()
