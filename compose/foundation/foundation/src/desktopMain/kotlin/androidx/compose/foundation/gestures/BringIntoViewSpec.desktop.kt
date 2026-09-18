@@ -16,19 +16,5 @@
 
 package androidx.compose.foundation.gestures
 
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.runtime.ProvidableCompositionLocal
-import androidx.compose.runtime.staticCompositionLocalOf
-
-/**
- * A composition local to customize the focus scrolling behavior used by some scrollable containers.
- * [LocalBringIntoViewSpec] has a platform defined default behavior.
- */
-@ExperimentalFoundationApi
-actual val LocalBringIntoViewSpec: ProvidableCompositionLocal<BringIntoViewSpec> =
-    staticCompositionLocalOf {
-        platformDefaultBringIntoViewSpec()
-    }
-
-@OptIn(ExperimentalFoundationApi::class)
-internal expect fun platformDefaultBringIntoViewSpec(): BringIntoViewSpec
+internal actual fun platformDefaultBringIntoViewSpec(): BringIntoViewSpec =
+    BringIntoViewSpec.DefaultBringIntoViewSpec
