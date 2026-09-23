@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.sortByGeometryGroupings
 import androidx.compose.ui.uikit.density
 import androidx.compose.ui.uikit.toNanoSeconds
 import androidx.compose.ui.uikit.utils.CMPAccessibilityElement
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.toCGRect
 import androidx.compose.ui.unit.toDpOffset
@@ -210,9 +211,9 @@ private sealed interface AccessibilityNode {
      */
     class Semantics(
         semanticsNode: SemanticsNode,
-        private val mediator: AccessibilityMediator,
+        mediator: AccessibilityMediator,
         private val isBeyondBounds: Boolean,
-    ) : Container(semanticsNode) {
+    ) : Container(semanticsNode, mediator) {
         private val cachedConfig = semanticsNode.config
         private val scrollableParentNodeIds by lazy { semanticsNode.allScrollableParentNodeIds }
 
@@ -373,7 +374,8 @@ private sealed interface AccessibilityNode {
      * semantic node with all its children.
      */
     open class Container(
-        override val semanticsNode: SemanticsNode
+        override val semanticsNode: SemanticsNode,
+        protected val mediator: AccessibilityMediator,
     ) : AccessibilityNode {
         override val key: AccessibilityElementKey = semanticsNode.containerKey
 
@@ -395,7 +397,7 @@ private sealed interface AccessibilityNode {
         override val canScroll: Boolean = horizontalAxis != null || verticalAxis != null
 
         override val scrollContentOffset: CValue<CGPoint>
-            get() = with(semanticsNode.layoutNode.density) {
+            get() = with(mediator.pointDensity) {
                 CGPointMake(
                     x = (horizontalAxis?.value() ?: 0f).toDp().value.toDouble(),
                     y = (verticalAxis?.value() ?: 0f).toDp().value.toDouble(),
@@ -404,7 +406,7 @@ private sealed interface AccessibilityNode {
 
         override val scrollContentSize: CValue<CGSize>
             get() {
-                return with(semanticsNode.layoutNode.density) {
+                return with(mediator.pointDensity) {
                     CGSizeMake(
                         width = (width + (horizontalAxis?.maxValue() ?: 0f)).toDp().value.toDouble(),
                         height = (height + (verticalAxis?.maxValue() ?: 0f)).toDp().value.toDouble(),
@@ -413,7 +415,7 @@ private sealed interface AccessibilityNode {
             }
 
         override val scrollVisibleSize: CValue<CGSize>
-            get() = with(semanticsNode.layoutNode.density) {
+            get() = with(mediator.pointDensity) {
                 CGSizeMake(
                     width = width.toDp().value.toDouble(),
                     height = height.toDp().value.toDouble()
@@ -421,7 +423,7 @@ private sealed interface AccessibilityNode {
             }
 
         override suspend fun scrollBy(delta: CValue<CGPoint>) {
-            val deltaInPx = with(semanticsNode.layoutNode.density) {
+            val deltaInPx = with(mediator.pointDensity) {
                 delta.toDpOffset().let {
                     Offset(it.x.toPx(), it.y.toPx())
                 }
@@ -499,7 +501,7 @@ private class AccessibilityRoot(
         mediator.activateAccessibilityIfNeeded()
 
         val hitSemanticsEntities = HitTestResult()
-        val pointerPosition = with(mediator.view.density) {
+        val pointerPosition = with(mediator.pointDensity) {
             val point = point.toDpOffset()
             Offset(point.x.toPx(), point.y.toPx())
         }
@@ -1101,6 +1103,14 @@ internal class AccessibilityMediator(
     val performEscape: () -> Boolean,
     val onScreenReaderActive: (Boolean) -> Unit,
 ) {
+    /**
+     * The UIKit points-to-pixels factor of [view] (its screen scale). Semantics bounds and scroll
+     * ranges are in scene pixels, which are backing pixels, so every conversion between them and
+     * UIKit points uses this factor rather than a node's layout density. The two only match when
+     * the scene is laid out at the screen scale, which is not the case on tvOS.
+     */
+    val pointDensity: Density get() = view.density
+
     private var focusMode: AccessibilityElementFocusMode = AccessibilityElementFocusMode.None
 
     var focusedNodesScrollableParentsIds: Set<Int> = setOf()
@@ -1163,7 +1173,7 @@ internal class AccessibilityMediator(
             rect = UIEdgeInsetsInsetRect(view.bounds, view.safeAreaInsets),
             toView = null
         )
-        return rectInWindow.toDpRect().toRect(view.density)
+        return rectInWindow.toDpRect().toRect(pointDensity)
     }
 
     private var displayLinkListener: DisplayLinkListener? = null
@@ -1193,8 +1203,7 @@ internal class AccessibilityMediator(
                     element.node.semanticsNode.unclippedBoundsInWindow
 
                 else ->
-                    element.accessibilityFrame.toDpRect()
-                        .toRect(scrollableContainer.node.semanticsNode.layoutNode.density)
+                    element.accessibilityFrame.toDpRect().toRect(pointDensity)
             }
             scrollJob = CoroutineScope(coroutineContext + listener.frameClock).launch {
                 scrollableContainer.node.semanticsNode.scrollToCenterRectIfNeeded(
@@ -1352,7 +1361,7 @@ internal class AccessibilityMediator(
         private set
 
     private fun convertToAppWindowCGRect(rect: Rect): CValue<CGRect> {
-        return view.convertRect(rect.toDpRect(view.density).toCGRect(), toView = null)
+        return view.convertRect(rect.toDpRect(pointDensity).toCGRect(), toView = null)
     }
 
     fun notifyScrollCompleted(
@@ -1475,7 +1484,7 @@ internal class AccessibilityMediator(
 
         resultFrame = resultFrame.translate(dx, dy)
 
-        element.focusFrame = resultFrame.toDpRect(node.semanticsNode.layoutNode.density).toCGRect()
+        element.focusFrame = resultFrame.toDpRect(pointDensity).toCGRect()
 
         return element
     }
@@ -1636,7 +1645,7 @@ internal class AccessibilityMediator(
                     if (node.canBeAccessibilityElement()) {
                         val containerElement = listOf(makeSemanticsNode(emptyList()))
                         createOrUpdateAccessibilityElement(
-                            node = AccessibilityNode.Container(semanticsNode = node),
+                            node = AccessibilityNode.Container(semanticsNode = node, mediator = this),
                             container = container,
                             children = beforeElements + visibleElements + containerElement + afterElements,
                             frame = frame
