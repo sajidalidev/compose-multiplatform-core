@@ -44,13 +44,27 @@ import androidx.compose.ui.unit.sp
 data class DemoItem(val id: Int, val title: String, val description: String, val color: Color)
 
 private const val TEXT_INPUT_DEMO_ID = 19
+private const val INPUT_CHECKS_DEMO_ID = 20
 
 @Composable
 fun TvOSDemoApp() {
-    var selectedItem by remember { mutableStateOf<DemoItem?>(null) }
+    var selectedItem by remember {
+        mutableStateOf<DemoItem?>(
+            initialDemoScreen()?.let { id -> demoItems.firstOrNull { it.id == id } }
+        )
+    }
     val overlayFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { startRemoteProbe() }
     MaterialTheme {
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A1A))) {
+        Box(
+            modifier =
+                Modifier.fillMaxSize().background(Color(0xFF1A1A1A)).onPreviewKeyEvent { event ->
+                    probeLog(
+                        "PROBE key ${event.key} code=${event.key.keyCode} ${event.type} repeat=${event.isRepeat}"
+                    )
+                    false
+                }
+        ) {
             Box(modifier = Modifier.fillMaxSize().padding(48.dp)) {
                 FocusableCardGrid { item -> selectedItem = item }
             }
@@ -58,6 +72,11 @@ fun TvOSDemoApp() {
             selectedItem?.let { item ->
                 if (item.id == TEXT_INPUT_DEMO_ID) {
                     TextInputDemo(
+                        focusRequester = overlayFocus,
+                        onDismiss = { selectedItem = null },
+                    )
+                } else if (item.id == INPUT_CHECKS_DEMO_ID) {
+                    InputChecksScreen(
                         focusRequester = overlayFocus,
                         onDismiss = { selectedItem = null },
                     )
@@ -158,31 +177,38 @@ fun DetailOverlay(item: DemoItem, focusRequester: FocusRequester, onDismiss: () 
     }
 }
 
+private val demoItems: List<DemoItem> =
+    listOf(
+        DemoItem(1, "Foundation", "Layout & Focus APIs", Color(0xFF6200EE)),
+        DemoItem(2, "Material", "Cards & Typography", Color(0xFF03DAC6)),
+        DemoItem(3, "UI Graphics", "Canvas & Drawing", Color(0xFFFF6F00)),
+        DemoItem(4, "Text", "Typography System", Color(0xFFE91E63)),
+        DemoItem(5, "Animation", "Transitions & Motion", Color(0xFF00BCD4)),
+        DemoItem(6, "Gestures", "Input Handling", Color(0xFF4CAF50)),
+        DemoItem(7, "Modifiers", "UI Customization", Color(0xFF9C27B0)),
+        DemoItem(8, "Runtime", "Composition API", Color(0xFFFF5722)),
+        DemoItem(9, "State", "State Management", Color(0xFF2196F3)),
+        DemoItem(10, "Effects", "Side Effects API", Color(0xFFFFC107)),
+        DemoItem(11, "Navigation", "Screen Navigation", Color(0xFF673AB7)),
+        DemoItem(12, "Lifecycle", "Component Lifecycle", Color(0xFF009688)),
+        DemoItem(13, "Theming", "Colors & Shapes", Color(0xFF795548)),
+        DemoItem(14, "Accessibility", "A11y Support", Color(0xFF607D8B)),
+        DemoItem(15, "Images", "Async Image Loading", Color(0xFFFF4081)),
+        DemoItem(16, "Dialogs", "Popups & Sheets", Color(0xFF536DFE)),
+        DemoItem(17, "Canvas", "Custom Drawing", Color(0xFF00E676)),
+        DemoItem(18, "Interop", "Native View Interop", Color(0xFFFF6D00)),
+        DemoItem(TEXT_INPUT_DEMO_ID, "Text Input", "System Keyboard Input", Color(0xFF1565C0)),
+        DemoItem(
+            INPUT_CHECKS_DEMO_ID,
+            "Input Checks",
+            "Density, Click, Keyboard, Dialog",
+            Color(0xFF8BC34A),
+        ),
+    )
+
 @Composable
 fun FocusableCardGrid(onClick: (DemoItem) -> Unit) {
-    val items = remember {
-        listOf(
-            DemoItem(1, "Foundation", "Layout & Focus APIs", Color(0xFF6200EE)),
-            DemoItem(2, "Material", "Cards & Typography", Color(0xFF03DAC6)),
-            DemoItem(3, "UI Graphics", "Canvas & Drawing", Color(0xFFFF6F00)),
-            DemoItem(4, "Text", "Typography System", Color(0xFFE91E63)),
-            DemoItem(5, "Animation", "Transitions & Motion", Color(0xFF00BCD4)),
-            DemoItem(6, "Gestures", "Input Handling", Color(0xFF4CAF50)),
-            DemoItem(7, "Modifiers", "UI Customization", Color(0xFF9C27B0)),
-            DemoItem(8, "Runtime", "Composition API", Color(0xFFFF5722)),
-            DemoItem(9, "State", "State Management", Color(0xFF2196F3)),
-            DemoItem(10, "Effects", "Side Effects API", Color(0xFFFFC107)),
-            DemoItem(11, "Navigation", "Screen Navigation", Color(0xFF673AB7)),
-            DemoItem(12, "Lifecycle", "Component Lifecycle", Color(0xFF009688)),
-            DemoItem(13, "Theming", "Colors & Shapes", Color(0xFF795548)),
-            DemoItem(14, "Accessibility", "A11y Support", Color(0xFF607D8B)),
-            DemoItem(15, "Images", "Async Image Loading", Color(0xFFFF4081)),
-            DemoItem(16, "Dialogs", "Popups & Sheets", Color(0xFF536DFE)),
-            DemoItem(17, "Canvas", "Custom Drawing", Color(0xFF00E676)),
-            DemoItem(18, "Interop", "Native View Interop", Color(0xFFFF6D00)),
-            DemoItem(TEXT_INPUT_DEMO_ID, "Text Input", "System Keyboard Input", Color(0xFF1565C0)),
-        )
-    }
+    val items = demoItems
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),

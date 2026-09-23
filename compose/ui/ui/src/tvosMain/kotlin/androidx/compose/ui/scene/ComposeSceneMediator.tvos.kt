@@ -307,7 +307,7 @@ private class TvOverlayInputView(
     private var onTouchesEvent:
         (touches: Set<*>, event: UIEvent?, phase: TouchesEventKind) -> PointerEventResult,
     private var onCancelAllTouches: (touches: Set<*>) -> Unit,
-    private var onKeyboardPresses: (presses: Set<*>, event: UIPressesEvent?) -> Set<*>,
+    private var onKeyboardPresses: (presses: Set<*>, event: UIPressesEvent?) -> TvPressForwarding,
 ) : UIView(CGRectZero.readValue()) {
 
     var isInterceptingOutsideEvents: Boolean = false
@@ -324,21 +324,58 @@ private class TvOverlayInputView(
     override fun canBecomeFocused(): Boolean = false
 
     override fun pressesBegan(presses: Set<*>, withEvent: UIPressesEvent?) {
-        // `super` is called only for the presses Compose did not consume, so that tvOS can act
-        // on them, e.g. suspend the app when the Menu button isn't handled by any Compose
-        // back handler. Consumed presses are never forwarded up the responder chain.
-        val unconsumed = onKeyboardPresses(presses, withEvent)
-        if (unconsumed.isNotEmpty()) super.pressesBegan(unconsumed, withEvent)
+        // Compose gets every press in both phases; the only press that can reach tvOS is a Menu
+        // press no Compose handler wanted on either phase, and it is replayed from its Ended
+        // phase (see [replayToSystem]), never forwarded from here.
+        val forwarding = onKeyboardPresses(presses, withEvent)
+        if (forwarding.passThrough.isNotEmpty()) {
+            super.pressesBegan(forwarding.passThrough, withEvent)
+        }
     }
 
     override fun pressesEnded(presses: Set<*>, withEvent: UIPressesEvent?) {
-        val unconsumed = onKeyboardPresses(presses, withEvent)
-        if (unconsumed.isNotEmpty()) super.pressesEnded(unconsumed, withEvent)
+        val forwarding = onKeyboardPresses(presses, withEvent)
+        if (forwarding.passThrough.isNotEmpty()) {
+            super.pressesEnded(forwarding.passThrough, withEvent)
+        }
+        replayToSystem(forwarding, withEvent)
     }
 
     override fun pressesCancelled(presses: Set<*>, withEvent: UIPressesEvent?) {
-        val unconsumed = onKeyboardPresses(presses, withEvent)
-        if (unconsumed.isNotEmpty()) super.pressesCancelled(unconsumed, withEvent)
+        val forwarding = onKeyboardPresses(presses, withEvent)
+        if (forwarding.passThrough.isNotEmpty()) {
+            super.pressesCancelled(forwarding.passThrough, withEvent)
+        }
+    }
+
+    override fun pressesChanged(presses: Set<*>, withEvent: UIPressesEvent?) {
+        // Analog buttons of an MFi controller report their pressure through this phase. Compose
+        // has no event for it, so it is swallowed rather than left to UIResponder's default
+        // implementation, which would send it up the chain behind Compose's back.
+        val forwarding = onKeyboardPresses(presses, withEvent)
+        if (forwarding.passThrough.isNotEmpty()) {
+            super.pressesChanged(forwarding.passThrough, withEvent)
+        }
+    }
+
+    /**
+     * Sends [TvPressForwarding.replay] up the responder chain as a Began immediately followed by an
+     * Ended, for a press that was held back while Compose was given a chance to handle its KeyUp.
+     *
+     * Assumption to verify on a simulator: UIKit acts on the *completed* press, so both phases have
+     * to be replayed for the system to move the app to the background on Menu. The replayed
+     * [platform.UIKit.UIPress] still carries `phase == Ended`; if UIKit keys on `press.phase`
+     * rather than on the selector, the Began leg is a no-op and forwarding only the real Ended is
+     * the fallback.
+     */
+    private fun replayToSystem(forwarding: TvPressForwarding, event: UIPressesEvent?) {
+        if (forwarding.replay.isEmpty()) return
+        for (press in forwarding.replay) {
+            val single = setOf(press)
+            super.pressesBegan(single, event)
+            super.pressesEnded(single, event)
+        }
+        forwarding.onReplayFinished()
     }
 
     override fun touchesBegan(touches: Set<*>, withEvent: UIEvent?) {
@@ -380,7 +417,7 @@ private class TvOverlayInputView(
         endEditing(force = true)
         hitTestInteropView = { null }
         isPointInsideInteractionBounds = { false }
-        onKeyboardPresses = { presses, _ -> presses }
+        onKeyboardPresses = { _, _ -> TvPressForwarding.None }
         onOutsidePointerEvent = {}
         onTouchesEvent = { _, _, _ -> PointerEventResult() }
         onCancelAllTouches = {}
@@ -480,12 +517,6 @@ internal class ComposeSceneMediator(
 
     // Key repeat state: repeatedly dispatch KeyDown while a key is held
     private val repeatingKeys = mutableMapOf<Long, Job>()
-
-    // Key ids whose KeyDown was consumed by Compose. Consumption is decided once, on the
-    // Began phase, and remembered so that the matching KeyUp is dispatched to the same
-    // destination: dispatching a KeyUp whose KeyDown never reached the scene would be dropped
-    // by FocusOwnerImpl.validateKeyEvent and would break `clickable()`.
-    private val consumedKeyIds = mutableSetOf<Long>()
 
     // Id of the Select press whose KeyDown was swallowed to open the tvOS keyboard; the matching
     // KeyUp must be swallowed too so the scene never observes an unmatched KeyUp. Keyed by press
@@ -1227,7 +1258,6 @@ internal class ComposeSceneMediator(
         indirectTouches.clear()
         repeatingKeys.values.forEach { it.cancel() }
         repeatingKeys.clear()
-        consumedKeyIds.clear()
         swallowedSelectKeyId = null
         focusedViewsList?.remove(_overlayView)
 
@@ -1314,19 +1344,33 @@ internal class ComposeSceneMediator(
     /**
      * Converts [UIPress] objects to [KeyEvent] and dispatches them to the appropriate handlers.
      * Handles key repeat by starting a coroutine that repeatedly dispatches KeyDown while a key is
-     * held, similar to Android's key repeat behavior. Returns the presses Compose did not consume,
-     * so the caller can forward them to `super` and let tvOS act on them (e.g. suspend the app on
-     * an unhandled Menu press).
+     * held, similar to Android's key repeat behavior. Every press is dispatched to Compose as a
+     * KeyDown on Began and as a KeyUp on Ended, whether or not the KeyDown was consumed, so
+     * handlers that act on [KeyEventType.KeyUp] (back navigation, overlays) always see their KeyUp.
+     * A Cancelled press dispatches nothing: the system claimed it, it is not a release.
+     *
+     * Returns what the caller must hand to `super`: only the Menu button can reach the system, and
+     * only when Compose consumed neither of its phases (the app is at its root screen), in which
+     * case the press is returned in [TvPressForwarding.replay] from its Ended phase. Every other
+     * press is swallowed, so tvOS never suspends the app behind Compose's back.
      *
      * @param presses a [Set] of [UIPress] objects. Erasure happens due to K/N not supporting Obj-C
      *   lightweight generics.
      * @param pressesEvent the event the presses belong to, used to recognize presses that the
      *   responder chain delivers to this mediator twice.
      */
-    fun onKeyboardPresses(presses: Set<*>, pressesEvent: UIPressesEvent?): Set<*> {
-        var unconsumed: MutableSet<Any?>? = null
-        fun reportUnconsumed(press: Any?) {
-            val set = unconsumed ?: mutableSetOf<Any?>().also { unconsumed = it }
+    fun onKeyboardPresses(presses: Set<*>, pressesEvent: UIPressesEvent?): TvPressForwarding {
+        var replay: MutableSet<Any?>? = null
+        var replayKeyIds: MutableList<Long>? = null
+        var passThrough: MutableSet<Any?>? = null
+        fun replayToSystem(press: Any?, keyId: Long) {
+            val set = replay ?: mutableSetOf<Any?>().also { replay = it }
+            set.add(press)
+            val ids = replayKeyIds ?: mutableListOf<Long>().also { replayKeyIds = it }
+            ids.add(keyId)
+        }
+        fun passToSystem(press: Any?) {
+            val set = passThrough ?: mutableSetOf<Any?>().also { passThrough = it }
             set.add(press)
         }
 
@@ -1334,9 +1378,25 @@ internal class ComposeSceneMediator(
             val press = anyPress as UIPress
             val rawEvent = press.toComposeEvent()
             // Siri Remote's Menu button is tvOS's back gesture.
-            val event = if (rawEvent.key == Key.Menu) rawEvent.copy(key = Key.Back) else rawEvent
+            val isMenu = rawEvent.key == Key.Menu
+            val event = if (isMenu) rawEvent.copy(key = Key.Back) else rawEvent
             val keyId = press.key?.keyCode?.toLong() ?: -(press.type.toLong() + 1L)
             val phase = press.phase
+
+            if (pressDispatchLog.isForwardedToSystem(pressesEvent, keyId)) {
+                // The replay of a Menu press nothing in Compose wanted, travelling up the
+                // responder chain: keep it moving towards UIApplication without dispatching it
+                // to the scene again.
+                passToSystem(anyPress)
+                return@forEach
+            }
+
+            if (phase == UIPressPhase.UIPressPhaseChanged) {
+                // An analog button reporting its pressure: Compose has no event for it, and it
+                // must not be recorded in the dispatch log — that would overwrite the phase
+                // remembered for the press that is still down.
+                return@forEach
+            }
 
             // The Siri Remote clickpad doubles as its buttons (Select in the middle, arrows
             // on the outer ring): clicking it produces a press alongside an indirect touch that
@@ -1356,10 +1416,7 @@ internal class ComposeSceneMediator(
             }
 
             if (!pressDispatchLog.shouldEvaluate(pressesEvent, keyId, phase)) {
-                // Already evaluated for this UIPressesEvent, by this mediator or by another
-                // mediator of the same container: this is the responder chain echoing back a
-                // press an overlay view forwarded to `super`.
-                reportUnconsumed(anyPress)
+                // Already evaluated by another mediator for this event; do not dispatch twice.
                 return@forEach
             }
 
@@ -1370,19 +1427,26 @@ internal class ComposeSceneMediator(
                     // clear here what the Ended phase would have cleared.
                     if (swallowedSelectKeyId == keyId) {
                         swallowedSelectKeyId = null
-                        consumedKeyIds.remove(keyId)
                         repeatingKeys.remove(keyId)?.cancel()
                     }
-                    if (!onKeyboardEvent(event, keyId)) {
-                        // Not consumed: no key repeat, and the press goes to tvOS instead.
-                        reportUnconsumed(anyPress)
-                        return@forEach
+                    pressDispatchLog.takePendingMenu(keyId)
+                    if (!onKeyboardEvent(event, keyId) && isMenu) {
+                        // A Menu press is held back until its KeyUp has been offered to Compose
+                        // as well; anything else is simply swallowed, tvOS must not act on it.
+                        pressDispatchLog.setPendingMenu(keyId)
                     }
-                    consumedKeyIds.add(keyId)
 
-                    // A KeyDown swallowed to open the system keyboard never reached the scene,
-                    // so it must not key-repeat.
-                    if (swallowedSelectKeyId != keyId && repeatingKeys[keyId]?.isActive != true) {
+                    // Key repeat runs whether or not the KeyDown was consumed: a directional key
+                    // is unconsumed at a focus boundary and while `isKeyRepeat` long-press
+                    // handlers return false on the first KeyDown, and both must keep repeating.
+                    // Menu is excluded — repeating it would re-dispatch Back every interval —
+                    // and so is a KeyDown swallowed to open the system keyboard, which never
+                    // reached the scene.
+                    if (
+                        !isMenu &&
+                            swallowedSelectKeyId != keyId &&
+                            repeatingKeys[keyId]?.isActive != true
+                    ) {
                         val repeatEvent = event.copy(isRepeat = true)
                         repeatingKeys[keyId] =
                             CoroutineScope(coroutineContext).launch {
@@ -1397,22 +1461,43 @@ internal class ComposeSceneMediator(
                 UIPressPhase.UIPressPhaseEnded,
                 UIPressPhase.UIPressPhaseCancelled -> {
                     repeatingKeys.remove(keyId)?.cancel()
-                    // Consumption is never re-evaluated on KeyUp: the KeyUp follows its
-                    // KeyDown. Cancelled presses dispatch the KeyUp too, otherwise the
-                    // scene would keep the key pressed forever.
-                    if (consumedKeyIds.remove(keyId)) {
-                        onKeyboardEvent(event, keyId)
-                    } else {
-                        reportUnconsumed(anyPress)
+                    val isEnded = phase == UIPressPhase.UIPressPhaseEnded
+                    // Two-way policy:
+                    //  - Ended: the KeyUp is dispatched whatever happened on the KeyDown, so a
+                    //    handler that only acts on KeyUp still gets it.
+                    //  - Cancelled: nothing is dispatched. The system took the press away, it is
+                    //    not a release, and a KeyUp would make `clickable()` fire onClick and a
+                    //    KeyUp-gated Back handler pop a screen. The key left behind in
+                    //    FocusOwnerImpl.keysCurrentlyDown and the interaction left in
+                    //    `currentKeyPressInteractions` heal by themselves: validateKeyEvent never
+                    //    rejects a KeyDown, so the next press of that key is dispatched normally
+                    //    and its KeyUp removes both entries.
+                    val consumed = isEnded && onKeyboardEvent(event, keyId)
+                    val wasPendingMenu = pressDispatchLog.takePendingMenu(keyId)
+                    if (wasPendingMenu && !consumed && isEnded) {
+                        // Nothing in Compose wanted the Menu press on either phase: the app is
+                        // at its root screen and tvOS has to move it to the background. A
+                        // cancelled press is dropped instead — the user let go of the button
+                        // outside of a completed press.
+                        pressDispatchLog.markForwardedToSystem(pressesEvent, keyId)
+                        replayToSystem(anyPress, keyId)
                     }
                 }
-                else -> reportUnconsumed(anyPress)
+                else -> Unit
             }
         }
 
-        val result = unconsumed ?: return emptySet<Any?>()
-        // Avoid allocating a copy when nothing was consumed at all.
-        return if (result.size == presses.size) presses else result
+        if (replay == null && passThrough == null) {
+            return TvPressForwarding.None
+        }
+        val replayedKeyIds = replayKeyIds.orEmpty()
+        return TvPressForwarding(
+            replay = replay.orEmpty(),
+            passThrough = passThrough.orEmpty(),
+            // The short-circuit must not outlive the replay: `pressesEvent` can be null, and
+            // then the log can't tell one event from the next.
+            onReplayFinished = { replayedKeyIds.forEach(pressDispatchLog::unmarkForwardedToSystem) },
+        )
     }
 
     private fun onKeyboardEvent(keyEvent: KeyEvent, keyId: Long? = null): Boolean {

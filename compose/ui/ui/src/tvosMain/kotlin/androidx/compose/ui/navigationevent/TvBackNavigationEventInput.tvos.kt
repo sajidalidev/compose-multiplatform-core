@@ -33,9 +33,10 @@ import androidx.navigationevent.NavigationEventInput
  * screen with no way out.
  *
  * Therefore this input only consumes the key while at least one enabled navigation handler exists
- * ([onHasEnabledHandlersChanged]); otherwise it reports the press as unconsumed, which lets
- * [androidx.compose.ui.scene.ComposeSceneMediator] forward the [platform.UIKit.UIPress] up the
- * responder chain via `super.pressesBegan`.
+ * ([onHasEnabledHandlersChanged]); otherwise it reports the KeyDown as unconsumed. That alone does
+ * not release the press: [androidx.compose.ui.scene.ComposeSceneMediator] holds it back, still
+ * offers the KeyUp to Compose, and only replays the [platform.UIKit.UIPress] to the responder chain
+ * when that is unconsumed too.
  *
  * The logic of [BackNavigationEventInput.onKeyEvent] is duplicated instead of overridden because
  * that member is final.

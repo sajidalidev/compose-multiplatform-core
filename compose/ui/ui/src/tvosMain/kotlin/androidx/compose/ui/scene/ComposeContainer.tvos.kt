@@ -85,9 +85,10 @@ internal class ComposeContainer(
     private var mediator: ComposeSceneMediator? = null
     private val windowContext = PlatformWindowContext()
 
-    // Shared by the root mediator and every scene layer's mediator, so that a press a layer
-    // reported as unconsumed isn't evaluated a second time by the root mediator when the
-    // responder chain delivers it back to the hosting view controller.
+    // Shared by the root mediator and every scene layer's mediator: it carries the state a Menu
+    // press needs across mediators — whether its KeyDown is still awaiting a KeyUp, and whether
+    // its replay is already travelling to the system — plus the guard against evaluating one
+    // press twice when two mediators of this container both receive it.
     private val pressDispatchLog = TvPressDispatchLog()
 
     // Reports where the finger physically is on the Siri Remote clickpad, which UIKit indirect
@@ -119,11 +120,12 @@ internal class ComposeContainer(
         get() = mediator?.hasInteropViews ?: false
 
     /**
-     * Returns the subset of [presses] that Compose did not consume, so that the caller can forward
-     * them to `super` and let tvOS act on them (e.g. suspend the app on Menu).
+     * Returns what the caller must hand to `super` — see [ComposeSceneMediator.onKeyboardPresses].
+     * While there is no mediator (the container is being torn down) nothing is forwarded: tvOS must
+     * not act on presses just because Compose stopped listening.
      */
-    fun onKeyboardPresses(presses: Set<*>, event: UIPressesEvent?): Set<*> =
-        mediator?.onKeyboardPresses(presses, event) ?: presses
+    fun onKeyboardPresses(presses: Set<*>, event: UIPressesEvent?): TvPressForwarding =
+        mediator?.onKeyboardPresses(presses, event) ?: TvPressForwarding.None
 
     fun didUpdateFocusInContext() {
         mediator?.didUpdateFocusInContext()
