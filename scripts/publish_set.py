@@ -28,23 +28,23 @@ import os
 import re
 import sys
 
-# Library keys registered in buildSrc/public/.../JetBrainsPublication.libraryToComponents
-# that are JetBrains-published (and so present in the ledger). Every one of them must carry
+# The library keys and upstream-tvOS modules are read from the file fork mode compiles
+# (buildSrc-fork), so this script cannot drift from the build. Every registered key must carry
 # a version on every Gradle invocation: JetBrainsVersions.versionOf() silently returns
 # 9999.0.0-SNAPSHOT for a key without a -Pjetbrains.publication.version.<KEY> property, and
 # that version then leaks into the published module metadata as a dependency edge.
-# TV_MATERIAL is registered in the build as well but is androidx.tv, not a JetBrains
-# library, so it is not in the ledger and not passed; nothing in the publish set depends on it.
-REQUIRED_LIBRARIES = (
-    "COMPOSE",
-    "COMPOSE_MATERIAL3",
-    "COMPOSE_MATERIAL3_ADAPTIVE",
-    "LIFECYCLE",
-    "NAVIGATION",
-    "NAVIGATION_3",
-    "NAVIGATION_EVENT",
-    "SAVEDSTATE",
-)
+PUBLICATION_KT = os.path.join(
+    "buildSrc-fork", "public", "src", "main", "kotlin", "org", "jetbrains", "androidx", "build",
+    "JetBrainsPublication.kt")
+
+# Registered in the build but not a JetBrains library: androidx.tv is not in the ledger and not
+# passed; nothing in the publish set depends on it.
+NON_LEDGER_LIBRARIES = ("TV_MATERIAL",)
+
+# Ledger libraries the fork leaves to upstream: their tvOS artifacts are consumed by Maven
+# coordinate (org.jetbrains lifecycle/savedstate/window-core, Google's androidx.navigationevent),
+# so the build registers no key for them. Skipped with an info line instead of refused.
+UPSTREAM_LIBRARIES = ("LIFECYCLE", "NAVIGATION_EVENT", "SAVEDSTATE", "WINDOW")
 
 # Artifacts the fork never republishes, keyed (group, artifact) -> flag that re-enables them
 # (None = no override). ui-test/ui-test-junit4 are test harnesses a tvOS app never ships;
@@ -69,6 +69,28 @@ def die(msg):
     sys.exit(1)
 
 
+def info(msg):
+    # stderr, so `eval "$(publish_set.py --format shell)"` stays clean.
+    sys.stderr.write("publish_set.py: info: %s\n" % msg)
+
+
+def load_publication_registry(repo_root):
+    """Returns (registered library keys, upstreamTvosModules project paths) from buildSrc-fork."""
+    path = os.path.join(repo_root, PUBLICATION_KT)
+    try:
+        with open(path) as fh:
+            src = fh.read()
+    except OSError:
+        die("cannot read %s" % path)
+    m = re.search(r"libraryToComponents[^=]*=\s*mapOf\((.*?)\n    \)", src, re.S)
+    keys = re.findall(r'^\s{8}"([A-Z0-9_]+)" to ', m.group(1), re.M) if m else []
+    u = re.search(r"val upstreamTvosModules[^=]*=\s*setOf\((.*?)\)", src, re.S)
+    upstream = re.findall(r'"(:[^"]+)"', u.group(1)) if u else None
+    if not keys or upstream is None:
+        die("cannot parse libraryToComponents / upstreamTvosModules in %s" % path)
+    return tuple(keys), set(upstream)
+
+
 def project_path_for(group, artifact):
     # Inverse of JetBrainsPublication.mavenGroupFor: org.jetbrains.compose.X.Y:Z is
     # :compose:X:Y:Z and org.jetbrains.androidx.X:Z is :X:Z.
@@ -82,8 +104,11 @@ def project_path_for(group, artifact):
 def load_settings_projects(repo_root):
     # includeProject(":path") is a real project; includeProject(":path", "mpp/stub-project")
     # is a stub that publishes nothing.
+    # Fork mode (the default ./gradlew) reads settings-fork.gradle; settings.gradle is AOSP's.
     real, stubs = set(), set()
-    settings = os.path.join(repo_root, "settings.gradle")
+    settings = os.path.join(repo_root, "settings-fork.gradle")
+    if not os.path.isfile(settings):
+        settings = os.path.join(repo_root, "settings.gradle")
     if not os.path.isfile(settings):
         return real, stubs
     pat = re.compile(r'^\s*includeProject\(\s*"(:[^"]+)"\s*(?:,\s*"([^"]*)")?')
@@ -121,13 +146,18 @@ def resolve_project(repo_root, real_projects, stub_projects, group, artifact):
 
 def derive(ledger, args, repo_root):
     libs = ledger.get("libraries") or {}
-    missing = [k for k in REQUIRED_LIBRARIES if not (libs.get(k) or {}).get("jetbrainsVersion")]
+    registered, upstream_modules = load_publication_registry(repo_root)
+    required = [k for k in registered if k not in NON_LEDGER_LIBRARIES]
+    missing = [k for k in required if not (libs.get(k) or {}).get("jetbrainsVersion")]
     if missing:
         die("ledger %s has no jetbrainsVersion for: %s" % (args.ledger, ", ".join(missing)))
-    versions = {k: libs[k]["jetbrainsVersion"] for k in REQUIRED_LIBRARIES}
+    versions = {k: libs[k]["jetbrainsVersion"] for k in required}
+    left_upstream = sorted(k for k in libs if k in UPSTREAM_LIBRARIES and k not in versions)
     for k in sorted(libs):
-        if k not in versions:
+        if k not in versions and k not in left_upstream:
             die("ledger library %s is not a key this build registers; refusing to guess" % k)
+    if left_upstream:
+        info("skipping ledger libraries left to upstream: %s" % ", ".join(left_upstream))
 
     real_projects, stub_projects = load_settings_projects(repo_root)
     only = set(args.only_group or [])
@@ -139,6 +169,12 @@ def derive(ledger, args, repo_root):
             "version": a["version"],
             "library": a["library"],
         }
+        if a["library"] in left_upstream:
+            excluded.append(dict(entry, reason="library left to upstream"))
+            continue
+        if project_path_for(a["group"], a["artifact"]) in upstream_modules:
+            excluded.append(dict(entry, reason="upstream artifact (upstreamTvosModules)"))
+            continue
         if versions.get(a["library"]) != a["version"]:
             die("%s:%s is at %s but ledger library %s says %s"
                 % (a["group"], a["artifact"], a["version"], a["library"], versions.get(a["library"])))

@@ -117,5 +117,47 @@ class ReposiliteTests(unittest.TestCase):
             self.assertIn('--repo-root ' + str(tmp / 'ci-maven'), result.stdout)
 
 
+class PublishSetTests(unittest.TestCase):
+    def ledger(self, tmp, extra_library):
+        libs = {k: {'jetbrainsVersion': v} for k, v in (
+            ('COMPOSE', '1.12.0'), ('COMPOSE_MATERIAL3', '1.12.0-alpha03'),
+            ('COMPOSE_MATERIAL3_ADAPTIVE', '1.3.0-beta02'), ('NAVIGATION', '2.10.0-alpha02'),
+            ('NAVIGATION_3', '1.2.0-alpha04'), (extra_library, '1.5.1'))}
+        artifacts = [
+            {'group': 'org.jetbrains.compose.runtime', 'artifact': 'runtime', 'version': '1.12.0',
+             'library': 'COMPOSE', 'tvos': {'usable': [], 'advertised': []}},
+            {'group': 'org.jetbrains.androidx.window', 'artifact': 'window-core', 'version': '1.5.1',
+             'library': extra_library, 'tvos': {'usable': ['tvosArm64'], 'advertised': ['tvosArm64']}},
+        ]
+        path = Path(tmp) / 'ledger.json'
+        path.write_text(json.dumps({'cmpVersion': '1.12.0', 'libraries': libs, 'artifacts': artifacts}))
+        return path
+
+    def run_publish_set(self, ledger):
+        return subprocess.run(
+            ['python3', str(SCRIPTS / 'publish_set.py'), '--ledger', str(ledger), '--format', 'json',
+             '--repo-root', str(SCRIPTS.parent)],
+            capture_output=True, text=True)
+
+    def test_ledger_library_left_to_upstream_is_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_publish_set(self.ledger(tmp, 'WINDOW'))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('skipping ledger libraries left to upstream: WINDOW', result.stderr)
+            out = json.loads(result.stdout)
+            self.assertNotIn('WINDOW', out['versions'])
+            self.assertFalse(any('WINDOW' in a for a in out['gradleVersionArgs']))
+            reasons = {e['artifact']: e['reason'] for e in out['excluded']}
+            self.assertEqual(reasons['window-core'], 'library left to upstream')
+            self.assertEqual(reasons['runtime'], 'upstream artifact (upstreamTvosModules)')
+            self.assertEqual(out['publish'], [])
+
+    def test_unknown_ledger_library_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.run_publish_set(self.ledger(tmp, 'FOO'))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('ledger library FOO is not a key this build registers', result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()
