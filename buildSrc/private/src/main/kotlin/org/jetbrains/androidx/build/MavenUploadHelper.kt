@@ -40,6 +40,7 @@ import org.dom4j.DocumentFactory
 import org.dom4j.Element
 import org.dom4j.io.SAXReader
 import org.dom4j.io.XMLWriter
+import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.gradle.api.XmlProvider
 import org.gradle.api.artifacts.Configuration
@@ -54,6 +55,7 @@ import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPom
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.publish.maven.internal.publication.MavenPublicationInternal
+import org.gradle.api.publish.maven.tasks.AbstractPublishToMaven
 import org.gradle.api.publish.maven.tasks.GenerateMavenPom
 import org.gradle.api.publish.tasks.GenerateModuleMetadata
 import org.gradle.kotlin.dsl.configure
@@ -75,6 +77,16 @@ fun Project.configureMavenArtifactUpload(
 ) {
     if (!JetBrainsPublication.shouldPublish(project)) return
     apply(mapOf("plugin" to "maven-publish"))
+    if (JetBrainsPublication.isPublicationSuppressed(project)) {
+        // tvOS fork: JetBrains already publishes this module for tvOS, so under a custom
+        // coordinate root it keeps its org.jetbrains coordinates and is never republished.
+        val message = "$path is published upstream with tvOS variants and must not be " +
+            "republished under ${JetBrainsPublication.coordinateRoot}; see " +
+            "JetBrainsPublication.upstreamTvosModules"
+        tasks.withType(AbstractPublishToMaven::class.java).configureEach { task ->
+            task.doFirst { throw GradleException(message) }
+        }
+    }
     var registered = false
     fun registerOnFirstPublishableArtifact(component: SoftwareComponent) {
         if (!registered) {

@@ -15,7 +15,11 @@ that adds Apple tvOS as a first-class Compose Multiplatform target.
   dependency (rather than stubbing or excluding it).
 - **`coordinateRoot` publishing** (`-Ppublication.coordinateRoot=dev.sajidali`), which republishes
   this fork's artifacts under `dev.sajidali.*` coordinates instead of `org.jetbrains.*`/
-  `androidx.*`.
+  `androidx.*`. Modules JetBrains already ships for tvOS (runtime, runtime-saveable, lifecycle,
+  navigation-common/-runtime, savedstate, window-core; the list, with the exact upstream
+  coordinates, is `JetBrainsPublication.upstreamTvosModules`) get no tvOS target in this build
+  and are never republished. tvOS compilations take the upstream artifact in their place, and
+  the published modules' metadata points at the same `org.jetbrains.*` coordinates.
 
 ## For consumers
 

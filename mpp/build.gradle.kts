@@ -19,7 +19,9 @@ tasks.register("publishComposeJb", ComposePublishingTask::class) {
     composeProperties = parsedComposeProperties
 
     libraries.forEach {
-        libraryToComponents[it]?.forEach { publish(rootProject, it) }
+        libraryToComponents[it]
+            ?.filterNot { JetBrainsPublication.isPublicationSuppressed(it.path) }
+            ?.forEach { publish(rootProject, it) }
     }
 }
 
@@ -29,7 +31,9 @@ tasks.register("publishComposeJbToMavenLocal", ComposePublishingTask::class) {
     composeProperties = parsedComposeProperties
 
     libraries.forEach {
-        libraryToComponents[it]?.forEach { publish(rootProject, it) }
+        libraryToComponents[it]
+            ?.filterNot { JetBrainsPublication.isPublicationSuppressed(it.path) }
+            ?.forEach { publish(rootProject, it) }
     }
 }
 

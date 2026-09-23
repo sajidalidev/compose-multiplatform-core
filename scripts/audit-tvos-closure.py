@@ -267,6 +267,10 @@ def classify_dependency(dep: Dependency, repo_root: Path, audited_prefix_dotted:
                 f"group-covered-but-version-mismatch: requested {dep.gav()}, "
                 f"twin {twin_group}:{dep.module} available locally at {', '.join(available)}"
             )
+        # A module JetBrains already ships for tvOS is never republished under the audited
+        # prefix (JetBrainsPublication.upstreamTvosModules), so its edge stays upstream.
+        if fetch_external_module_tvos_support(dep.group, dep.module, dep.version) is True:
+            return "OK-EXTERNAL-TVOS", "no twin by design: upstream .module advertises tvos_ variant(s)"
         return "FAIL", f"covered group {dep.group} but no local twin {twin_group}:{dep.module} at any version"
 
     # (ii-assumed) OK-EXTERNAL-TVOS-ASSUMED -- kotlin-stdlib / kotlinx libraries ship native

@@ -120,6 +120,49 @@ def resolve_project(repo_root, real_projects, stub_projects, group, artifact):
     return path, None
 
 
+UPSTREAM_TVOS_SOURCE = os.path.join(
+    "buildSrc", "public", "src", "main", "kotlin", "org", "jetbrains", "androidx", "build",
+    "JetBrainsPublication.kt")
+
+
+def load_upstream_tvos_modules(repo_root):
+    # The build's single exclusion list (JetBrainsPublication.upstreamTvosModules): modules
+    # that keep their org.jetbrains coordinates and are never republished under a custom root.
+    path = os.path.join(repo_root, UPSTREAM_TVOS_SOURCE)
+    with open(path) as fh:
+        text = fh.read()
+    m = re.search(r"// BEGIN UPSTREAM_TVOS_MODULES(.*?)// END UPSTREAM_TVOS_MODULES", text, re.S)
+    if not m:
+        die("no UPSTREAM_TVOS_MODULES block in %s" % path)
+    # path -> "group:artifact:version" of the upstream artifact tvOS consumers get instead
+    return dict(re.findall(r'"(:[^"]+)"\s+to\s+"([^"]+)"', m.group(1)))
+
+
+def check_upstream_tvos_modules(ledger, repo_root):
+    # The ledger says which artifacts upstream ships usable tvOS klibs for; the build decides
+    # which modules it leaves on org.jetbrains coordinates. They must agree, or a published
+    # module would point at a coordinate nobody publishes.
+    build = load_upstream_tvos_modules(repo_root)
+    if not build:
+        die("UPSTREAM_TVOS_MODULES block in %s lists nothing" % UPSTREAM_TVOS_SOURCE)
+    ledger_usable = {}
+    for a in ledger["artifacts"]:
+        if (a.get("tvos") or {}).get("usable"):
+            path = project_path_for(a["group"], a["artifact"])
+            if path is not None:
+                ledger_usable[path] = "%s:%s:%s" % (a["group"], a["artifact"], a["version"])
+    only_ledger = sorted(set(ledger_usable) - set(build))
+    only_build = sorted(set(build) - set(ledger_usable))
+    if only_ledger or only_build:
+        die("JetBrainsPublication.upstreamTvosModules disagrees with the ledger's upstream tvOS "
+            "set; ledger-only: %s; build-only: %s" % (only_ledger or "-", only_build or "-"))
+    wrong = ["%s pins %s, ledger has %s" % (p, build[p], ledger_usable[p])
+             for p in sorted(build) if build[p] != ledger_usable[p]]
+    if wrong:
+        die("JetBrainsPublication.upstreamTvosModules pins differ from the ledger: %s"
+            % "; ".join(wrong))
+
+
 def derive(ledger, args, repo_root):
     libs = ledger.get("libraries") or {}
     missing = [k for k in REQUIRED_LIBRARIES if not (libs.get(k) or {}).get("jetbrainsVersion")]
@@ -130,6 +173,7 @@ def derive(ledger, args, repo_root):
         if k not in versions:
             die("ledger library %s is not a key this build registers; refusing to guess" % k)
 
+    check_upstream_tvos_modules(ledger, repo_root)
     real_projects, stub_projects = load_settings_projects(repo_root)
     only = set(args.only_group or [])
     publish, excluded, unbuildable = [], [], []

@@ -31,10 +31,50 @@ object JetBrainsPublication {
     // `publication.coordinateRoot` at root-plugin apply; defaults to "org.jetbrains" to
     // preserve the historical org.jetbrains.compose.* / org.jetbrains.androidx.* coordinates.
     @Volatile
-    var coordinateRoot: String = "org.jetbrains"
+    var coordinateRoot: String = DEFAULT_COORDINATE_ROOT
+
+    private const val DEFAULT_COORDINATE_ROOT = "org.jetbrains"
 
     private val JETBRAINS_COMPOSE_GROUP_PREFIX: String get() = "$coordinateRoot.compose."
     private val JETBRAINS_FORK_GROUP_PREFIX: String get() = "$coordinateRoot.androidx."
+
+    // tvOS fork: the single exclusion list. JetBrains already publishes each module here with
+    // tvosArm64 and tvosSimulatorArm64 variants (checked on Maven Central at the exact version
+    // below, the one JetBrains pairs with Compose 1.12.1), so this branch builds no tvOS target
+    // for it and never publishes it:
+    //  - AndroidXMultiplatformExtension.tvosArm64/tvosSimulatorArm64 skip the tvOS targets;
+    //  - JetBrainsAndroidXRootImplPlugin substitutes every project dependency on it, in tvOS
+    //    configurations only, with the upstream coordinate below;
+    //  - mavenGroupFor keeps its org.jetbrains group under any coordinate root, so published
+    //    metadata of the modules this fork does publish points at the upstream coordinate;
+    //  - its publish tasks fail and the publish aggregates skip it.
+    // Non-tvOS targets stay exactly as upstream builds them. scripts/publish_set.py
+    // cross-checks this block against the release ledger and refuses a mismatch.
+    // BEGIN UPSTREAM_TVOS_MODULES
+    val upstreamTvosModules: Map<String, String> = mapOf(
+        ":compose:runtime:runtime" to "org.jetbrains.compose.runtime:runtime:1.12.1",
+        ":compose:runtime:runtime-saveable" to "org.jetbrains.compose.runtime:runtime-saveable:1.12.1",
+        ":lifecycle:lifecycle-common" to "org.jetbrains.androidx.lifecycle:lifecycle-common:2.11.0",
+        ":lifecycle:lifecycle-runtime" to "org.jetbrains.androidx.lifecycle:lifecycle-runtime:2.11.0",
+        ":lifecycle:lifecycle-runtime-compose" to "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.11.0",
+        ":lifecycle:lifecycle-viewmodel" to "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel:2.11.0",
+        ":lifecycle:lifecycle-viewmodel-compose" to "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0",
+        ":lifecycle:lifecycle-viewmodel-navigation3" to "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0",
+        ":lifecycle:lifecycle-viewmodel-savedstate" to "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-savedstate:2.11.0",
+        ":navigation:navigation-common" to "org.jetbrains.androidx.navigation:navigation-common:2.10.0-beta01",
+        ":navigation:navigation-runtime" to "org.jetbrains.androidx.navigation:navigation-runtime:2.10.0-beta01",
+        ":savedstate:savedstate" to "org.jetbrains.androidx.savedstate:savedstate:1.4.0",
+        ":savedstate:savedstate-compose" to "org.jetbrains.androidx.savedstate:savedstate-compose:1.4.0",
+        ":window:window-core" to "org.jetbrains.androidx.window:window-core:1.5.1",
+    )
+    // END UPSTREAM_TVOS_MODULES
+
+    /** Whether [projectPath] is on [upstreamTvosModules]: no tvOS build and no publication. */
+    fun isUpstreamTvosModule(projectPath: String): Boolean = projectPath in upstreamTvosModules
+
+    fun isPublicationSuppressed(projectPath: String): Boolean = isUpstreamTvosModule(projectPath)
+
+    fun isPublicationSuppressed(project: Project): Boolean = isPublicationSuppressed(project.path)
 
     // NOTE: this is a computed property (`get() = ...`), not a stored `val`, and must stay
     // that way. `coordinateRoot` above is set by JetBrainsAndroidXRootImplPlugin.apply() via
@@ -183,14 +223,23 @@ object JetBrainsPublication {
         }
     }
 
-    fun mavenGroupFor(projectPath: String): String = when {
+    fun mavenGroupFor(projectPath: String): String {
+        val root = if (isPublicationSuppressed(projectPath)) DEFAULT_COORDINATE_ROOT else coordinateRoot
+        return mavenGroupFor(projectPath, "$root.compose.", "$root.androidx.")
+    }
+
+    private fun mavenGroupFor(
+        projectPath: String,
+        composeGroupPrefix: String,
+        forkGroupPrefix: String,
+    ): String = when {
         projectPath.startsWith(":compose:") ->
-            JETBRAINS_COMPOSE_GROUP_PREFIX + projectPath
+            composeGroupPrefix + projectPath
                 .removePrefix(":compose:")
                 .substringBeforeLast(":")
                 .replace(":", ".")
         projectPath.startsWith(":") ->
-            JETBRAINS_FORK_GROUP_PREFIX + projectPath
+            forkGroupPrefix + projectPath
                 .removePrefix(":")
                 .substringBeforeLast(":")
                 .replace(":", ".")

@@ -47,6 +47,19 @@ class JetBrainsAndroidXRootImplPlugin @Inject constructor(
             // Apply capability rule to resolve conflicts between org.jetbrains.androidx.* and androidx.*
             subproject.configureJetBrainsCapabilityResolution()
 
+            // tvOS fork: modules JetBrains already ships for tvOS have no tvOS target here, so
+            // tvOS configurations take the upstream artifact in place of the project.
+            subproject.configurations.configureEach { configuration ->
+                if (!configuration.name.startsWith("tvos")) return@configureEach
+                configuration.resolutionStrategy.dependencySubstitution { substitutions ->
+                    JetBrainsPublication.upstreamTvosModules.forEach { (path, coordinate) ->
+                        substitutions.substitute(substitutions.project(path))
+                            .using(substitutions.module(coordinate))
+                            .because("JetBrains publishes $path for tvOS")
+                    }
+                }
+            }
+
             subproject.tasks.configureEach {
                 if (it.name == "kotlinStoreYarnLock") it.enabled = false
                 if (it.name == "kotlinWasmStoreYarnLock") it.enabled = false

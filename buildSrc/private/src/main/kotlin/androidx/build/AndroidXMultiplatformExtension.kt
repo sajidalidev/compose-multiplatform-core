@@ -16,6 +16,7 @@
 
 package androidx.build
 
+import org.jetbrains.androidx.build.JetBrainsPublication
 import androidx.build.clang.AndroidXClang
 import androidx.build.clang.CombineObjectFilesTask
 import androidx.build.clang.KonanBuildService
@@ -684,7 +685,9 @@ abstract class AndroidXMultiplatformExtension(val project: Project) {
 
     @JvmOverloads
     fun tvosArm64(block: Action<KotlinNativeTarget>? = null): KotlinNativeTarget? =
-        potentiallyRedirecting("tvosArm64") {
+        // tvOS fork: JetBrains ships this module for tvOS; consumers use the upstream artifact.
+        if (JetBrainsPublication.isUpstreamTvosModule(project.path)) null
+        else potentiallyRedirecting("tvosArm64") {
             supportedPlatforms.add(PlatformIdentifier.TVOS_ARM_64)
             if (project.enableMac()) {
                 kotlinExtension.tvosArm64 { block?.execute(this) }
@@ -695,7 +698,9 @@ abstract class AndroidXMultiplatformExtension(val project: Project) {
 
     @JvmOverloads
     fun tvosSimulatorArm64(block: Action<KotlinNativeTarget>? = null): KotlinNativeTarget? =
-        potentiallyRedirecting("tvosSimulatorArm64") {
+        // tvOS fork: JetBrains ships this module for tvOS; consumers use the upstream artifact.
+        if (JetBrainsPublication.isUpstreamTvosModule(project.path)) null
+        else potentiallyRedirecting("tvosSimulatorArm64") {
             supportedPlatforms.add(PlatformIdentifier.TVOS_SIMULATOR_ARM_64)
             if (project.enableMac()) {
                 kotlinExtension.tvosSimulatorArm64 { block?.execute(this) }
