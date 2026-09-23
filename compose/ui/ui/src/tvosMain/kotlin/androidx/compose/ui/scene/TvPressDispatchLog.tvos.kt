@@ -26,15 +26,15 @@ import platform.UIKit.UIPressesEvent
  * mediator of one [ComposeContainer] (the root one and the one owned by each
  * [IosComposeSceneLayer]).
  *
- * A mediator forwards the presses it did not consume to `super`, so UIKit walks the responder
- * chain and delivers the very same press to the views and controllers above it, which route it
- * back into another mediator of the same container. Sharing the log makes those echoes visible:
- * a press a dialog's mediator already evaluated is reported unconsumed by the root mediator
- * without being dispatched to Compose again, so it keeps travelling to UIApplication (Menu
- * suspends the app) instead of moving focus or clicking behind the dialog.
+ * A mediator forwards the presses it did not consume to `super`, so UIKit walks the responder chain
+ * and delivers the very same press to the views and controllers above it, which route it back into
+ * another mediator of the same container. Sharing the log makes those echoes visible: a press a
+ * dialog's mediator already evaluated is reported unconsumed by the root mediator without being
+ * dispatched to Compose again, so it keeps travelling to UIApplication (Menu suspends the app)
+ * instead of moving focus or clicking behind the dialog.
  *
- * Consumption itself stays per mediator ([ComposeSceneMediator.consumedKeyIds]): the mediator
- * that consumed the Began phase is the one that must dispatch the matching KeyUp.
+ * Consumption itself stays per mediator ([ComposeSceneMediator.consumedKeyIds]): the mediator that
+ * consumed the Began phase is the one that must dispatch the matching KeyUp.
  */
 // A held clickpad press older than this relative to the event being evaluated is stale: its
 // Ended phase was absorbed before reaching the mediator (the tvOS keyboard overlay does that
@@ -92,7 +92,8 @@ internal class TvPressDispatchLog {
     }
 
     /** Timestamp of the last clickpad press Began, [Double.NEGATIVE_INFINITY] if there was none. */
-    val clickpadPressTimestamp: Double get() = lastClickpadPressTimestamp
+    val clickpadPressTimestamp: Double
+        get() = lastClickpadPressTimestamp
 
     /** Records the lifetime of a clickpad press identified by [keyId]. */
     fun recordClickpadPress(keyId: Long, phase: UIPressPhase, timestamp: Double) {
@@ -104,8 +105,8 @@ internal class TvPressDispatchLog {
                 lastClickpadPressTimestamp = timestamp
                 heldClickpadKeyIds[keyId] = timestamp
             }
-            UIPressPhase.UIPressPhaseEnded, UIPressPhase.UIPressPhaseCancelled ->
-                heldClickpadKeyIds.remove(keyId)
+            UIPressPhase.UIPressPhaseEnded,
+            UIPressPhase.UIPressPhaseCancelled -> heldClickpadKeyIds.remove(keyId)
             else -> {}
         }
     }

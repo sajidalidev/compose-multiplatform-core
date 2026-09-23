@@ -37,16 +37,20 @@ internal class ComposeHostingViewController(
     private val configuration: ComposeUIViewControllerConfiguration,
     private val content: @Composable () -> Unit,
     coroutineContext: CoroutineContext = Dispatchers.Main,
-    private val lifecycleDelegate: ComposeContainerLifecycleDelegate = ComposeContainerLifecycleDelegate()
+    private val lifecycleDelegate: ComposeContainerLifecycleDelegate =
+        ComposeContainerLifecycleDelegate(),
 ) : CMPViewController(lifecycleDelegate = lifecycleDelegate) {
-    private val container = ComposeContainer(
-        configuration = configuration,
-        content = content,
-        coroutineContext = coroutineContext,
-        lifecycleDelegate = lifecycleDelegate
-    )
+    private val container =
+        ComposeContainer(
+            configuration = configuration,
+            content = content,
+            coroutineContext = coroutineContext,
+            lifecycleDelegate = lifecycleDelegate,
+        )
 
-    val rootRedrawer: MetalRedrawer? get() = container.view.redrawer
+    val rootRedrawer: MetalRedrawer?
+        get() = container.view.redrawer
+
     fun hasInvalidations(): Boolean = container.hasInvalidations()
 
     override fun loadView() {
@@ -118,7 +122,7 @@ internal class ComposeHostingViewController(
 
     override fun didUpdateFocusInContext(
         context: UIFocusUpdateContext,
-        withAnimationCoordinator: UIFocusAnimationCoordinator
+        withAnimationCoordinator: UIFocusAnimationCoordinator,
     ) {
         super.didUpdateFocusInContext(context, withAnimationCoordinator)
         if (context.nextFocusedView == view) {

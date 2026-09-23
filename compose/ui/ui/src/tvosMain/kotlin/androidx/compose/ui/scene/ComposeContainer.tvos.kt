@@ -17,7 +17,6 @@
 package androidx.compose.ui.scene
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
@@ -69,20 +68,19 @@ import platform.UIKit.UIViewController
 import platform.UIKit.UIWindow
 import platform.UIKit.UIWindowScene
 
-/**
- * The class represents a common part of Compose integration for all tvOS containers.
- */
+/** The class represents a common part of Compose integration for all tvOS containers. */
 internal class ComposeContainer(
     private val configuration: ComposeContainerConfiguration,
     private val content: @Composable () -> Unit,
     private val coroutineContext: CoroutineContext,
-    private val lifecycleDelegate: ComposeContainerLifecycleDelegate
+    private val lifecycleDelegate: ComposeContainerLifecycleDelegate,
 ) {
 
-    val view = ComposeContainerView(
-        transparentForTouches = false,
-        useOpaqueConfiguration = configuration.opaque,
-    )
+    val view =
+        ComposeContainerView(
+            transparentForTouches = false,
+            useOpaqueConfiguration = configuration.opaque,
+        )
 
     private var mediator: ComposeSceneMediator? = null
     private val windowContext = PlatformWindowContext()
@@ -96,29 +94,33 @@ internal class ComposeContainer(
     // touches cannot tell. Shared by every mediator of this container, like the press log.
     private val touchOracle = SiriRemoteTouchOracle()
     private var layersHolder: ComposeLayersHolder? = null
-    private val layoutDirection get() = getApplicationLayoutDirection()
+    private val layoutDirection
+        get() = getApplicationLayoutDirection()
+
     private val motionDurationScale = MotionDurationScaleImpl()
     private var activeStateListener: SceneActiveStateListener? = null
-    private var sceneJob: Job = Job().also {
-        // The initial state of the container considered as "not active".
-        // The `initializeComposeScene` must be called to set the active `sceneJob`.
-        it.cancel()
-    }
+    private var sceneJob: Job =
+        Job().also {
+            // The initial state of the container considered as "not active".
+            // The `initializeComposeScene` must be called to set the active `sceneJob`.
+            it.cancel()
+        }
     private var savedState: SavedState? = null
     private var mediatorComponentsOwner: DefaultArchitectureComponentsOwner? = null
     private val architectureComponentsOwner: DefaultArchitectureComponentsOwner
-        get() = mediatorComponentsOwner
-            ?: error("ArchitectureComponentsOwner is not initialized yet.")
+        get() =
+            mediatorComponentsOwner ?: error("ArchitectureComponentsOwner is not initialized yet.")
 
     private val interfaceOrientationObserver = SceneGeometryObserver {
         updateInterfaceOrientationState()
     }
     private val navigationEventInput = TvBackNavigationEventInput()
-    val hasInteropViews: Boolean get() = mediator?.hasInteropViews ?: false
+    val hasInteropViews: Boolean
+        get() = mediator?.hasInteropViews ?: false
 
     /**
-     * Returns the subset of [presses] that Compose did not consume, so that the caller can
-     * forward them to `super` and let tvOS act on them (e.g. suspend the app on Menu).
+     * Returns the subset of [presses] that Compose did not consume, so that the caller can forward
+     * them to `super` and let tvOS act on them (e.g. suspend the app on Menu).
      */
     fun onKeyboardPresses(presses: Set<*>, event: UIPressesEvent?): Set<*> =
         mediator?.onKeyboardPresses(presses, event) ?: presses
@@ -131,9 +133,8 @@ internal class ComposeContainer(
      * Initial value is arbitrarily chosen to avoid propagating invalid value logic
      * It's never the case in the real usage scenario to reflect that in type system
      */
-    private val interfaceOrientationState: MutableState<InterfaceOrientation> = mutableStateOf(
-        InterfaceOrientation.Portrait
-    )
+    private val interfaceOrientationState: MutableState<InterfaceOrientation> =
+        mutableStateOf(InterfaceOrientation.Portrait)
     private val systemThemeState: MutableState<SystemTheme> = mutableStateOf(SystemTheme.UNKNOWN)
 
     private val focusedViewsList = FocusedViewsList()
@@ -142,9 +143,7 @@ internal class ComposeContainer(
         if (configuration.enforceStrictPlistSanityCheck) {
             PlistSanityCheck.performIfNeeded()
         }
-        lifecycleDelegate.runOnDeinit {
-            windowContext.dispose()
-        }
+        lifecycleDelegate.runOnDeinit { windowContext.dispose() }
     }
 
     fun nestedCoroutineScope(
@@ -153,12 +152,15 @@ internal class ComposeContainer(
         return CoroutineScope(coroutineContext + addedContext + Job(parent = sceneJob))
     }
 
-    fun prepareAndGetSizeTransitionAnimation(withProgress: suspend ((Float) -> Unit) -> Unit): suspend () -> Unit {
+    fun prepareAndGetSizeTransitionAnimation(
+        withProgress: suspend ((Float) -> Unit) -> Unit
+    ): suspend () -> Unit {
         return mediator?.prepareAndGetSizeTransitionAnimation(withProgress) ?: {}
     }
 
     fun hasInvalidations(): Boolean {
-        return mediator?.hasInvalidations == true || layersHolder?.layersViewController?.hasInvalidations == true
+        return mediator?.hasInvalidations == true ||
+            layersHolder?.layersViewController?.hasInvalidations == true
     }
 
     private val currentInterfaceOrientation: InterfaceOrientation?
@@ -185,9 +187,7 @@ internal class ComposeContainer(
     }
 
     fun updateInterfaceOrientationState() {
-        currentInterfaceOrientation?.let {
-            interfaceOrientationState.value = it
-        }
+        currentInterfaceOrientation?.let { interfaceOrientationState.value = it }
     }
 
     fun sceneDidAppear() {
@@ -206,67 +206,68 @@ internal class ComposeContainer(
         sceneJob = Job()
         touchOracle.start()
         val sceneCoroutineContext = coroutineContext + motionDurationScale + sceneJob
-        val metalView = MetalView(
-            retrieveInteropTransaction = {
-                mediator?.retrieveInteropTransaction() ?: object : UIKitInteropTransaction {
-                    override val actions = emptyList<UIKitInteropAction>()
-                    override val isInteropActive = false
-                }
-            },
-            useSeparateRenderThreadWhenPossible = configuration.parallelRendering,
-            render = { canvas, nanoTime ->
-                mediator?.render(canvas.asComposeCanvas(), nanoTime)
-            }
-        )
+        val metalView =
+            MetalView(
+                retrieveInteropTransaction = {
+                    mediator?.retrieveInteropTransaction()
+                        ?: object : UIKitInteropTransaction {
+                            override val actions = emptyList<UIKitInteropAction>()
+                            override val isInteropActive = false
+                        }
+                },
+                useSeparateRenderThreadWhenPossible = configuration.parallelRendering,
+                render = { canvas, nanoTime ->
+                    mediator?.render(canvas.asComposeCanvas(), nanoTime)
+                },
+            )
         metalView.canBeOpaque = configuration.opaque
-        val holder = ComposeLayersHolder(
-            useSeparateRenderThreadWhenPossible = configuration.parallelRendering,
-            coroutineContext = sceneCoroutineContext,
-            view = view
-        ).also {
-            layersHolder = it
-        }
+        val holder =
+            ComposeLayersHolder(
+                    useSeparateRenderThreadWhenPossible = configuration.parallelRendering,
+                    coroutineContext = sceneCoroutineContext,
+                    view = view,
+                )
+                .also { layersHolder = it }
 
         mediatorComponentsOwner = DefaultArchitectureComponentsOwner(savedState)
         architectureComponentsOwner.enableSavedStateHandles()
         lifecycleDelegate.onLifecycleStateUpdated = architectureComponentsOwner::setLifecycleState
 
-        mediator = ComposeSceneMediator(
-            onFocusBehavior = configuration.onFocusBehavior,
-            isClearFocusOnMouseDownEnabled = configuration.isClearFocusOnMouseDownEnabled,
-            focusedViewsList = focusedViewsList,
-            windowContext = windowContext,
-            architectureComponentsOwner = architectureComponentsOwner,
-            coroutineContext = sceneCoroutineContext,
-            redrawer = metalView.redrawer,
-            navigationEventInput = navigationEventInput,
-            pressDispatchLog = pressDispatchLog,
-            touchOracle = touchOracle,
-            composeSceneFactory = { invalidate, context, frameRecomposer ->
-                createComposeScene(invalidate, context, holder, frameRecomposer)
-            },
-            interfaceOrientationState = interfaceOrientationState,
-        ).also { mediator ->
-            view.embedSubview(mediator.backgroundView)
-            view.updateMetalView(
-                metalView = metalView,
-                onDidMoveToWindow = ::onDidMoveToWindow,
-                onLayoutSubviews = ::onLayoutSubviews
-            )
-            view.embedSubview(mediator.overlayView)
+        mediator =
+            ComposeSceneMediator(
+                    onFocusBehavior = configuration.onFocusBehavior,
+                    isClearFocusOnMouseDownEnabled = configuration.isClearFocusOnMouseDownEnabled,
+                    focusedViewsList = focusedViewsList,
+                    windowContext = windowContext,
+                    architectureComponentsOwner = architectureComponentsOwner,
+                    coroutineContext = sceneCoroutineContext,
+                    redrawer = metalView.redrawer,
+                    navigationEventInput = navigationEventInput,
+                    pressDispatchLog = pressDispatchLog,
+                    touchOracle = touchOracle,
+                    composeSceneFactory = { invalidate, context, frameRecomposer ->
+                        createComposeScene(invalidate, context, holder, frameRecomposer)
+                    },
+                    interfaceOrientationState = interfaceOrientationState,
+                )
+                .also { mediator ->
+                    view.embedSubview(mediator.backgroundView)
+                    view.updateMetalView(
+                        metalView = metalView,
+                        onDidMoveToWindow = ::onDidMoveToWindow,
+                        onLayoutSubviews = ::onLayoutSubviews,
+                    )
+                    view.embedSubview(mediator.overlayView)
 
-            mediator.setContent {
-                ProvideContainerCompositionLocals(content)
-            }
-        }
+                    mediator.setContent { ProvideContainerCompositionLocals(content) }
+                }
 
-        activeStateListener = SceneActiveStateListener(
-            getScene = ::windowScene
-        ) { isSceneActive ->
-            if (isSceneActive) {
-                updateMotionSpeed()
+        activeStateListener =
+            SceneActiveStateListener(getScene = ::windowScene) { isSceneActive ->
+                if (isSceneActive) {
+                    updateMotionSpeed()
+                }
             }
-        }
 
         interfaceOrientationObserver.isObservingEnabled = true
 
@@ -312,27 +313,30 @@ internal class ComposeContainer(
                 focusable: Boolean,
                 consumePointerInputOutside: Boolean,
             ): ComposeSceneLayer {
-                val layer = UIKitComposeSceneLayer(
-                    onClosed = {
-                        layersHolder.getLayersViewController().detach(it)
-                        onFocusConditionsChanged()
-                    },
-                    createComposeSceneContext = {
-                        createComposeSceneContext(it, layersHolder, frameRecomposer)
-                    },
-                    hostCompositionLocals = { ProvideContainerCompositionLocals(it) },
-                    layersViewController = layersHolder.getLayersViewController(),
-                    initialLayoutDirection = layoutDirection,
-                    configuration = configuration,
-                    onFocusConditionsChanged = ::onFocusConditionsChanged,
-                    focusedViewsList = if (focusable) focusedViewsList.childFocusedViewsList() else null,
-                    consumePointerInputOutside = consumePointerInputOutside,
-                    parentCoroutineContext = frameRecomposer.compositionContext.effectCoroutineContext,
-                    pressDispatchLog = pressDispatchLog,
-                    touchOracle = touchOracle,
-                    ownerProvider = architectureComponentsOwner,
-                    interfaceOrientationState = interfaceOrientationState,
-                )
+                val layer =
+                    UIKitComposeSceneLayer(
+                        onClosed = {
+                            layersHolder.getLayersViewController().detach(it)
+                            onFocusConditionsChanged()
+                        },
+                        createComposeSceneContext = {
+                            createComposeSceneContext(it, layersHolder, frameRecomposer)
+                        },
+                        hostCompositionLocals = { ProvideContainerCompositionLocals(it) },
+                        layersViewController = layersHolder.getLayersViewController(),
+                        initialLayoutDirection = layoutDirection,
+                        configuration = configuration,
+                        onFocusConditionsChanged = ::onFocusConditionsChanged,
+                        focusedViewsList =
+                            if (focusable) focusedViewsList.childFocusedViewsList() else null,
+                        consumePointerInputOutside = consumePointerInputOutside,
+                        parentCoroutineContext =
+                            frameRecomposer.compositionContext.effectCoroutineContext,
+                        pressDispatchLog = pressDispatchLog,
+                        touchOracle = touchOracle,
+                        ownerProvider = architectureComponentsOwner,
+                        interfaceOrientationState = interfaceOrientationState,
+                    )
 
                 layersHolder.getLayersViewController().attach(layer)
                 onFocusConditionsChanged()
@@ -352,11 +356,12 @@ internal class ComposeContainer(
             frameRecomposer = frameRecomposer,
             density = view.density,
             layoutDirection = layoutDirection,
-            composeSceneContext = createComposeSceneContext(
-                platformContext = platformContext,
-                layersHolder = layersHolder,
-                frameRecomposer = frameRecomposer
-            ),
+            composeSceneContext =
+                createComposeSceneContext(
+                    platformContext = platformContext,
+                    layersHolder = layersHolder,
+                    frameRecomposer = frameRecomposer,
+                ),
             // TODO: Split these into UIKit layout vs display invalidation. `invalidateLayout`
             // should call into layout scheduling, while `invalidateDraw` should schedule display.
             invalidateLayout = invalidate,
@@ -379,34 +384,36 @@ internal class ComposeContainer(
         mediator?.isFocusEnabled = isFocusEnabled
     }
 
-    private val containingViewController: UIViewController get() {
-        var responder: UIResponder? = view
-        while (responder != null) {
-            if (responder is UIViewController) {
-                return responder
+    private val containingViewController: UIViewController
+        get() {
+            var responder: UIResponder? = view
+            while (responder != null) {
+                if (responder is UIViewController) {
+                    return responder
+                }
+                responder = responder.nextResponder
             }
-            responder = responder.nextResponder
+            error("Compose Container mut be located inside a UIViewController")
         }
-        error("Compose Container mut be located inside a UIViewController")
-    }
 
     @Composable
     private fun ProvideContainerCompositionLocals(content: @Composable () -> Unit) =
         CompositionLocalProvider(
             LocalUIViewController provides containingViewController,
-            @Suppress("DEPRECATION")
-            LocalSystemTheme provides systemThemeState.value.asComposeSystemTheme(),
-            content = content
+            @Suppress("DEPRECATION") LocalSystemTheme provides
+                systemThemeState.value.asComposeSystemTheme(),
+            content = content,
         )
 
     private fun updateMotionSpeed() {
-        motionDurationScale.scaleFactor = if (UIAccessibilityIsReduceMotionEnabled()) {
-            // 0f would cause motion to finish in the next frame callback.
-            // See [MotionDurationScale.scaleFactor] for more details.
-            0f
-        } else {
-            1f / (view.window?.layer?.speed?.takeIf { it > 0 } ?: 1f)
-        }
+        motionDurationScale.scaleFactor =
+            if (UIAccessibilityIsReduceMotionEnabled()) {
+                // 0f would cause motion to finish in the next frame callback.
+                // See [MotionDurationScale.scaleFactor] for more details.
+                0f
+            } else {
+                1f / (view.window?.layer?.speed?.takeIf { it > 0 } ?: 1f)
+            }
     }
 
     private val windowScene: UIWindowScene?
@@ -423,35 +430,36 @@ private fun UIUserInterfaceStyle.asComposeSystemTheme(): SystemTheme {
 
 private fun getApplicationLayoutDirection() =
     when (UIApplication.sharedApplication().userInterfaceLayoutDirection) {
-        UIUserInterfaceLayoutDirection.UIUserInterfaceLayoutDirectionRightToLeft -> LayoutDirection.Rtl
+        UIUserInterfaceLayoutDirection.UIUserInterfaceLayoutDirectionRightToLeft ->
+            LayoutDirection.Rtl
         else -> LayoutDirection.Ltr
     }
 
 private class ComposeLayersHolder(
     private val useSeparateRenderThreadWhenPossible: Boolean,
     private val coroutineContext: CoroutineContext,
-    private val view: ComposeContainerView
+    private val view: ComposeContainerView,
 ) {
     var layersViewController: ComposeLayersViewController? = null
         private set
 
     fun getLayersViewController(): ComposeLayersViewController {
-        return layersViewController ?: run {
-            val layers = ComposeLayersViewController(
-                useSeparateRenderThreadWhenPossible = useSeparateRenderThreadWhenPossible,
-                coroutineContext = coroutineContext,
-                hostingComposeView = view
-            )
-            layers.containerWindow = view.window
-            layersViewController = layers
-            layers
-        }
+        return layersViewController
+            ?: run {
+                val layers =
+                    ComposeLayersViewController(
+                        useSeparateRenderThreadWhenPossible = useSeparateRenderThreadWhenPossible,
+                        coroutineContext = coroutineContext,
+                        hostingComposeView = view,
+                    )
+                layers.containerWindow = view.window
+                layersViewController = layers
+                layers
+            }
     }
 }
 
-private class SceneGeometryObserver(
-    val onGeometryChanged: () -> Unit
-) : CMPKeyValueObserver() {
+private class SceneGeometryObserver(val onGeometryChanged: () -> Unit) : CMPKeyValueObserver() {
     private val observingKey = "effectiveGeometry"
 
     var windowScene: UIWindowScene? = null
@@ -491,7 +499,7 @@ private class SceneGeometryObserver(
         keyPath: String?,
         ofObject: Any?,
         change: Map<Any?, *>?,
-        context: CPointer<out CPointed>?
+        context: CPointer<out CPointed>?,
     ) {
         onGeometryChanged()
     }
