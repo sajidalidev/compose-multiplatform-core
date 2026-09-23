@@ -63,6 +63,7 @@ internal class UIKitComposeSceneLayer(
     consumePointerInputOutside: Boolean = focusedViewsList != null,
     parentCoroutineContext: CoroutineContext,
     private val pressDispatchLog: TvPressDispatchLog,
+    private val touchOracle: SiriRemoteTouchOracle,
     private val ownerProvider: PlatformArchitectureComponentsOwner,
     private val interfaceOrientationState: State<InterfaceOrientation>,
 ) : ComposeSceneLayer {
@@ -108,6 +109,7 @@ internal class UIKitComposeSceneLayer(
         redrawer = layersViewController.metalView.redrawer,
         navigationEventInput = navigationEventInput,
         pressDispatchLog = pressDispatchLog,
+        touchOracle = touchOracle,
         composeSceneFactory = ::createComposeScene,
         interfaceOrientationState = interfaceOrientationState
     ).also {

@@ -91,6 +91,10 @@ internal class ComposeContainer(
     // reported as unconsumed isn't evaluated a second time by the root mediator when the
     // responder chain delivers it back to the hosting view controller.
     private val pressDispatchLog = TvPressDispatchLog()
+
+    // Reports where the finger physically is on the Siri Remote clickpad, which UIKit indirect
+    // touches cannot tell. Shared by every mediator of this container, like the press log.
+    private val touchOracle = SiriRemoteTouchOracle()
     private var layersHolder: ComposeLayersHolder? = null
     private val layoutDirection get() = getApplicationLayoutDirection()
     private val motionDurationScale = MotionDurationScaleImpl()
@@ -200,6 +204,7 @@ internal class ComposeContainer(
 
     fun initializeComposeScene() {
         sceneJob = Job()
+        touchOracle.start()
         val sceneCoroutineContext = coroutineContext + motionDurationScale + sceneJob
         val metalView = MetalView(
             retrieveInteropTransaction = {
@@ -236,6 +241,7 @@ internal class ComposeContainer(
             redrawer = metalView.redrawer,
             navigationEventInput = navigationEventInput,
             pressDispatchLog = pressDispatchLog,
+            touchOracle = touchOracle,
             composeSceneFactory = { invalidate, context, frameRecomposer ->
                 createComposeScene(invalidate, context, holder, frameRecomposer)
             },
@@ -282,6 +288,7 @@ internal class ComposeContainer(
 
         mediator = null
         pressDispatchLog.clear()
+        touchOracle.stop()
 
         activeStateListener?.dispose()
         activeStateListener = null
@@ -322,6 +329,7 @@ internal class ComposeContainer(
                     consumePointerInputOutside = consumePointerInputOutside,
                     parentCoroutineContext = frameRecomposer.compositionContext.effectCoroutineContext,
                     pressDispatchLog = pressDispatchLog,
+                    touchOracle = touchOracle,
                     ownerProvider = architectureComponentsOwner,
                     interfaceOrientationState = interfaceOrientationState,
                 )
