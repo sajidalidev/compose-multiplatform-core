@@ -16,7 +16,10 @@
 
 package androidx.compose.ui.scene
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.toOffset
 
 /** Android TV treats a 1080p (1920x1080 px) screen as density 2.0, a 960x540 dp canvas. */
 private const val TEN_FOOT_DENSITY_PER_1080P = 2f
@@ -34,8 +37,8 @@ private const val TEN_FOOT_DENSITY_PER_1080P = 2f
  * scaling at all) on 1x hardware such as Apple TV HD.
  *
  * Only the scene's dp-to-pixel density is scaled this way: [screenDensity] stays the UIKit
- * points-to-pixels factor used for touch positions, insets, accessibility frames and
- * `sizeThatFits` (see `ComposeSceneMediator.measureSceneSize`).
+ * points-to-pixels factor used for touch positions, interop hit tests and placement, insets and
+ * accessibility frames.
  *
  * This is the single owner of that rule. `ComposeSceneMediator` applies it once when the scene is
  * created, so the iOS-mirrored call sites in `ComposeContainer` and `UIKitComposeSceneLayer` pass the
@@ -43,3 +46,16 @@ private const val TEN_FOOT_DENSITY_PER_1080P = 2f
  */
 internal fun tvSceneDensity(screenDensity: Density, fontScale: Float): Density =
     Density(density = TEN_FOOT_DENSITY_PER_1080P * screenDensity.density, fontScale = fontScale)
+
+/**
+ * Converts a point in the hosting view's UIKit coordinates to the scene's pixel space.
+ *
+ * Scene pixels are backing pixels: the scene is sized as the view's points times the UIKit scale,
+ * and `UIKitInteropElementHolder` places native interop views by dividing root pixels by that same
+ * scale. The 10-foot [tvSceneDensity] only maps dp to pixels inside the scene, so using it here
+ * would look for interop views at a point [TEN_FOOT_DENSITY_PER_1080P] times too far from the
+ * origin. UIKit points always become scene pixels through [screenDensity], never through the scene
+ * density.
+ */
+internal fun uiKitPointToScenePixels(point: DpOffset, screenDensity: Density): Offset =
+    point.toOffset(screenDensity)

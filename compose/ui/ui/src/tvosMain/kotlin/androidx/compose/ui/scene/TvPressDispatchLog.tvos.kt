@@ -27,7 +27,7 @@ private const val HELD_PRESS_MAX_AGE_S = 1.0
 /**
  * Records which presses have already been evaluated by a [ComposeSceneMediator], shared by every
  * mediator of one [ComposeContainer] (the root one and the one owned by each
- * [IosComposeSceneLayer]).
+ * [UIKitComposeSceneLayer]).
  *
  * A mediator forwards an unhandled Menu press to `super`, so UIKit walks the responder chain and
  * delivers the very same press to the views and controllers above it, which route it back into

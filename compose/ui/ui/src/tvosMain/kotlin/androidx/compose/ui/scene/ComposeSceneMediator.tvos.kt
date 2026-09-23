@@ -763,7 +763,8 @@ internal class ComposeSceneMediator(
 
     private fun hitTestInteropView(point: CValue<CGPoint>): UIView? =
         point.useContents {
-            val position = toDpOffset().toOffset(composeSceneDensity)
+            // Same space as pointer positions and interop placement: points times the UIKit scale.
+            val position = uiKitPointToScenePixels(toDpOffset(), screenDensity)
             val interopView = scene.hitTestInteropView(position)
 
             // Find a group of a holder associated with a given interop view or view controller
