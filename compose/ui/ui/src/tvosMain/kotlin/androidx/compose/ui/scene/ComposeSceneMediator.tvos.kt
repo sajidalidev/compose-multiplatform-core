@@ -992,6 +992,10 @@ internal class ComposeSceneMediator(
             val timestamp = CACurrentMediaTime()
             // A fling runs while the pad reports no finger, i.e. exactly when there is no sample.
             stepFling(timestamp)
+            // Runs on every tick, empty pad included: a contact whose ENDED is lost while the pad
+            // keeps reporting no finger (e.g. the remote disconnects mid-gesture) would otherwise
+            // never be dropped, and its sampling session would keep the display link running.
+            purgeStaleIndirectTouches(timestamp)
             if (sample == null) {
                 // The pad is empty, so the dispatched contacts are lifted whether or not their
                 // ENDED has arrived yet, and the next samples are another finger's. The fling is
@@ -1006,7 +1010,6 @@ internal class ComposeSceneMediator(
                 }
                 return
             }
-            purgeStaleIndirectTouches(timestamp)
             // A dispatch runs key event handlers, which may end contacts, so the states are
             // snapshotted before they are evaluated.
             for (state in indirectTouches.values.toList()) {
