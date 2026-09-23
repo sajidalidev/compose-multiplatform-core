@@ -1,0 +1,243 @@
+/*
+ * Copyright 2026 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package androidx.compose.foundation.text
+
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.node.CompositionLocalConsumerModifierNode
+import androidx.compose.ui.node.GlobalPositionAwareModifierNode
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.ObserverModifierNode
+import androidx.compose.ui.node.currentValueOf
+import androidx.compose.ui.node.observeReads
+import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.TextInputContainer
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.CommitTextCommand
+import androidx.compose.ui.text.input.DeleteSurroundingTextCommand
+import androidx.compose.ui.text.input.EditCommand
+import androidx.compose.ui.text.input.FinishComposingTextCommand
+import androidx.compose.ui.text.input.ImeOptions
+import androidx.compose.ui.text.input.SetComposingRegionCommand
+import androidx.compose.ui.text.input.SetComposingTextCommand
+import androidx.compose.ui.text.input.SetSelectionCommand
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.usingNativeTextInput
+import androidx.compose.ui.uikit.LocalTextInputContainer
+import androidx.compose.ui.unit.Density
+
+internal actual fun Modifier.textFieldOverlay(
+    state: LegacyTextFieldState,
+    imeOptions: ImeOptions,
+    interactionSource: InteractionSource?
+): Modifier = this then
+    CoreTextFieldImeOverlayElement(state, imeOptions, state.processor.toTextFieldValue(), interactionSource)
+
+private data class CoreTextFieldImeOverlayElement(
+    private val state: LegacyTextFieldState,
+    private val imeOptions: ImeOptions,
+    private val value: TextFieldValue,
+    private val interactionSource: InteractionSource?,
+) : ModifierNodeElement<CoreTextFieldImeOverlayNode>() {
+
+    override fun create() = CoreTextFieldImeOverlayNode(state, imeOptions, interactionSource)
+
+    override fun update(node: CoreTextFieldImeOverlayNode) {
+        node.update(state, imeOptions, interactionSource)
+    }
+
+    override fun InspectorInfo.inspectableProperties() {
+        name = "coreTextFieldImeOverlay"
+        properties["state"] = state
+        properties["imeOptions"] = imeOptions
+        properties["value"] = value
+        properties["interactionSource"] = interactionSource
+    }
+}
+
+@OptIn(InternalComposeUiApi::class)
+private class CoreTextFieldImeOverlayNode(
+    private var state: LegacyTextFieldState,
+    imeOptions: ImeOptions,
+    interactionSource: InteractionSource?,
+) : Modifier.Node(),
+    CompositionLocalConsumerModifierNode,
+    GlobalPositionAwareModifierNode,
+    ObserverModifierNode {
+
+    private val delegate = CoreTextFieldInputDelegate(state, interactionSource, imeOptions)
+
+    private var container: TextInputContainer? = null
+
+    private var holder: TextInputContainer.Holder? = null
+        set(value) {
+            field = value
+            state.holder = value
+        }
+
+    private var bounds: Rect? = null
+
+    private var density: Density? = null
+
+    override fun onAttach() {
+        onObservedReadsChanged()
+    }
+
+    override fun onDetach() {
+        removeTextInput()
+        container = null
+        bounds = null
+        density = null
+    }
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    fun update(state: LegacyTextFieldState, imeOptions: ImeOptions, interactionSource: InteractionSource?) {
+        if (this.state !== state) {
+            this.state.holder = null
+            this.state = state
+            state.holder = holder
+            delegate.state = state
+        }
+        val nativeTextInputChanged = delegate.imeOptions.platformImeOptions?.usingNativeTextInput !=
+            imeOptions.platformImeOptions?.usingNativeTextInput
+        delegate.imeOptions = imeOptions
+        delegate.interactionSource = interactionSource
+
+        if (nativeTextInputChanged) {
+            removeTextInput()
+            createTextInput()
+        }
+    }
+
+    override fun onObservedReadsChanged() {
+        observeReads {
+            val container = currentValueOf(LocalTextInputContainer)
+            val density = currentValueOf(LocalDensity)
+
+            if (container != this.container) {
+                removeTextInput()
+                this.container = container
+                this.density = density
+                createTextInput()
+            } else if (density != this.density) {
+                this.density = density
+                updateRect()
+            }
+        }
+    }
+
+    override fun onGloballyPositioned(coordinates: LayoutCoordinates) {
+        bounds = coordinates.boundsInRoot()
+        updateRect()
+    }
+
+    private fun createTextInput() {
+        removeTextInput()
+        holder = container?.createTextInput(delegate)
+        updateRect()
+    }
+
+    private fun removeTextInput() {
+        holder?.remove()
+        holder = null
+    }
+
+    private fun updateRect() {
+        val holder = holder ?: return
+        val bounds = bounds ?: return
+        holder.setRect(bounds)
+    }
+}
+
+@OptIn(InternalComposeUiApi::class)
+private class CoreTextFieldInputDelegate(
+    var state: LegacyTextFieldState,
+    var interactionSource: InteractionSource?,
+    override var imeOptions: ImeOptions
+) : TextInputContainer.Delegate {
+    override val editorToken: Any
+        get() = state
+
+    private val value: TextFieldValue
+        get() = state.processor.toTextFieldValue()
+
+    override val text: String
+        get() = value.text
+
+    override val isFocused: Boolean
+        get() = state.hasFocus
+
+    override val selectionTextRange: TextRange
+        get() = value.selection
+
+    override val markedTextRange: TextRange?
+        get() = value.composition
+
+    override fun insertText(text: String) {
+        sendEditCommands(CommitTextCommand(text, 1))
+    }
+
+    override fun replaceRange(range: TextRange, text: String) {
+        sendEditCommands(
+            SetComposingRegionCommand(range.min, range.max),
+            SetComposingTextCommand(text, 1),
+            FinishComposingTextCommand(),
+        )
+    }
+
+    override fun deleteBackward() {
+        sendEditCommands(
+            if (value.selection.collapsed) {
+                DeleteSurroundingTextCommand(lengthBeforeCursor = 1, lengthAfterCursor = 0)
+            } else {
+                CommitTextCommand("", 0)
+            }
+        )
+    }
+
+    override fun setSelectedText(range: TextRange?) {
+        val selection = range ?: TextRange(text.length)
+        sendEditCommands(SetSelectionCommand(selection.min, selection.max))
+    }
+
+    override fun setMarkedText(markedText: String?, selectedRange: TextRange) {
+        if (markedText == null) {
+            unmarkText()
+        } else {
+            sendEditCommands(SetComposingTextCommand(markedText, 1))
+        }
+    }
+
+    override fun unmarkText() {
+        sendEditCommands(FinishComposingTextCommand())
+    }
+
+    private fun sendEditCommands(vararg commands: EditCommand) {
+        TextFieldDelegate.onEditCommand(
+            ops = commands.toList(),
+            editProcessor = state.processor,
+            onValueChange = state.onValueChange,
+            session = state.inputSession,
+        )
+    }
+}
