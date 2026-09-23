@@ -16,6 +16,8 @@
 
 #import "CMPPinchGestureRecognizer.h"
 
+#if !TARGET_OS_TV
+
 @implementation CMPPinchGestureRecognizer
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
@@ -39,3 +41,5 @@
 }
 
 @end
+
+#endif

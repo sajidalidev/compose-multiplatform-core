@@ -18,6 +18,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+#if !TARGET_OS_TV
+
 @interface CMPPinchGestureRecognizer : UIPinchGestureRecognizer
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event;
@@ -31,5 +33,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)shouldReceiveEvent:(UIEvent *)event;
 
 @end
+
+#endif
 
 NS_ASSUME_NONNULL_END
