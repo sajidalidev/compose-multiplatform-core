@@ -850,7 +850,8 @@ internal class ComposeSceneMediator(
 
     private fun hitTestInteropView(point: CValue<CGPoint>): UIView? =
         point.useContents {
-            val position = toDpOffset().toOffset(composeSceneDensity)
+            // Same space as pointer positions and interop placement: points times the UIKit scale.
+            val position = uiKitPointToScenePixels(toDpOffset(), screenDensity)
             val interopView = scene.hitTestInteropView(position)
 
             // Find a group of a holder associated with a given interop view or view controller
@@ -1820,8 +1821,8 @@ internal class ComposeSceneMediator(
 
     /**
      * Measures the scene for a UIKit size proposal. [ComposeSceneSizing] derives [constraints] from
-     * the hosting view's [screenDensity], but the tvOS scene is laid out at the squared
-     * [composeSceneDensity] (see ComposeContainer), so rescale the constraints on the way in and
+     * the hosting view's [screenDensity], but the tvOS scene is laid out at the 10-foot
+     * [composeSceneDensity] (see [tvSceneDensity]), so rescale the constraints on the way in and
      * the measured size on the way out to keep the result in screen pixels.
      */
     fun measureSceneSize(constraints: Constraints): IntSize {
