@@ -34,8 +34,9 @@ import androidx.navigationevent.NavigationEventInput
  *
  * Therefore this input only consumes the key while at least one enabled navigation handler exists
  * ([onHasEnabledHandlersChanged]); otherwise it reports the KeyDown as unconsumed. That alone does
- * complete the native press: [androidx.compose.ui.scene.ComposeSceneMediator] forwards the real
- * Began, still offers KeyUp to Compose, and forwards Ended only when that is unconsumed too.
+ * not complete the native press: [androidx.compose.ui.scene.ComposeSceneMediator] forwards the real
+ * Began [platform.UIKit.UIPress] to the responder chain, still offers the KeyUp to Compose, and
+ * forwards the Ended only when that is unconsumed too, cancelling the forwarded press otherwise.
  *
  * The logic of [BackNavigationEventInput.onKeyEvent] is duplicated instead of overridden because
  * that member is final.

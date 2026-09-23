@@ -369,8 +369,10 @@ private class TvOverlayInputView(
     override fun canBecomeFocused(): Boolean = false
 
     override fun pressesBegan(presses: Set<*>, withEvent: UIPressesEvent?) {
-        // Forward a real Menu Began when Compose leaves KeyDown unhandled. UIKit needs
-        // this phase to recognize a later unhandled Ended as a request to return Home.
+        // Compose gets every press in both phases, and the real Began of a Menu press it leaves
+        // unhandled is forwarded from here. UIKit arms its Home gesture only on a Began delivered
+        // while the press is live, so this phase cannot wait for the KeyUp; a KeyUp Compose
+        // claims cancels the forwarded press instead.
         val forwarding = onKeyboardPresses(presses, withEvent)
         if (forwarding.passThrough.isNotEmpty()) {
             super.pressesBegan(forwarding.passThrough, withEvent)
@@ -379,9 +381,16 @@ private class TvOverlayInputView(
     }
 
     override fun pressesEnded(presses: Set<*>, withEvent: UIPressesEvent?) {
+        // The Ended of a press Compose wanted in neither phase completes the sequence whose Began
+        // was forwarded. When Compose did claim this KeyUp, the press is cancelled from inside
+        // this live call instead, so UIKit drops the Home gesture its Began armed.
         val forwarding = onKeyboardPresses(presses, withEvent)
         if (forwarding.passThrough.isNotEmpty()) {
-            super.pressesEnded(forwarding.passThrough, withEvent)
+            if (forwarding.mode == TvPressForwardingMode.Cancelled) {
+                super.pressesCancelled(forwarding.passThrough, withEvent)
+            } else {
+                super.pressesEnded(forwarding.passThrough, withEvent)
+            }
         }
         forwarding.onForwardingFinished()
     }
@@ -1662,9 +1671,12 @@ internal class ComposeSceneMediator(
      * handlers that act on [KeyEventType.KeyUp] (back navigation, overlays) always see their KeyUp.
      * A Cancelled press dispatches nothing: the system claimed it, it is not a release.
      *
-     * Only Menu can reach the system. Its real Began is forwarded when KeyDown is unhandled, and
-     * its Ended only when both phases are unhandled. In-app Back handlers must consume KeyDown even
-     * if they perform navigation on KeyUp: UIKit can act once Began reaches the system.
+     * Only Menu can reach the system, and only when Compose consumed neither of its phases (the app
+     * is at its root screen). The real Began is forwarded as soon as the KeyDown comes back
+     * unconsumed, because UIKit arms its Home gesture on a live Began and ignores a replayed one.
+     * The KeyUp is still offered to Compose: unconsumed, the press is completed with its real
+     * Ended; consumed, the press is cancelled instead, which disarms the gesture and keeps the app
+     * running.
      *
      * @param presses a [Set] of [UIPress] objects. Erasure happens due to K/N not supporting Obj-C
      *   lightweight generics.
@@ -1675,12 +1687,20 @@ internal class ComposeSceneMediator(
         // A real press outranks the momentum of the swipe before it.
         cancelFling("press")
         var passThrough: MutableSet<Any?>? = null
+        var forwardingMode = TvPressForwardingMode.AsIs
         val forwardedKeyIds = mutableListOf<Long>()
         fun passToSystem(press: Any?) {
             val set = passThrough ?: mutableSetOf<Any?>().also { passThrough = it }
             set.add(press)
         }
-        fun forwardToSystem(press: Any?, keyId: Long) {
+        fun forwardToSystem(
+            press: Any?,
+            keyId: Long,
+            mode: TvPressForwardingMode,
+            debugPhase: String,
+        ) {
+            swipeDebug { "MENU forward mode=$debugPhase keyId=$keyId" }
+            forwardingMode = mode
             pressDispatchLog.markForwardedToSystem(pressesEvent, keyId)
             passToSystem(press)
             forwardedKeyIds.add(keyId)
@@ -1744,11 +1764,13 @@ internal class ComposeSceneMediator(
                     pressDispatchLog.takePendingMenu(keyId)
                     val downConsumed = onKeyboardEvent(event, keyId)
                     if (!downConsumed && isMenu) {
-                        // Forward the original Began now. Replaying Began after release does
-                        // not establish UIKit's native Menu press sequence. An in-app Back
-                        // handler must claim KeyDown, even when its action waits for KeyUp.
+                        // Forward the real Began now. UIKit arms its Home gesture on a Began it
+                        // receives while the press is live, and ignores one replayed from the
+                        // later pressesEnded call, so holding this phase back would leave the
+                        // press unknown to the system. The press stays pending: a KeyUp Compose
+                        // claims cancels it before UIKit can act on the release.
                         pressDispatchLog.setPendingMenu(keyId)
-                        forwardToSystem(anyPress, keyId)
+                        forwardToSystem(anyPress, keyId, TvPressForwardingMode.AsIs, "began")
                     }
 
                     // Key repeat runs whether or not the KeyDown was consumed: a directional key
@@ -1789,10 +1811,32 @@ internal class ComposeSceneMediator(
                     //    and its KeyUp removes both entries.
                     val consumed = isEnded && onKeyboardEvent(event, keyId)
                     val wasPendingMenu = pressDispatchLog.takePendingMenu(keyId)
-                    if (wasPendingMenu && !consumed) {
-                        // Complete the native sequence only if Compose left it unhandled.
-                        // A real cancellation is forwarded as Cancelled, never as Ended.
-                        forwardToSystem(anyPress, keyId)
+                    if (wasPendingMenu) {
+                        if (consumed) {
+                            // Compose claimed the KeyUp of a press whose Began already armed
+                            // UIKit's Home gesture. Forwarding the Ended would complete that
+                            // gesture and exit the app, and swallowing it would leave UIKit
+                            // holding a press for good, so the press is cancelled from inside
+                            // this live pressesEnded call: UIKit sees Began then Cancelled and
+                            // acts on neither.
+                            forwardToSystem(
+                                anyPress,
+                                keyId,
+                                TvPressForwardingMode.Cancelled,
+                                "cancelled",
+                            )
+                        } else {
+                            // Nothing in Compose wanted the press: complete the forwarded Began
+                            // with the phase this one arrived in, so UIKit returns Home on a
+                            // release and drops the press on a real cancellation. It is the real
+                            // UIPress instance, never a synthesised one.
+                            forwardToSystem(
+                                anyPress,
+                                keyId,
+                                TvPressForwardingMode.AsIs,
+                                if (isEnded) "ended" else "cancelled",
+                            )
+                        }
                     }
                 }
                 else -> Unit
@@ -1802,6 +1846,7 @@ internal class ComposeSceneMediator(
         if (passThrough == null) return TvPressForwarding.None
         return TvPressForwarding(
             passThrough = passThrough.orEmpty(),
+            mode = forwardingMode,
             onForwardingFinished = {
                 forwardedKeyIds.forEach(pressDispatchLog::unmarkForwardedToSystem)
             },

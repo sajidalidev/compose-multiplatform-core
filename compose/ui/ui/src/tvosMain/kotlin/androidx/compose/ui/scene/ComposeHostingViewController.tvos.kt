@@ -103,8 +103,9 @@ internal class ComposeHostingViewController(
     }
 
     override fun pressesBegan(presses: Set<*>, withEvent: UIPressesEvent?) {
-        // Forward a real Menu Began when Compose leaves KeyDown unhandled. UIKit needs
-        // this phase to recognize a later unhandled Ended as a request to return Home.
+        // Mirrors the overlay input view: the real Began of a Menu press Compose left unhandled
+        // leaves from here. UIKit only arms its Home gesture on a Began delivered while the press
+        // is live, so this phase cannot be held back; a KeyUp Compose claims cancels it instead.
         val forwarding = container.onKeyboardPresses(presses, withEvent)
         if (forwarding.passThrough.isNotEmpty()) {
             super.pressesBegan(forwarding.passThrough, withEvent)
@@ -113,9 +114,17 @@ internal class ComposeHostingViewController(
     }
 
     override fun pressesEnded(presses: Set<*>, withEvent: UIPressesEvent?) {
+        // The Ended of a press no Compose handler wanted on either phase completes the sequence
+        // whose Began was forwarded (or it passes through on its way up from the view that
+        // forwarded it). When Compose did claim this KeyUp, the same live call cancels the press
+        // instead, so UIKit drops the Home gesture its Began armed.
         val forwarding = container.onKeyboardPresses(presses, withEvent)
         if (forwarding.passThrough.isNotEmpty()) {
-            super.pressesEnded(forwarding.passThrough, withEvent)
+            if (forwarding.mode == TvPressForwardingMode.Cancelled) {
+                super.pressesCancelled(forwarding.passThrough, withEvent)
+            } else {
+                super.pressesEnded(forwarding.passThrough, withEvent)
+            }
         }
         forwarding.onForwardingFinished()
     }

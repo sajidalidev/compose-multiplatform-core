@@ -46,7 +46,8 @@ internal class TvPressDispatchLog {
     private val evaluatedPhases = mutableMapOf<Long, UIPressPhase>()
     private val forwardedKeyIds = mutableSetOf<Long>()
 
-    // Menu presses whose KeyDown nothing in Compose consumed, awaiting their KeyUp. Kept here
+    // Menu presses whose KeyDown nothing in Compose consumed and whose Began was therefore
+    // forwarded to UIKit, awaiting their KeyUp to be either completed or cancelled. Kept here
     // rather than in a mediator because the first responder can change between the two phases
     // (a layer that resigns focus hands the Ended to another mediator of the same container),
     // and it deliberately survives an event change: Began and Ended belong to two different
@@ -95,7 +96,7 @@ internal class TvPressDispatchLog {
         forwardedKeyIds.remove(keyId)
     }
 
-    /** Remembers that the Menu press [keyId] is waiting for its KeyUp to be offered to Compose. */
+    /** Remembers that the Began of the Menu press [keyId] was forwarded to UIKit. */
     fun setPendingMenu(keyId: Long) {
         pendingMenuKeyIds.add(keyId)
     }
@@ -176,10 +177,24 @@ internal class TvPressForwarding(
      * arrived in.
      */
     val passThrough: Set<Any?> = emptySet(),
+    /** Which phase [passThrough] has to reach `super` in. */
+    val mode: TvPressForwardingMode = TvPressForwardingMode.AsIs,
     /** Called after forwarding this phase up the responder chain, to drop its bookkeeping. */
     val onForwardingFinished: () -> Unit = {},
 ) {
     companion object {
         val None = TvPressForwarding()
     }
+}
+
+/** The phase a [TvPressForwarding] hands to `super` for the presses it carries. */
+internal enum class TvPressForwardingMode {
+    /** Forward the presses in the phase they arrived in. */
+    AsIs,
+    /**
+     * Forward the presses as Cancelled even though they arrived as Ended: their Began already
+     * reached UIKit, and Compose claimed the release, so the press UIKit is holding has to be
+     * taken away rather than completed.
+     */
+    Cancelled,
 }
