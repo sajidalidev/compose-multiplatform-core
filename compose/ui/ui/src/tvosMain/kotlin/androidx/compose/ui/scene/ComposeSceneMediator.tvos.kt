@@ -57,6 +57,7 @@ import androidx.compose.ui.navigationevent.TvBackNavigationEventInput
 import androidx.compose.ui.platform.AccessibilityMediator
 import androidx.compose.ui.platform.ApplicationIdleTimer
 import androidx.compose.ui.platform.CUPERTINO_TOUCH_SLOP
+import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.DefaultInputModeManager
 import androidx.compose.ui.platform.DelegateRootForTestListener
 import androidx.compose.ui.platform.FrameChoreographer
@@ -66,10 +67,15 @@ import androidx.compose.ui.platform.PlatformScreenReader
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.platform.TaskDispatchers
 import androidx.compose.ui.platform.TvOSTextInputService
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.WindowContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.platform.WindowInsetsManager
+import androidx.compose.ui.platform.createPlatformClipboard
+import androidx.compose.ui.platform.createPlatformUriHandler
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.compose.ui.semantics.SemanticsOwner
 import androidx.compose.ui.text.input.EditCommand
 import androidx.compose.ui.text.input.ImeAction
@@ -629,18 +635,13 @@ internal class ComposeSceneMediator(
     private val isActive
         get() = coroutineContext.isActive
 
-    private var isPrefetchVoteActive: Boolean =
-        false // TODO CMP-10587: Move inside the IosPrefetchScheduler
     private val prefetchScheduler =
         IosPrefetchScheduler(
-            onHasWorkScheduled = { hasWork ->
-                if (hasWork != isPrefetchVoteActive) {
-                    isPrefetchVoteActive = hasWork
-                    if (hasWork) {
-                        activitiesHandler.onActivitiesStarted()
-                    } else {
-                        activitiesHandler.onActivitiesEnded()
-                    }
+            onPrefetchVoteChanged = { isVoteActive ->
+                if (isVoteActive) {
+                    activitiesHandler.onActivitiesStarted()
+                } else {
+                    activitiesHandler.onActivitiesEnded()
                 }
             }
         )
@@ -2128,6 +2129,15 @@ internal class ComposeSceneMediator(
 
         override val hapticFeedback: HapticFeedback by
             lazy(LazyThreadSafetyMode.NONE) { TvOSHapticFeedback() }
+
+        override val clipboard: Clipboard by
+            lazy(LazyThreadSafetyMode.NONE) { createPlatformClipboard() }
+
+        override val uriHandler: UriHandler by
+            lazy(LazyThreadSafetyMode.NONE) { createPlatformUriHandler() }
+
+        override val fontFamilyResolver: FontFamily.Resolver by
+            lazy(LazyThreadSafetyMode.NONE) { createFontFamilyResolver() }
 
         override fun convertLocalToWindowPosition(localPosition: Offset): Offset =
             windowContext.convertLocalToWindowPosition(_overlayView, localPosition)

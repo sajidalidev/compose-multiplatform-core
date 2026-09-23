@@ -241,7 +241,6 @@ internal class ComposeLayersViewController(
 
     fun attach(layer: IosComposeSceneLayer) {
         val isFirstLayer = layers.isEmpty()
-        layers.add(layer)
         composeContainerView.insertSubview(layer.interactionView, belowSubview = metalView.view)
         layer.interactionView.addLayoutConstraintsToMatch(composeContainerView)
         composeContainerView.embedSubview(layer.overlayView)
@@ -249,6 +248,12 @@ internal class ComposeLayersViewController(
         if (isFirstLayer) {
             show()
         }
+
+        // For the first layer, wait for `show()` to attach and lay out its UIKit views before
+        // registering it for Compose measurement. Otherwise it can be measured with unbounded
+        // constraints during that initial layout pass.
+        layers.add(layer)
+
         if (hasViewAppeared) {
             layer.sceneDidAppear()
         }
