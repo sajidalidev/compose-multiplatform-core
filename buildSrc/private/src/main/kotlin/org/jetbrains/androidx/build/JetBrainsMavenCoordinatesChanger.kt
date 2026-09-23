@@ -25,7 +25,14 @@ fun Project.changeMavenCoordinatesToJetBrains() {
     val versions = JetBrainsVersionsService.versions(project)
 
     val group = JetBrainsPublication.mavenGroupFor(path)
-    val version = Version(versions.versionOf(component.library()))
+    val publishedVersion = versions.versionOf(component.library())
+    val version = Version(
+        if (JetBrainsPublication.isUpstreamTvosModule(path)) {
+            JetBrainsPublication.upstreamVersionOf(publishedVersion)
+        } else {
+            publishedVersion
+        }
+    )
     this.group = group
     this.version = version
 

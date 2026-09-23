@@ -74,6 +74,14 @@ object JetBrainsPublication {
 
     fun isPublicationSuppressed(projectPath: String): Boolean = isUpstreamTvosModule(projectPath)
 
+    // Dev publications append this to the exact JetBrains version, e.g. 1.12.1-dev.20260923.1.
+    // Upstream artifacts never carry it.
+    private val DEV_SUFFIX = Regex("""-dev\.\d{8}\.\d+$""")
+
+    /** [version] without a dev suffix: upstream-tvOS modules are never republished, so their
+     *  coordinates, and every published edge on them, stay at upstream's version. */
+    fun upstreamVersionOf(version: String): String = version.replace(DEV_SUFFIX, "")
+
     fun isPublicationSuppressed(project: Project): Boolean = isPublicationSuppressed(project.path)
 
     // NOTE: this is a computed property (`get() = ...`), not a stored `val`, and must stay
