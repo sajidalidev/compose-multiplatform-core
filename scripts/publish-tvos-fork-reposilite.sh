@@ -155,9 +155,11 @@ remote_status() {
     echo "${status:-000}"
 }
 
-runtime_pom_url() {
+# Probes compose ui: runtime is upstream's artifact and never published under dev.sajidali (see
+# JetBrainsPublication.upstreamTvosModules).
+probe_pom_url() {
     local version="${VERSION_COMPOSE}$1"
-    echo "$REPOSILITE_URL/dev/sajidali/compose/runtime/runtime/$version/runtime-$version.pom"
+    echo "$REPOSILITE_URL/dev/sajidali/compose/ui/ui/$version/ui-$version.pom"
 }
 
 if [ "$NO_SUFFIX" = "1" ]; then
@@ -168,14 +170,14 @@ elif [ "$LOCAL_ONLY" = "1" ] || [ "$DRY_RUN" = "1" ]; then
 elif [ -n "${DEV_SUFFIX:-}" ]; then
     # Explicit suffix: a Reposilite release repository answers 409 on redeploy, which would
     # only surface after the (long) build. Refuse up front instead.
-    STATUS="$(remote_status "$(runtime_pom_url "$DEV_SUFFIX")")"
+    STATUS="$(remote_status "$(probe_pom_url "$DEV_SUFFIX")")"
     if [ "$STATUS" = "200" ]; then
         echo "ERROR: ${VERSION_COMPOSE}${DEV_SUFFIX} is already published at $REPOSILITE_URL." >&2
         echo "       Dev versions are immutable; bump the trailing .N in DEV_SUFFIX." >&2
         exit 1
     fi
     if [ "$STATUS" != "404" ] && [ "$STATUS" != "000" ]; then
-        echo "ERROR: unexpected HTTP $STATUS probing $(runtime_pom_url "$DEV_SUFFIX")" >&2
+        echo "ERROR: unexpected HTTP $STATUS probing $(probe_pom_url "$DEV_SUFFIX")" >&2
         exit 1
     fi
     if [ "$STATUS" = "000" ]; then
@@ -187,7 +189,7 @@ else
     DEV_SUFFIX=""
     for n in $(seq 1 50); do
         CANDIDATE="-dev.${DATE_STAMP}.${n}"
-        STATUS="$(remote_status "$(runtime_pom_url "$CANDIDATE")")"
+        STATUS="$(remote_status "$(probe_pom_url "$CANDIDATE")")"
         if [ "$STATUS" = "404" ]; then
             DEV_SUFFIX="$CANDIDATE"
             echo "Selected dev suffix $DEV_SUFFIX (first free version on $REPOSILITE_URL)."
@@ -203,7 +205,7 @@ else
             exit 1
         fi
         if [ "$STATUS" != "200" ]; then
-            echo "ERROR: unexpected HTTP $STATUS probing $(runtime_pom_url "$CANDIDATE")" >&2
+            echo "ERROR: unexpected HTTP $STATUS probing $(probe_pom_url "$CANDIDATE")" >&2
             exit 1
         fi
     done
@@ -218,7 +220,6 @@ DEV_VERSION_COMPOSE_MATERIAL3="${VERSION_COMPOSE_MATERIAL3}${DEV_SUFFIX}"
 DEV_VERSION_COMPOSE_MATERIAL3_ADAPTIVE="${VERSION_COMPOSE_MATERIAL3_ADAPTIVE}${DEV_SUFFIX}"
 DEV_VERSION_NAVIGATION="${VERSION_NAVIGATION}${DEV_SUFFIX}"
 DEV_VERSION_NAVIGATION_3="${VERSION_NAVIGATION_3}${DEV_SUFFIX}"
-DEV_VERSION_WINDOW="${VERSION_WINDOW}${DEV_SUFFIX}"
 DEV_VERSION_TV_MATERIAL="${VERSION_TV_MATERIAL}${DEV_SUFFIX}"
 
 # Every one of the seven version properties must always be passed: a missing one makes the
@@ -229,7 +230,6 @@ VERSION_PROPS=(
     -Pjetbrains.publication.version.COMPOSE_MATERIAL3_ADAPTIVE="$DEV_VERSION_COMPOSE_MATERIAL3_ADAPTIVE"
     -Pjetbrains.publication.version.NAVIGATION="$DEV_VERSION_NAVIGATION"
     -Pjetbrains.publication.version.NAVIGATION_3="$DEV_VERSION_NAVIGATION_3"
-    -Pjetbrains.publication.version.WINDOW="$DEV_VERSION_WINDOW"
     -Pjetbrains.publication.version.TV_MATERIAL="$DEV_VERSION_TV_MATERIAL"
 )
 
@@ -266,7 +266,6 @@ echo "    COMPOSE_MATERIAL3=$DEV_VERSION_COMPOSE_MATERIAL3"
 echo "    COMPOSE_MATERIAL3_ADAPTIVE=$DEV_VERSION_COMPOSE_MATERIAL3_ADAPTIVE"
 echo "    NAVIGATION=$DEV_VERSION_NAVIGATION"
 echo "    NAVIGATION_3=$DEV_VERSION_NAVIGATION_3"
-echo "    WINDOW=$DEV_VERSION_WINDOW"
 echo "    TV_MATERIAL=$DEV_VERSION_TV_MATERIAL"
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -335,14 +334,14 @@ echo "Step 3/3: publishing to $REPOSILITE_URL ..."
 # -------------------------------------------------------------- (e) verify
 
 # One representative module per published library, so a library that silently failed to upload
-# cannot hide behind a readable compose runtime.
+# cannot hide behind a readable compose ui. Modules upstream already ships for tvOS (compose
+# runtime, navigation-common, navigation-runtime) are not published here, so none is a target.
 VERIFY_TARGETS=(
-    "COMPOSE|dev/sajidali/compose/runtime|runtime|$DEV_VERSION_COMPOSE"
+    "COMPOSE|dev/sajidali/compose/ui|ui|$DEV_VERSION_COMPOSE"
     "COMPOSE_MATERIAL3|dev/sajidali/compose/material3|material3|$DEV_VERSION_COMPOSE_MATERIAL3"
     "COMPOSE_MATERIAL3_ADAPTIVE|dev/sajidali/compose/material3/adaptive|adaptive|$DEV_VERSION_COMPOSE_MATERIAL3_ADAPTIVE"
-    "NAVIGATION|dev/sajidali/androidx/navigation|navigation-runtime|$DEV_VERSION_NAVIGATION"
+    "NAVIGATION|dev/sajidali/androidx/navigation|navigation-compose|$DEV_VERSION_NAVIGATION"
     "NAVIGATION_3|dev/sajidali/androidx/navigation3|navigation3-ui|$DEV_VERSION_NAVIGATION_3"
-    "WINDOW|dev/sajidali/androidx/window|window-core|$DEV_VERSION_WINDOW"
     "TV_MATERIAL|dev/sajidali/androidx/tv|tv-material|$DEV_VERSION_TV_MATERIAL"
 )
 
@@ -393,7 +392,6 @@ in DEV_SUFFIX and update these mappings.
         versionMappings.put("org.jetbrains.compose.material3.adaptive:$VERSION_COMPOSE_MATERIAL3_ADAPTIVE", "$DEV_VERSION_COMPOSE_MATERIAL3_ADAPTIVE")
         versionMappings.put("org.jetbrains.androidx.navigation:$VERSION_NAVIGATION", "$DEV_VERSION_NAVIGATION")
         versionMappings.put("org.jetbrains.androidx.navigation3:$VERSION_NAVIGATION_3", "$DEV_VERSION_NAVIGATION_3")
-        versionMappings.put("org.jetbrains.androidx.window:$VERSION_WINDOW", "$DEV_VERSION_WINDOW")
         versionMappings.put("androidx.tv:$VERSION_TV_MATERIAL", "$DEV_VERSION_TV_MATERIAL")
     }
 

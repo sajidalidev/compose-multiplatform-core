@@ -26,6 +26,8 @@ open class ComposePublishingTask : DefaultTask() {
     }
 
     fun publish(rootProject: Project, component: ComposeComponent) {
+        // Consumers get upstream's artifact for these; see JetBrainsPublication.upstreamTvosModules.
+        if (JetBrainsPublication.usesUpstreamArtifact(component.path)) return
         if (component.customTasks.isNotEmpty()) {
             publish(
                 component.path,

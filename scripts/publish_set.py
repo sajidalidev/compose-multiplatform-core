@@ -44,7 +44,6 @@ REQUIRED_LIBRARIES = (
     "NAVIGATION_3",
     "NAVIGATION_EVENT",
     "SAVEDSTATE",
-    "WINDOW",
 )
 
 # Artifacts the fork never republishes, keyed (group, artifact) -> flag that re-enables them

@@ -36,6 +36,38 @@ object JetBrainsPublication {
     private val JETBRAINS_COMPOSE_GROUP_PREFIX: String get() = "$coordinateRoot.compose."
     private val JETBRAINS_FORK_GROUP_PREFIX: String get() = "$coordinateRoot.androidx."
 
+    private const val UPSTREAM_COORDINATE_ROOT = "org.jetbrains"
+
+    /**
+     * Modules JetBrains already publishes with tvOS variants (tvosArm64, tvosSimulatorArm64) under
+     * org.jetbrains.* on Maven Central at the pinned versions, and that the fork does not change.
+     * Under a custom [coordinateRoot] the fork neither builds nor publishes them: every project
+     * dependency on them is substituted with upstream's artifact (substituteUpstreamTvosModules),
+     * and they keep their org.jetbrains coordinates and the upstream version (see
+     * [usesUpstreamArtifact]), so published dependency edges point at upstream's artifact too.
+     * Re-check the list against the upstream .module files whenever the pinned versions move.
+     *
+     * lifecycle, savedstate, navigationevent and window-core also ship tvOS upstream; fork-mode
+     * builds already depend on them by Maven coordinate, so they need no entry here.
+     */
+    val upstreamTvosModules: Set<String> = setOf(
+        ":compose:runtime:runtime",
+        ":compose:runtime:runtime-saveable",
+        ":navigation:navigation-common",
+        ":navigation:navigation-runtime",
+    )
+
+    // Dev publications append this to the exact JetBrains version, e.g. 1.12.0-dev.20260923.1
+    // (see scripts/publish-tvos-fork-reposilite.sh). Upstream artifacts never carry it.
+    private val DEV_SUFFIX = Regex("""-dev\.\d{8}\.\d+$""")
+
+    /** Whether [projectPath] resolves to upstream's org.jetbrains artifact instead of a fork one. */
+    fun usesUpstreamArtifact(projectPath: String): Boolean =
+        coordinateRoot != UPSTREAM_COORDINATE_ROOT && projectPath in upstreamTvosModules
+
+    /** The upstream version a fork publication [version] was built from. */
+    fun upstreamVersionOf(version: String): String = version.replace(DEV_SUFFIX, "")
+
     // NOTE: this is a computed property (`get() = ...`), not a stored `val`, and must stay
     // that way. `coordinateRoot` above is set by JetBrainsAndroidXRootImplPlugin.apply() via
     // `JetBrainsPublication.coordinateRoot = ...`, but that assignment itself is what first
@@ -101,15 +133,9 @@ object JetBrainsPublication {
         "COMPOSE_MATERIAL3" to buildList {
             add(ComposeComponent(":compose:material3:material3"))
             add(ComposeComponent(":compose:material3:material3-window-size-class"))
-            // material3-adaptive-navigation-suite has a project dependency on
-            // :compose:material3:adaptive:adaptive (api(project(":compose:material3:adaptive:adaptive")))
-            // which in turn depends on :window:window-core. Both are now fork-built with tvOS
-            // klib variants (task 18a fixed window-core's settings.gradle stub-project
-            // redirect; task 18b confirmed compileKotlinTvosArm64 succeeds for adaptive,
-            // adaptive-layout, adaptive-navigation, adaptive-navigation3, and this
-            // navigation-suite module itself), so the previous custom-root (fork) exclusion is
-            // obsolete and has been removed -- navigation-suite now publishes under custom
-            // roots the same as under org.jetbrains.
+            // material3-adaptive-navigation-suite depends on :compose:material3:adaptive:adaptive,
+            // which is fork-built with tvOS klibs, and on upstream's
+            // org.jetbrains.androidx.window:window-core, which already ships tvOS.
             add(ComposeComponent(":compose:material3:material3-adaptive-navigation-suite"))
             add(ComposeComponent(":compose:material3:material3-ripple"))
         },
@@ -126,12 +152,6 @@ object JetBrainsPublication {
         ),
         "NAVIGATION_3" to listOf(
             ComposeComponent(":navigation3:navigation3-ui"),
-        ),
-        // window-core's androidLibrary target is redirected to the real androidx.window:window-core
-        // artifact (see redirect("androidx.window") { ... } in window/window-core/build.gradle); the
-        // other targets, including tvOS, are fork-built from this repo's in-tree AOSP copy (task 18a).
-        "WINDOW" to listOf(
-            ComposeComponent(":window:window-core", supportedPlatforms = ComposePlatforms.ALL),
         ),
         // tv-material's androidLibrary target is redirected to the real, already-published
         // androidx.tv:tv-material artifact (see redirect("androidx.tv") { ... } in
@@ -159,14 +179,23 @@ object JetBrainsPublication {
         }
     }
 
-    fun mavenGroupFor(projectPath: String): String = when {
+    fun mavenGroupFor(projectPath: String): String {
+        val root = if (usesUpstreamArtifact(projectPath)) UPSTREAM_COORDINATE_ROOT else coordinateRoot
+        return mavenGroupFor(projectPath, composePrefix = "$root.compose.", forkPrefix = "$root.androidx.")
+    }
+
+    private fun mavenGroupFor(
+        projectPath: String,
+        composePrefix: String,
+        forkPrefix: String,
+    ): String = when {
         projectPath.startsWith(":compose:") ->
-            JETBRAINS_COMPOSE_GROUP_PREFIX + projectPath
+            composePrefix + projectPath
                 .removePrefix(":compose:")
                 .substringBeforeLast(":")
                 .replace(":", ".")
         projectPath.startsWith(":") ->
-            JETBRAINS_FORK_GROUP_PREFIX + projectPath
+            forkPrefix + projectPath
                 .removePrefix(":")
                 .substringBeforeLast(":")
                 .replace(":", ".")
