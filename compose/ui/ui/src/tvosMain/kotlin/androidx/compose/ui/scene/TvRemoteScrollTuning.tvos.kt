@@ -25,8 +25,20 @@ package androidx.compose.ui.scene
 internal const val MOMENTUM_TAU_S = 0.07
 /** Bias added to the row count to get the asymptote of the momentum curve (n = rows + bias). */
 internal const val MOMENTUM_ROW_BIAS = 0.5
-/** Travel in pad units below which a swipe moves exactly one row. Measured. */
+/** Travel in pad units below which a swipe moves exactly one row, whatever its start. Measured. */
 internal const val MOMENTUM_SINGLE_ROW_TRAVEL = 0.6f
+/**
+ * How far behind the pad centre, along the swipe axis and against the swipe direction, a contact
+ * must start for its swipe to earn more than one row, in pad units. Provisional: this is the
+ * conservative end of a range (0.04 to 0.58 could not be separated in the native data) and must be
+ * tuned on device.
+ */
+internal const val MOMENTUM_MIN_START_OFFSET = 0.60f
+/**
+ * Travel along the dominant axis at which a contact that never armed still swipes once, one row, at
+ * lift. Provisional.
+ */
+internal const val SWIPE_LIFT_DISTANCE = 0.20f
 /** Intercept of the rows to travel fit, in rows. Fitted, provisional. */
 internal const val MOMENTUM_ROWS_INTERCEPT = 0.31f
 /** Slope of the rows to travel fit, in rows per pad unit. Fitted, provisional. */
@@ -42,8 +54,11 @@ internal const val MOMENTUM_BUSY_RETRIES = 1
 
 /** Longest gap between a lift and the next touch for swipes to still chain. Fitted. */
 internal const val CHAIN_MAX_GAP_S = 1.0
-/** Row multiplier of a chained swipe that follows quickly. Measured on few samples. */
-internal const val CHAIN_BOOST = 1.3f
+/**
+ * Row multiplier of a chained swipe that follows quickly. Native evidence is about 1.05x, so the
+ * boost stays off (1.0) until it is re-measured; the code path and the chain tracker remain.
+ */
+internal const val CHAIN_BOOST = 1.0f
 /** Longest lift to touch gap that earns [CHAIN_BOOST]. Measured, low confidence. */
 internal const val CHAIN_BOOST_MAX_GAP_S = 0.45
 

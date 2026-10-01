@@ -199,6 +199,14 @@ private inline fun swipeDebug(message: () -> String) {
     }
 }
 
+/** [seconds] with three decimals, the form the swipe debug lines stamp their time in. */
+private fun debugSeconds(seconds: Double): String {
+    val millis = kotlin.math.round(seconds * 1000.0).toLong()
+    val sign = if (millis < 0) "-" else ""
+    val abs = kotlin.math.abs(millis)
+    return "$sign${abs / 1000}.${(abs % 1000).toString().padStart(3, '0')}"
+}
+
 /** The direction a swipe that dispatched [key] travelled in. */
 private fun remoteSwipeDirection(key: Key): RemoteSwipeDirection =
     when (key) {
@@ -283,6 +291,23 @@ private class IndirectTouchState(
 
     /** Set once the lift of the contact was handled, which happens at most once. */
     var liftHandled: Boolean = false
+
+    /** Set once the lift of the contact was logged and evaluated for a lift-time arm. */
+    var liftSeen: Boolean = false
+
+    /** Set when the swipe was armed at lift: it moves one row and earns no momentum. */
+    var liftArmed: Boolean = false
+
+    /** When [lastSample] was recorded, and how many samples the contact recorded in all. */
+    var lastSampleTime: Double = beginTimestamp
+    var sampleCount: Int = 0
+
+    /**
+     * The last time the contact moved by more than the rest tolerance between two samples,
+     * initialised to its BEGAN time. The stale purge ages a contact from here, so a finger that
+     * rests and then swipes is not dropped.
+     */
+    var lastSampleMoveTime: Double = beginTimestamp
 
     /** The extra moves the first callback of a `Modifier.remoteSwipe` was told about. */
     var announcedMomentumSteps: Int = 0
@@ -1080,7 +1105,17 @@ internal class ComposeSceneMediator(
                 // what its travel and its reversal are measured from.
                 IndirectTouchVerdict.DISPATCHED -> {
                     state.flingSamples.add(sample.x, sample.y, timestamp)
+                    val previous = state.lastSample
+                    if (
+                        previous != null &&
+                            hypot(sample.x - previous.x, sample.y - previous.y) >
+                                REST_ANCHOR_TOLERANCE
+                    ) {
+                        state.lastSampleMoveTime = timestamp
+                    }
                     state.lastSample = sample
+                    state.lastSampleTime = timestamp
+                    state.sampleCount++
                     if (
                         state.verdict == IndirectTouchVerdict.ARMED ||
                             state.verdict == IndirectTouchVerdict.DISPATCHED
@@ -1197,7 +1232,15 @@ internal class ComposeSceneMediator(
                 }
             // The tick stamps with CACurrentMediaTime and the contacts with UITouch.timestamp,
             // both of which are the system uptime.
-            if (timestamp - state.beginTimestamp > maxAge) {
+            val ageFrom =
+                if (state.fastScrollContact || state.verdict == IndirectTouchVerdict.CANCELLED) {
+                    state.beginTimestamp
+                } else {
+                    // A finger that rests keeps its swipe, so the age counts from its last movement.
+                    // A contact whose ENDED was lost produces no movement, so it still goes.
+                    maxOf(state.beginTimestamp, state.lastSampleMoveTime)
+                }
+            if (timestamp - ageFrom > maxAge) {
                 iterator.remove()
                 removed = true
                 if (state.fastScrollContact) liftFastScrollContact(state, timestamp)
@@ -1243,8 +1286,15 @@ internal class ComposeSceneMediator(
             return
         }
         if (elapsed > SWIPE_MAX_DURATION_S) {
-            state.verdict = IndirectTouchVerdict.CANCELLED
-            swipeDebug { "SWIPE cancelled reason=duration" }
+            if (!state.usesOracle) {
+                state.verdict = IndirectTouchVerdict.CANCELLED
+                swipeDebug { "SWIPE cancelled reason=duration" }
+                return
+            }
+            // Too slow to be this swipe, but a later fast swipe in the same contact can still be
+            // one: start over from here, the way a rest does.
+            swipeDebug { "SWIPE reanchor reason=duration" }
+            reanchorIndirectTouch(state, position, timestamp)
             return
         }
         val distance =
@@ -1332,7 +1382,34 @@ internal class ComposeSceneMediator(
         if (state.flingTrackingClosed) return
         val burst = momentumBurst ?: return
         if (burstSource !== state) return
-        burst.raiseRows(momentumRowsForTravel(state.maxTravel))
+        burst.raiseRows(swipeRows(state))
+    }
+
+    /**
+     * The rows the swipe of [state] earns by now. The start offset is measured from the origin the
+     * travel is measured from. The relative fallback has no absolute origin, so its start offset is
+     * unknown and it earns no momentum.
+     */
+    private fun swipeRows(state: IndirectTouchState): Int {
+        if (state.liftArmed) return 1
+        val key = state.armedKey ?: return 1
+        val startOffset =
+            if (state.usesOracle) {
+                swipeStartOffset(
+                    key,
+                    if (isHorizontalFlingKey(key)) state.origin.x else state.origin.y,
+                )
+            } else {
+                null
+            }
+        return momentumRowsFor(startOffset, state.maxTravel)
+    }
+
+    /** The start offset of [state] for the debug log, `NaN` when unknown. */
+    private fun debugStartOffset(state: IndirectTouchState): Float {
+        val key = state.armedKey ?: return Float.NaN
+        if (!state.usesOracle) return Float.NaN
+        return swipeStartOffset(key, if (isHorizontalFlingKey(key)) state.origin.x else state.origin.y)
     }
 
     /**
@@ -1343,13 +1420,28 @@ internal class ComposeSceneMediator(
      */
     private fun handleIndirectLift(state: IndirectTouchState, timestamp: Double) {
         if (state.liftHandled) return
+        if (!state.liftSeen) {
+            // The empty pad calls this on every tick until the ENDED arrives, so the logging and
+            // the lift-time arm happen once, and a contact that lift-armed is not armed twice.
+            state.liftSeen = true
+            logIndirectLift(state, timestamp)
+            if (
+                state.verdict == IndirectTouchVerdict.CANDIDATE ||
+                    state.verdict == IndirectTouchVerdict.RING_CANDIDATE
+            ) {
+                armIndirectTouchAtLift(state, timestamp)
+            }
+        }
         if (state.verdict != IndirectTouchVerdict.DISPATCHED) return
         state.liftHandled = true
         state.flingTrackingClosed = true
         val key = state.dispatchedKey ?: return
         val boost = swipeChain.currentBoost()
-        val rows = boostedRows(momentumRowsForTravel(state.maxTravel), boost)
-        swipeDebug { "MOMENTUM plan rows=$rows travel=${state.maxTravel} boost=$boost" }
+        val rows = if (state.liftArmed) 1 else boostedRows(swipeRows(state), boost)
+        swipeDebug {
+            "MOMENTUM plan rows=$rows travel=${state.maxTravel} boost=$boost " +
+                "startOffset=${debugStartOffset(state)} t=${debugSeconds(timestamp)}"
+        }
         swipeChain.onLift(timestamp)
         if (state.remoteSwipeHandled) {
             val steps = rows - 1
@@ -1360,6 +1452,62 @@ internal class ComposeSceneMediator(
         }
         if (burstSource === state) momentumBurst?.raiseRows(rows)
         if (swipeChain.shouldEnterFastMode()) tryEnterFastScrollFromSwipe(key)
+    }
+
+    private fun logIndirectLift(state: IndirectTouchState, timestamp: Double) {
+        swipeDebug {
+            val last = state.lastSample
+            val lastText = if (last == null) "none" else "${last.x},${last.y}"
+            "SWIPE lift verdict=${state.verdict.name.lowercase()} " +
+                "origin=${state.origin.x},${state.origin.y} last=$lastText " +
+                "travel=${state.maxTravel} samples=${state.sampleCount} " +
+                "dur=${(timestamp - state.beginTimestamp) * 1000.0}"
+        }
+    }
+
+    /**
+     * Arms and dispatches, as a one row swipe, a contact that lifted while still a candidate
+     * because it was too short or too sparsely sampled to arm on its own: it moved at least
+     * [SWIPE_LIFT_DISTANCE] along a dominant axis within [SWIPE_MAX_DURATION_S] of its origin.
+     *
+     * The click race is closed the way the armed contact that ends is: no clickpad press may be
+     * held or have begun since shortly before the contact, by the same check that normal arming
+     * uses, and the callers run it once per contact. A click's Select press lands while the finger
+     * is still down, before this lift, so it is already in the press log by now.
+     */
+    private fun armIndirectTouchAtLift(state: IndirectTouchState, timestamp: Double) {
+        if (!state.usesOracle || state.fastScrollContact) return
+        val last = state.lastSample ?: return
+        if (state.ringOrigin && !ringOriginMayArm(state.minRadius)) return
+        val dx = last.x - state.origin.x
+        val dy = last.y - state.origin.y
+        val elapsed = state.lastSampleTime - state.startTimestamp
+        if (!isLiftArmSwipe(dx, dy, elapsed, SWIPE_MAX_DURATION_S, SWIPE_AXIS_DOMINANCE)) return
+        if (isClickpadPressOverlapping(state.beginTimestamp, timestamp)) {
+            state.verdict = IndirectTouchVerdict.CANCELLED
+            swipeDebug { "SWIPE cancelled reason=press" }
+            return
+        }
+        val absDx = abs(dx)
+        val absDy = abs(dy)
+        val key =
+            if (absDx >= absDy) {
+                if (dx > 0) Key.DirectionRight else Key.DirectionLeft
+            } else if (dy > 0) {
+                Key.DirectionUp
+            } else {
+                Key.DirectionDown
+            }
+        state.verdict = IndirectTouchVerdict.ARMED
+        state.armedKey = key
+        state.armedAt = timestamp
+        state.maxTravel = maxOf(absDx, absDy)
+        state.liftArmed = true
+        swipeDebug {
+            "SWIPE lift-arm ${directionName(key)} d=($dx, $dy) " +
+                "t=${debugSeconds(timestamp)} elapsed=${elapsed * 1000.0}ms"
+        }
+        dispatchIndirectSwipe(state, timestamp)
     }
 
     /**
@@ -1391,7 +1539,9 @@ internal class ComposeSceneMediator(
         val key = burst.key
         val due = minOf(burst.stepsDue(timestamp), MOMENTUM_MAX_STEPS_PER_TICK)
         for (i in 0 until due) {
-            swipeDebug { "MOMENTUM step ${burst.emitted + 1}/${burst.rows}" }
+            swipeDebug {
+                "MOMENTUM step ${burst.emitted + 1}/${burst.rows} t=${debugSeconds(timestamp)}"
+            }
             val consumed = onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
             // The KeyDown can cancel the burst re-entrantly, but the KeyUp is still owed to balance
             // it, so it is sent before checking whether the burst is still the one in progress.
@@ -1718,7 +1868,7 @@ internal class ComposeSceneMediator(
 
     private fun dispatchIndirectSwipe(state: IndirectTouchState, timestamp: Double) {
         val key = state.armedKey ?: return
-        swipeDebug { "SWIPE dispatch ${directionName(key)}" }
+        swipeDebug { "SWIPE dispatch ${directionName(key)} t=${debugSeconds(timestamp)}" }
         state.verdict = IndirectTouchVerdict.DISPATCHED
         state.dispatchedKey = key
         val swipes = swipeChain.onSwipeDispatched(key, state.beginTimestamp)
@@ -1727,7 +1877,7 @@ internal class ComposeSceneMediator(
             "CHAIN swipes=$swipes moves=${swipeChain.focusMoves} " +
                 "gap=${if (gap == Double.MAX_VALUE) "none" else "${gap * 1000.0}ms"}"
         }
-        val rows = momentumRowsForTravel(state.maxTravel)
+        val rows = swipeRows(state)
         val cancellations = momentumCancellations
         val tookSwipe = dispatchRemoteSwipe(state, key, rows)
         if (cancellations != momentumCancellations) return
@@ -1836,6 +1986,24 @@ internal class ComposeSceneMediator(
             state.minRadius = hypot(position.x, position.y)
         }
         return true
+    }
+
+    /**
+     * Moves the origin and the swipe timer of an oracle contact to [position], with the travel and
+     * the ring classification measured from there.
+     */
+    private fun reanchorIndirectTouch(
+        state: IndirectTouchState,
+        position: Offset,
+        timestamp: Double,
+    ) {
+        state.origin = position
+        state.restAnchor = position
+        state.startTimestamp = timestamp
+        state.lastSignificantMoveTime = timestamp
+        state.maxTravel = 0f
+        state.ringOrigin = isRingOrigin(position.x, position.y, touchOracle.hasRing)
+        state.minRadius = hypot(position.x, position.y)
     }
 
     /**

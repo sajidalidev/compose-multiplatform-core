@@ -28,16 +28,75 @@ class TvSwipeMomentumTest {
 
     @Test
     fun shortTravelMovesOneRow() {
-        assertEquals(1, momentumRowsForTravel(0.3f))
-        assertEquals(1, momentumRowsForTravel(0.59f))
+        assertEquals(1, momentumRowsFor(0.9f, 0.3f))
+        assertEquals(1, momentumRowsFor(0.9f, 0.59f))
     }
 
     @Test
     fun rowsGrowWithTravelAndCap() {
-        assertEquals(3, momentumRowsForTravel(0.6f))
-        assertEquals(4, momentumRowsForTravel(0.9f))
-        assertEquals(5, momentumRowsForTravel(1.2f))
-        assertEquals(7, momentumRowsForTravel(2.5f))
+        assertEquals(3, momentumRowsFor(0.8f, 0.6f))
+        assertEquals(4, momentumRowsFor(0.8f, 0.9f))
+        assertEquals(5, momentumRowsFor(0.8f, 1.2f))
+        assertEquals(7, momentumRowsFor(0.8f, 2.5f))
+    }
+
+    @Test
+    fun startOffsetGatesMomentumAtItsThreshold() {
+        assertEquals(1, momentumRowsFor(0.59f, 1.2f))
+        assertEquals(5, momentumRowsFor(0.6f, 1.2f))
+        assertEquals(1, momentumRowsFor(0.0f, 1.2f))
+        assertEquals(1, momentumRowsFor(-0.5f, 1.2f))
+        assertEquals(1, momentumRowsFor(0.6f, 0.59f))
+        assertEquals(3, momentumRowsFor(0.6f, 0.6f))
+    }
+
+    @Test
+    fun unknownStartOffsetMovesOneRow() {
+        assertEquals(1, momentumRowsFor(null, 2.5f))
+    }
+
+    @Test
+    fun startOffsetIsMeasuredBehindTheCentreOnAllFourSides() {
+        // The oracle's y is positive toward the top, so a Down swipe starts behind the centre at y > 0.
+        assertEquals(0.8f, swipeStartOffset(Key.DirectionDown, 0.8f))
+        assertEquals(0.8f, swipeStartOffset(Key.DirectionUp, -0.8f))
+        assertEquals(0.8f, swipeStartOffset(Key.DirectionRight, -0.8f))
+        assertEquals(0.8f, swipeStartOffset(Key.DirectionLeft, 0.8f))
+        assertEquals(-0.8f, swipeStartOffset(Key.DirectionDown, -0.8f))
+        assertEquals(-0.8f, swipeStartOffset(Key.DirectionUp, 0.8f))
+        assertEquals(-0.8f, swipeStartOffset(Key.DirectionRight, 0.8f))
+        assertEquals(-0.8f, swipeStartOffset(Key.DirectionLeft, -0.8f))
+    }
+
+    @Test
+    fun fourQuadrantsOfRows() {
+        // Far start and long travel earn momentum on each side; the near side of the pad never does.
+        for ((key, origin) in listOf(
+            Key.DirectionDown to 0.8f,
+            Key.DirectionUp to -0.8f,
+            Key.DirectionRight to -0.8f,
+            Key.DirectionLeft to 0.8f,
+        )) {
+            assertEquals(4, momentumRowsFor(swipeStartOffset(key, origin), 0.9f))
+            assertEquals(1, momentumRowsFor(swipeStartOffset(key, -origin), 0.9f))
+        }
+    }
+
+    @Test
+    fun liftArmNeedsDistanceDominanceAndTime() {
+        val max = 0.25
+        assertFalse(isLiftArmSwipe(0f, -0.19f, 0.1, max, 2f))
+        assertTrue(isLiftArmSwipe(0f, -0.21f, 0.1, max, 2f))
+        assertTrue(isLiftArmSwipe(0.25f, 0f, 0.25, max, 2f))
+        assertFalse(isLiftArmSwipe(0f, 0.3f, 0.26, max, 2f))
+        assertFalse(isLiftArmSwipe(0.3f, 0.2f, 0.1, max, 2f))
+        assertTrue(isLiftArmSwipe(0.3f, 0.15f, 0.1, max, 2f))
+    }
+
+    @Test
+    fun chainBoostIsOffByDefault() {
+        assertEquals(1f, CHAIN_BOOST)
+        assertTrue(SWIPE_LIFT_DISTANCE < 0.30f)
     }
 
     @Test
@@ -155,10 +214,11 @@ class TvSwipeMomentumTest {
         assertEquals(1f, t.currentBoost())
         t.onLift(1.5)
         t.onSwipeDispatched(down, 1.8)
-        assertEquals(1.3f, t.currentBoost())
+        assertEquals(1f, t.currentBoost())
+        assertEquals(1.3f, t.currentBoost(1.3f))
         t.onLift(2.0)
         t.onSwipeDispatched(down, 2.8)
-        assertEquals(1f, t.currentBoost())
+        assertEquals(1f, t.currentBoost(1.3f))
     }
 
     @Test

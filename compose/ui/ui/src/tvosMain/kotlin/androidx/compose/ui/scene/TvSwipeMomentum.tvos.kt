@@ -19,11 +19,44 @@ import androidx.compose.ui.input.key.Key
 import kotlin.math.exp
 import kotlin.math.floor
 
-/** Rows a swipe that travelled [travel] pad units along its axis moves focus, its own move included. */
-internal fun momentumRowsForTravel(travel: Float): Int {
+/**
+ * Rows a swipe moves focus, its own move included. Multi-row momentum belongs to swipes that start
+ * at least [MOMENTUM_MIN_START_OFFSET] behind the pad centre and travel at least
+ * [MOMENTUM_SINGLE_ROW_TRAVEL]; every other swipe moves one row. [startOffset] is how far behind the
+ * centre the origin lies along the swipe axis, against the swipe direction (negative when it lies
+ * past the centre), and `null` when it is unknown, as on the relative fallback path.
+ */
+internal fun momentumRowsFor(startOffset: Float?, travel: Float): Int {
+    if (startOffset == null || startOffset < MOMENTUM_MIN_START_OFFSET) return 1
     if (travel < MOMENTUM_SINGLE_ROW_TRAVEL) return 1
     val rows = floor(MOMENTUM_ROWS_INTERCEPT + MOMENTUM_ROWS_PER_TRAVEL * travel + 0.5f).toInt()
     return rows.coerceIn(2, MOMENTUM_MAX_ROWS)
+}
+
+/**
+ * The start offset of a contact whose origin component along the axis of [key] is [originAxis], in
+ * the oracle's space where y is positive toward the top of the remote.
+ */
+internal fun swipeStartOffset(key: Key, originAxis: Float): Float =
+    -signedSpeedAlongKey(key, originAxis)
+
+/**
+ * Whether a contact that never armed is a swipe at lift: its displacement from the origin, [dx] and
+ * [dy], reaches [SWIPE_LIFT_DISTANCE] on the dominant axis, that axis is at least [dominance] times
+ * the other, and [elapsedS] is within [maxDurationS].
+ */
+internal fun isLiftArmSwipe(
+    dx: Float,
+    dy: Float,
+    elapsedS: Double,
+    maxDurationS: Double,
+    dominance: Float,
+): Boolean {
+    val absDx = kotlin.math.abs(dx)
+    val absDy = kotlin.math.abs(dy)
+    val dominant = maxOf(absDx, absDy)
+    val other = minOf(absDx, absDy)
+    return dominant >= SWIPE_LIFT_DISTANCE && dominant >= dominance * other && elapsedS <= maxDurationS
 }
 
 /** Applies the chain boost: round(rows * boost).coerceAtMost(MOMENTUM_MAX_ROWS_CHAINED), never below rows. */
@@ -108,8 +141,8 @@ internal class TvSwipeChainTracker {
     }
 
     /** CHAIN_BOOST when the current swipe is at least the second of the chain and its gap was at most CHAIN_BOOST_MAX_GAP_S, else 1f. */
-    fun currentBoost(): Float =
-        if (swipes >= 2 && currentGap <= CHAIN_BOOST_MAX_GAP_S) CHAIN_BOOST else 1f
+    fun currentBoost(boost: Float = CHAIN_BOOST): Float =
+        if (swipes >= 2 && currentGap <= CHAIN_BOOST_MAX_GAP_S) boost else 1f
 
     fun onFocusMoved(count: Int = 1) {
         focusMoves += count
