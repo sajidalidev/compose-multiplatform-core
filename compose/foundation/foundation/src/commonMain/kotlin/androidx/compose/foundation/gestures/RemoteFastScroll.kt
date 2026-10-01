@@ -174,7 +174,8 @@ internal class RemoteFastScrollScrollableNode(
         reverseDirection: Boolean,
     ) {
         val recreate =
-            this.orientation != orientation ||
+            this.scrollableState !== scrollableState ||
+                this.orientation != orientation ||
                 this.fastScrollState !== fastScrollState ||
                 this.enabled != enabled
         this.scrollableState = scrollableState
@@ -183,11 +184,15 @@ internal class RemoteFastScrollScrollableNode(
             this.orientation = orientation
             this.fastScrollState = fastScrollState
             this.enabled = enabled
-            // Detaching the old node ends a running mode, which releases the scroll mutex.
-            undelegate(fastScrollNode)
-            fastScrollNode = createFastScrollNode()
-            delegate(fastScrollNode)
+            recreateFastScrollNode()
         }
+    }
+
+    private fun recreateFastScrollNode() {
+        // Detaching the old node ends a running mode, which releases the scroll mutex.
+        undelegate(fastScrollNode)
+        fastScrollNode = createFastScrollNode()
+        delegate(fastScrollNode)
     }
 
     private fun createFastScrollNode(): RemoteFastScrollModifierNode =
@@ -203,17 +208,27 @@ internal class RemoteFastScrollScrollableNode(
         )
 
     private fun startSession() {
-        sessionJob?.cancel()
+        endSession()
         val state = scrollableState
-        sessionJob =
+        val job =
             coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 state.scroll(MutatePriority.UserInput) { awaitCancellation() }
             }
+        sessionJob = job
+        job.invokeOnCompletion {
+            if (sessionJob === job) {
+                // Another scroll took the mutex while the mode runs: the mode must not keep
+                // dispatching deltas without it. Detaching the ui node aborts the mode.
+                sessionJob = null
+                if (isAttached) recreateFastScrollNode()
+            }
+        }
     }
 
     private fun endSession() {
-        sessionJob?.cancel()
+        val job = sessionJob
         sessionJob = null
+        job?.cancel()
     }
 
     private fun scrollBy(delta: Float): Float {

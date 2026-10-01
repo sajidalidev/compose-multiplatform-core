@@ -318,6 +318,40 @@ class RemoteFastScrollScrollableTest {
     }
 
     @Test
+    fun competingUserInputScrollAbortsTheMode() = runSkikoComposeUiTest {
+        val state = FakeScrollableState()
+        val found = mutableListOf<RemoteFastScrollModifierNode>()
+        val fastState = RemoteFastScrollState()
+        setContent {
+            Box(
+                Modifier.height(50.dp)
+                    .remoteFastScroll(state, Orientation.Vertical, fastState)
+                    .then(ProbeElement { found.add(it) })
+                    .focusable()
+            )
+        }
+        waitForIdle()
+        val driver = driver(found)
+        assertTrue(driver.begin())
+        assertTrue(fastState.isActive)
+
+        var competingRan = false
+        CoroutineScopeHolder.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            state.scroll(MutatePriority.UserInput) { competingRan = true }
+        }
+        waitForIdle()
+
+        assertTrue(competingRan)
+        assertFalse(fastState.isActive)
+        assertFalse(state.isScrollInProgress)
+        var ranAfter = false
+        CoroutineScopeHolder.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            state.scroll(MutatePriority.Default) { ranAfter = true }
+        }
+        assertTrue(ranAfter)
+    }
+
+    @Test
     fun disabledModifierIsInert() = runSkikoComposeUiTest {
         setList(enabled = false) { h ->
             requestFocus(h, 0)
