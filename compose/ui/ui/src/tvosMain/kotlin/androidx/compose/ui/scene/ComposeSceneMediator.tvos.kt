@@ -295,6 +295,9 @@ private class IndirectTouchState(
     /** Set once the lift of the contact was logged and evaluated for a lift-time arm. */
     var liftSeen: Boolean = false
 
+    /** Consecutive empty-pad ticks seen for the contact, reset by any sample. */
+    var emptyPadTicks: Int = 0
+
     /** Set when the swipe was armed at lift: it moves one row and earns no momentum. */
     var liftArmed: Boolean = false
 
@@ -1115,6 +1118,8 @@ internal class ComposeSceneMediator(
                     }
                     state.lastSample = sample
                     state.lastSampleTime = timestamp
+                    // A sample after a dropped one: the contact is live, so the lift is still ahead.
+                    if (!state.liftHandled) state.liftSeen = false
                     state.sampleCount++
                     if (
                         state.verdict == IndirectTouchVerdict.ARMED ||
@@ -1183,6 +1188,9 @@ internal class ComposeSceneMediator(
             // keeps reporting no finger (e.g. the remote disconnects mid-gesture) would otherwise
             // never be dropped, and its sampling session would keep the display link running.
             purgeStaleIndirectTouches(timestamp)
+            if (sample != null) {
+                for (state in indirectTouches.values) state.emptyPadTicks = 0
+            }
             if (sample == null) {
                 // The pad is empty, so the dispatched contacts are lifted whether or not their
                 // ENDED has arrived yet, and the next samples are another finger's. The momentum is
@@ -1190,6 +1198,9 @@ internal class ComposeSceneMediator(
                 for (state in indirectTouches.values.toList()) {
                     // A dispatch can dispose this mediator, which clears every contact.
                     if (indirectTouches.isEmpty()) break
+                    // One empty tick can be a dropped sample, so the lift waits for a second.
+                    state.emptyPadTicks++
+                    if (!emptyPadIsLift(state.emptyPadTicks)) continue
                     handleIndirectLift(state, timestamp)
                     if (state.verdict == IndirectTouchVerdict.DISPATCHED) {
                         state.flingTrackingClosed = true
@@ -1293,7 +1304,7 @@ internal class ComposeSceneMediator(
             }
             // Too slow to be this swipe, but a later fast swipe in the same contact can still be
             // one: start over from here, the way a rest does.
-            swipeDebug { "SWIPE reanchor reason=duration" }
+            swipeDebug { "SWIPE reanchor reason=duration ring=${state.ringOrigin}" }
             reanchorIndirectTouch(state, position, timestamp)
             return
         }
@@ -1989,8 +2000,9 @@ internal class ComposeSceneMediator(
     }
 
     /**
-     * Moves the origin and the swipe timer of an oracle contact to [position], with the travel and
-     * the ring classification measured from there.
+     * Moves the origin and the swipe timer of an oracle contact to [position], with the travel
+     * measured from there. The ring verdict and the centre crossing are kept: a slow drag that
+     * started on the ring does not become a plain contact by being slow.
      */
     private fun reanchorIndirectTouch(
         state: IndirectTouchState,
@@ -2002,8 +2014,6 @@ internal class ComposeSceneMediator(
         state.startTimestamp = timestamp
         state.lastSignificantMoveTime = timestamp
         state.maxTravel = 0f
-        state.ringOrigin = isRingOrigin(position.x, position.y, touchOracle.hasRing)
-        state.minRadius = hypot(position.x, position.y)
     }
 
     /**

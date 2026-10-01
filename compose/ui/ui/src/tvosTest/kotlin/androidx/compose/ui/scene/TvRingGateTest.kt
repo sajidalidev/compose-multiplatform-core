@@ -61,4 +61,12 @@ class TvRingGateTest {
         assertFalse(ringOriginMayArm(0.94f))
         assertFalse(ringOriginMayArm(RING_CROSSING_RADIUS + 0.01f))
     }
+
+    @Test
+    fun oneEmptyPadTickIsADroppedSampleTwoAreALift() {
+        assertFalse(emptyPadIsLift(0))
+        assertFalse(emptyPadIsLift(1))
+        assertTrue(emptyPadIsLift(2))
+        assertTrue(emptyPadIsLift(3))
+    }
 }

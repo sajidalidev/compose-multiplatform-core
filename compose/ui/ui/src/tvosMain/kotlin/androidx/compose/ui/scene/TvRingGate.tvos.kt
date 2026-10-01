@@ -54,3 +54,12 @@ internal fun isRingOrigin(x: Float, y: Float, hasRing: Boolean): Boolean =
  * may arm a swipe.
  */
 internal fun ringOriginMayArm(minRadius: Float): Boolean = minRadius <= RING_CROSSING_RADIUS
+
+/** Empty-pad ticks in a row that make a contact without an ENDED count as lifted. */
+internal const val EMPTY_PAD_LIFT_TICKS = 2
+
+/**
+ * Whether [emptyTicks] consecutive empty-pad ticks mean the finger left the pad rather than one
+ * sample being dropped.
+ */
+internal fun emptyPadIsLift(emptyTicks: Int): Boolean = emptyTicks >= EMPTY_PAD_LIFT_TICKS
