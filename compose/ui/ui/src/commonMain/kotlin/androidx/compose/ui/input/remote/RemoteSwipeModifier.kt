@@ -39,12 +39,12 @@ import androidx.compose.ui.platform.InspectorInfo
  * Presses are unaffected: clicks and arrow presses keep producing key events, and so do swipes that
  * are not recognised as one of the four directions.
  *
- * A swipe straight across the pad ([RemoteSwipe.isTraverse]) is the one the default handling
- * carries with momentum. It may arrive as two callbacks: the move itself, and then, once the finger
- * reaches the far side, a second [RemoteSwipe] with [RemoteSwipe.isTraverse] set and the speed the
- * momentum would have been sized from. The result of the first callback decides the whole contact:
- * the momentum callback only runs when the first one claimed the swipe, and its own result is
- * ignored.
+ * A swipe that travelled far enough along its axis earns momentum ([RemoteSwipe.isTraverse]), which
+ * the default handling carries as extra moves after the first. It may arrive as two callbacks: the
+ * move itself, and then, when the finger lifts and the travel is final, a second [RemoteSwipe] with
+ * the final [RemoteSwipe.momentumSteps], only if that is greater than what the first announced.
+ * The result of the first callback decides the whole contact: the second callback only runs when
+ * the first one claimed the swipe, and its own result is ignored.
  *
  * On platforms with no remote touch surface this modifier is inert.
  *

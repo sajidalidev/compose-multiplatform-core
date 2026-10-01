@@ -17,14 +17,10 @@
 package androidx.compose.ui.scene
 
 import androidx.compose.ui.input.key.Key
-import kotlin.math.floor
-import kotlin.math.pow
 
-// Momentum tuning for Siri Remote swipes. A swipe that passes the gates moves focus once, from
-// wherever it started. Only a traverse straight across the ring keeps focus moving after that,
-// the way native tvOS does: the momentum starts the moment the finger reaches the ring on the far
-// side, and how far it carries follows how fast the finger was moving at that moment. Every value
-// below is provisional pending device calibration.
+// Finger velocity helpers for Siri Remote swipes: the reported swipe velocity and the check for a
+// finger that turned back against its momentum. Every value below is provisional pending device
+// calibration.
 
 /** Trailing window the velocity is measured over, in seconds. Provisional pending device calibration. */
 internal const val FLING_VELOCITY_WINDOW_S = 0.05
@@ -41,29 +37,6 @@ internal const val FLING_MIN_SPEED = 4.0f
  * 2026-09-18, provisional.
  */
 internal const val FLING_REVERSAL_SPEED = FLING_MIN_SPEED / 2f
-/**
- * Speed above [FLING_MIN_SPEED] that buys one more move, in clickpad units per second. A traverse
- * ending at 12 units per second earns three extra moves and one at 20 or more earns the cap.
- * Device-measured 2026-09-18, provisional.
- */
-internal const val FLING_SPEED_PER_STEP = 4.0f
-/**
- * Upper bound on the moves a single fling can add once the far side is reached, which keeps a
- * traverse to the four or five items native tvOS moves for one. Device-measured 2026-09-18,
- * provisional.
- */
-internal const val FLING_MAX_EXTRA_MOVES = 4
-/** Delay between the far ring being reached and the first extra move, in seconds. Provisional pending device calibration. */
-internal const val FLING_FIRST_INTERVAL_S = 0.09
-/** Factor each interval grows by, which is what makes the fling decelerate. Provisional pending device calibration. */
-internal const val FLING_INTERVAL_DECAY = 1.35
-/** Interval beyond which the fling reads as a stutter rather than momentum, in seconds. Provisional pending device calibration. */
-internal const val FLING_MAX_INTERVAL_S = 0.45
-/**
- * Total time a fling may span once the far ring is reached, in seconds, wide enough to hold the
- * full [FLING_MAX_EXTRA_MOVES] schedule. Provisional pending device calibration.
- */
-internal const val FLING_MAX_DURATION_S = 1.35
 
 /**
  * The trailing positions of one indirect contact, in the absolute clickpad space of
@@ -142,37 +115,3 @@ internal fun signedSpeedAlongKey(key: Key, axisVelocity: Float): Float =
         Key.DirectionUp -> axisVelocity
         else -> -axisVelocity
     }
-
-/**
- * The extra moves a fling adds once the far ring is reached, and how long to wait before each of
- * them.
- */
-internal data class FlingPlan(val key: Key, val intervals: List<Double>) {
-    val steps: Int
-        get() = intervals.size
-}
-
-/**
- * Plans the moves that follow the swipe's own move, for a contact that reached the far ring while
- * still moving at [signedSpeedAlongKey], positive when that velocity points the same way as [key].
- * The traverse across the ring is the distance gate of a fling, so only the speed decides how far
- * the momentum carries. Returns `null` when the contact was no longer moving fast enough to earn
- * one.
- */
-internal fun planFling(signedSpeedAlongKey: Float, key: Key): FlingPlan? {
-    if (signedSpeedAlongKey < FLING_MIN_SPEED) return null
-    val steps =
-        (floor((signedSpeedAlongKey - FLING_MIN_SPEED) / FLING_SPEED_PER_STEP).toInt() + 1)
-            .coerceIn(1, FLING_MAX_EXTRA_MOVES)
-    val intervals = mutableListOf<Double>()
-    var cumulative = 0.0
-    for (k in 0 until steps) {
-        val interval = FLING_FIRST_INTERVAL_S * FLING_INTERVAL_DECAY.pow(k)
-        if (interval > FLING_MAX_INTERVAL_S) break
-        if (cumulative + interval > FLING_MAX_DURATION_S) break
-        cumulative += interval
-        intervals.add(interval)
-    }
-    if (intervals.isEmpty()) return null
-    return FlingPlan(key, intervals)
-}

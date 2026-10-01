@@ -152,10 +152,9 @@ import platform.UIKit.setAccessibilityElements
 // a contact that lands on the centre pad is a swipe candidate as it is, while one that lands on
 // the outer ring of arrow buttons only becomes one once it crossed into the centre pad. That is
 // what a straight swipe from one edge of the ring to the opposite edge does, and what a circular
-// drag around the ring never does. A swipe that passes the gates below moves focus exactly once,
-// wherever it started; only the traverse straight across the ring keeps focus moving, from the
-// moment it reaches the ring on the far side, at the speed it is travelling at then. That momentum
-// is in TvSwipeFling.
+// drag around the ring never does. A swipe that passes the gates below moves focus once, wherever
+// it started, and then keeps focus moving for as many rows as the finger travelled along its axis;
+// that momentum is in TvSwipeMomentum.
 // A contact that lasts longer than this is a rest or a drag, not a swipe: genuine swipes cross
 // the distance gate within 151 ms, while the contact roll of a centre click that lands partly on
 // the ring takes 300 ms or more to cover the same distance.
@@ -250,20 +249,17 @@ private class IndirectTouchState(
     /** The smallest radius the contact was seen at since its origin was last anchored. */
     var minRadius: Float = hypot(origin.x, origin.y)
 
-    /** Set once the contact reached the ring on the far side, which happens at most once. */
-    var farRingReached: Boolean = false
-
     /** The direction the contact armed, and when it armed it. */
     var armedKey: Key? = null
     var armedAt: Double = 0.0
 
-    /** The direction the contact dispatched, which is the direction a fling continues in. */
+    /** The direction the contact dispatched, which is the direction its momentum continues in. */
     var dispatchedKey: Key? = null
 
     /**
      * Whether a `Modifier.remoteSwipe` took the move of this contact. Resolved once, when the move
-     * is dispatched, and then honoured for the rest of the contact: a traverse recognised after a
-     * move that no modifier took keeps going to the keys.
+     * is dispatched, and then honoured for the rest of the contact: momentum earned after a move
+     * that no modifier took keeps going to the keys.
      */
     var remoteSwipeHandled: Boolean = false
 
@@ -275,43 +271,33 @@ private class IndirectTouchState(
     var remoteSwipeNode: RemoteSwipeModifierNode? = null
 
     /**
-     * The momentum this contact earned at the far ring, when it is already known while the move is
-     * being dispatched, so the move can carry it.
+     * The furthest the contact travelled along the axis of its armed key, in pad units, which is
+     * what its momentum is sized from.
      */
-    var traverseSpeed: Float? = null
-    var traverseSteps: Int = 0
+    var maxTravel: Float = 0f
 
-    /** Trailing positions of the contact, for the speed a fling is planned from. */
+    /** Set once the lift of the contact was handled, which happens at most once. */
+    var liftHandled: Boolean = false
+
+    /** The extra moves the first callback of a `Modifier.remoteSwipe` was told about. */
+    var announcedMomentumSteps: Int = 0
+
+    /** Trailing positions of the contact, for the speed it is reported with and its reversal. */
     val flingSamples = FlingSampleBuffer()
 
     /**
      * The last position recorded for the contact. The pad snaps to (0, 0) at lift rather than
-     * reporting the finger all the way out, so this is how far the traverse is known to have gone.
+     * reporting the finger all the way out, so this is how far the swipe is known to have gone.
      */
     var lastSample: Offset? = null
 
     /**
      * Set once this contact can no longer be the finger the pad reports: the pad went empty under
-     * it, or another contact began. What it recorded before that still earns a fling; the samples
+     * it, or another contact began. What it recorded before that still earns momentum; the samples
      * after it belong to somebody else.
      */
     var flingTrackingClosed = false
 }
-
-/**
- * A fling in progress: the moves it still owes, and when the next one is due. [startedAt] is when
- * the contact reached the far ring, which is what the clickpad press log is compared against, while
- * [nextStepAt] is on the CACurrentMediaTime clock of the display-link tick that runs the schedule.
- * [source] is the contact the momentum came from, which keeps being sampled while its finger is
- * still down, so a finger that turns back can end it.
- */
-private class FlingState(
-    val plan: FlingPlan,
-    val startedAt: Double,
-    val source: IndirectTouchState,
-    var nextIndex: Int,
-    var nextStepAt: Double,
-)
 
 /**
  * A reason for why touches are sent to Compose. Mirrors the iOS [TouchesEventKind] which is not
@@ -619,11 +605,15 @@ internal class ComposeSceneMediator(
     private var isSamplingOracle = false
     private var oracleSamplingToken = 0
 
-    // The fling that keeps moving focus after a traverse across the ring reached the far side, and
-    // the sampling session it holds of its own, since it outlives the contact that earned it.
-    private var flingState: FlingState? = null
+    // The momentum burst that keeps moving focus after a swipe, the contact it came from, and the
+    // sampling session it holds of its own, since it outlives that contact. The chain of
+    // consecutive swipes survives contacts, so a quick second swipe can be boosted.
+    private var momentumBurst: TvMomentumBurst? = null
+    private var burstSource: IndirectTouchState? = null
+    private var burstBusyRetries = 0
     private var isSamplingFling = false
     private var flingSamplingToken = 0
+    private val swipeChain = TvSwipeChainTracker()
     private val keyRepeatInitialDelayMs = 500L
     private val keyRepeatIntervalMs = 50L
     private val platformScreenReader =
@@ -863,7 +853,7 @@ internal class ComposeSceneMediator(
         // Only the cancelled contacts are forgotten: another contact of the same gesture may
         // still be live and must keep its verdict.
         touches.forEach { indirectTouches.remove((it as UITouch).hashCode()) }
-        cancelFling("cancelled")
+        cancelMomentum("cancelled")
         updateIndirectSampling()
         scene.cancelPointerInput()
     }
@@ -882,9 +872,11 @@ internal class ComposeSceneMediator(
         val key = touch.hashCode()
         when (eventKind) {
             TouchesEventKind.BEGAN -> {
-                // A finger back on the pad takes over from the momentum of the previous swipe, and
-                // from the sampling of any contact whose terminal event never arrived.
-                cancelFling("contact")
+                // The momentum of the previous swipe keeps running under a new finger until that
+                // finger swipes. Any contact whose terminal event never arrived stops sampling.
+                swipeDebug {
+                    "SWIPE remote category=${touchOracle.productCategory} hasRing=${touchOracle.hasRing}"
+                }
                 indirectTouches.values.forEach { it.flingTrackingClosed = true }
                 val state =
                     if (touchOracle.isAvailable) {
@@ -964,8 +956,7 @@ internal class ComposeSceneMediator(
                 if (state.verdict == IndirectTouchVerdict.ARMED) {
                     dispatchArmedIndirectTouch(state, touch.timestamp)
                 }
-                // The lift earns nothing on its own: momentum is started by the traverse that
-                // reaches the far ring, while the finger is still down, and keeps running after it.
+                handleIndirectLift(state, touch.timestamp)
             }
         }
     }
@@ -1023,10 +1014,16 @@ internal class ComposeSceneMediator(
                 IndirectTouchVerdict.RING_CANDIDATE,
                 IndirectTouchVerdict.ARMED,
                 // A dispatched contact keeps being sampled: the frames it is still moving in are
-                // what the fling velocity is measured from.
+                // what its travel and its reversal are measured from.
                 IndirectTouchVerdict.DISPATCHED -> {
                     state.flingSamples.add(sample.x, sample.y, timestamp)
                     state.lastSample = sample
+                    if (
+                        state.verdict == IndirectTouchVerdict.ARMED ||
+                            state.verdict == IndirectTouchVerdict.DISPATCHED
+                    ) {
+                        updateSwipeTravel(state, sample)
+                    }
                 }
                 else -> {}
             }
@@ -1039,14 +1036,16 @@ internal class ComposeSceneMediator(
             IndirectTouchVerdict.RING_CANDIDATE -> {
                 updateIndirectMinRadius(state, sample)
                 evaluateIndirectTouch(state, sample, timestamp, logSample)
+                if (state.verdict == IndirectTouchVerdict.ARMED && !state.flingTrackingClosed) {
+                    updateSwipeTravel(state, sample)
+                }
             }
             IndirectTouchVerdict.ARMED -> {
                 updateIndirectMinRadius(state, sample)
                 holdArmedIndirectTouch(state, timestamp)
-                startFlingIfFarRingReached(state, sample, timestamp)
+                updateMomentum(state)
             }
-            IndirectTouchVerdict.DISPATCHED ->
-                startFlingIfFarRingReached(state, sample, timestamp)
+            IndirectTouchVerdict.DISPATCHED -> updateMomentum(state)
             else -> {}
         }
     }
@@ -1073,24 +1072,24 @@ internal class ComposeSceneMediator(
      */
     private fun onOracleSample(sample: Offset?) {
         if (isEvaluatingOracleSample) return
-        if (indirectTouches.isEmpty() && flingState == null) return
+        if (indirectTouches.isEmpty() && momentumBurst == null) return
         isEvaluatingOracleSample = true
         try {
             val timestamp = CACurrentMediaTime()
-            // A fling runs while the pad reports no finger, i.e. exactly when there is no sample.
-            stepFling(timestamp)
+            // A burst runs while the pad reports no finger, i.e. exactly when there is no sample.
+            stepBurst(timestamp)
             // Runs on every tick, empty pad included: a contact whose ENDED is lost while the pad
             // keeps reporting no finger (e.g. the remote disconnects mid-gesture) would otherwise
             // never be dropped, and its sampling session would keep the display link running.
             purgeStaleIndirectTouches(timestamp)
             if (sample == null) {
                 // The pad is empty, so the dispatched contacts are lifted whether or not their
-                // ENDED has arrived yet, and the next samples are another finger's. The fling is
+                // ENDED has arrived yet, and the next samples are another finger's. The momentum is
                 // still earned from what they recorded before this frame.
                 for (state in indirectTouches.values.toList()) {
                     // A dispatch can dispose this mediator, which clears every contact.
                     if (indirectTouches.isEmpty()) break
-                    startFlingAtLift(state, timestamp)
+                    handleIndirectLift(state, timestamp)
                     if (state.verdict == IndirectTouchVerdict.DISPATCHED) {
                         state.flingTrackingClosed = true
                     }
@@ -1123,8 +1122,8 @@ internal class ComposeSceneMediator(
                 when (state.verdict) {
                     IndirectTouchVerdict.CANCELLED -> SWIPE_MAX_DURATION_S + DISPATCH_HOLD_S
                     // A dispatched contact is only in this map while its finger is still down, and
-                    // its later samples carry the speed a fling is planned from, so it is kept for
-                    // as long as any live contact. The cost is that a lost ENDED now holds the
+                    // its later samples carry the travel its momentum is sized from, so it is kept
+                    // for as long as any live contact. The cost is that a lost ENDED now holds the
                     // sampling session open for the whole of that age rather than for the shorter
                     // dispatch window.
                     else -> INDIRECT_CONTACT_MAX_AGE_S
@@ -1216,6 +1215,11 @@ internal class ComposeSceneMediator(
         state.verdict = IndirectTouchVerdict.ARMED
         state.armedKey = key
         state.armedAt = timestamp
+        if (!state.usesOracle) {
+            // The relative location is in pixels: the pad units of the oracle are recovered from
+            // the distance gate the two sources share.
+            state.maxTravel = dominant / screenDensity.density / FALLBACK_DP_PER_PAD_UNIT
+        }
         swipeDebug { "SWIPE armed ${directionName(key)}" }
     }
 
@@ -1244,191 +1248,138 @@ internal class ComposeSceneMediator(
     }
 
     /**
-     * Starts the momentum of [state] the moment its contact reaches the far side of the pad from
-     * where it started, which is the traverse native tvOS carries focus for. The swipe's own
-     * move is unaffected: a fling only adds moves after it, and only for that traverse, so a swipe
-     * that started on the centre pad or one that stopped short of the far ring keeps its single
-     * move.
-     *
-     * A traverse can outrun [DISPATCH_HOLD_S], in which case the move it owes is dispatched here
-     * first, still subject to the clickpad press check, and a contact the press claims earns no
-     * momentum either.
+     * Keeps [IndirectTouchState.maxTravel] at the furthest [state] went from its origin along the
+     * axis of its armed key, in the direction of that key.
      */
-    private fun startFlingIfFarRingReached(
-        state: IndirectTouchState,
-        sample: Offset,
-        timestamp: Double,
-    ) {
-        // A contact whose tracking was closed (finger gone or another contact began) must not earn
-        // momentum from another finger's sample.
+    private fun updateSwipeTravel(state: IndirectTouchState, sample: Offset) {
+        val key = state.armedKey ?: return
+        val displacement =
+            if (isHorizontalFlingKey(key)) sample.x - state.origin.x else sample.y - state.origin.y
+        val travel = signedSpeedAlongKey(key, displacement)
+        if (travel > state.maxTravel) state.maxTravel = travel
+    }
+
+    /** Raises the rows of the burst [state] started to what its travel has earned by now. */
+    private fun updateMomentum(state: IndirectTouchState) {
         if (state.flingTrackingClosed) return
-        if (!state.ringOrigin || state.farRingReached) return
-        val key = state.dispatchedKey ?: state.armedKey ?: return
-        val horizontal = isHorizontalFlingKey(key)
-        if (
-            !hasReachedFarRing(
-                originX = state.origin.x,
-                originY = state.origin.y,
-                x = sample.x,
-                y = sample.y,
-                minRadius = state.minRadius,
-                horizontal = horizontal,
-            )
-        ) {
-            return
-        }
-        state.farRingReached = true
-        // Measured before the move goes out, so a move dispatched here can carry the momentum it
-        // earned. The dispatch adds no samples, so the reading is the same either way.
-        val velocity = state.flingSamples.velocityAlong(horizontal, FLING_VELOCITY_WINDOW_S)
-        val signedSpeed = velocity?.let { signedSpeedAlongKey(key, it) }
-        val plan = if (signedSpeed == null) null else planFling(signedSpeed, key)
-        val moveWasPending = state.verdict == IndirectTouchVerdict.ARMED
-        if (moveWasPending) {
-            state.traverseSpeed = signedSpeed
-            state.traverseSteps = plan?.steps ?: 0
-            dispatchArmedIndirectTouch(state, timestamp)
-        }
-        // The dispatch above runs key event handlers, which can dispose this mediator or cancel
-        // everything.
-        if (indirectTouches.isEmpty()) return
+        val burst = momentumBurst ?: return
+        if (burstSource !== state) return
+        burst.raiseRows(momentumRowsForTravel(state.maxTravel))
+    }
+
+    /**
+     * Settles the momentum of [state] as its finger leaves the pad, once per contact: the travel
+     * and the boost of a quick second swipe are final now. A swipe that went to a
+     * `Modifier.remoteSwipe` gets its momentum as a second callback, any other raises the rows of
+     * its burst.
+     */
+    private fun handleIndirectLift(state: IndirectTouchState, timestamp: Double) {
+        if (state.liftHandled) return
         if (state.verdict != IndirectTouchVerdict.DISPATCHED) return
+        state.liftHandled = true
+        state.flingTrackingClosed = true
+        val key = state.dispatchedKey ?: return
+        val boost = swipeChain.currentBoost()
+        val rows = boostedRows(momentumRowsForTravel(state.maxTravel), boost)
+        swipeDebug { "MOMENTUM plan rows=$rows travel=${state.maxTravel} boost=$boost" }
+        swipeChain.onLift(timestamp)
         if (state.remoteSwipeHandled) {
-            // The move went to a Modifier.remoteSwipe, so the momentum belongs to it too rather
-            // than to the keys. A traverse recognised only now arrives there as a second swipe.
-            if (!moveWasPending && plan != null) {
-                state.traverseSpeed = signedSpeed
-                state.traverseSteps = plan.steps
-                dispatchRemoteSwipeMomentum(state, key, plan)
+            val steps = rows - 1
+            if (steps > 0 && steps > state.announcedMomentumSteps) {
+                dispatchRemoteSwipeMomentum(state, key, steps)
             }
             return
         }
-        if (plan == null) {
-            swipeDebug { "FLING none reason=far-ring speed=$signedSpeed" }
-            return
-        }
-        flingState =
-            FlingState(
-                plan = plan,
-                startedAt = timestamp,
-                source = state,
-                nextIndex = 0,
-                // The schedule is run from the display-link tick, which stamps with
-                // CACurrentMediaTime, so it is measured from that clock rather than from the
-                // UITouch timestamp the contact carries.
-                nextStepAt = CACurrentMediaTime() + plan.intervals[0],
-            )
-        if (!isSamplingFling) {
-            isSamplingFling = true
-            flingSamplingToken = touchOracle.beginSampling()
-        }
-        swipeDebug {
-            "FLING plan steps=${plan.steps} speed=$signedSpeed r=${hypot(sample.x, sample.y)}"
-        }
+        if (burstSource === state) momentumBurst?.raiseRows(rows)
     }
 
     /**
-     * Evaluates the momentum of [state] one last time as its finger leaves the pad. The clickpad
-     * stream lags and reports (0, 0) rather than the finger on its way out, so a traverse fast
-     * enough to earn momentum is usually last seen short of the ring on the far side: the position
-     * it was last reported at is the whole of what it is known to have travelled.
-     *
-     * The same predicate and the same once-only guard as while the finger is down apply, so a
-     * contact that already started its momentum on the way across earns nothing more here.
+     * Runs the moves the burst in progress owes at [timestamp]. The remote stays authoritative: any
+     * press, a finger that turns back and any move the scene did not consume end the momentum. A
+     * tick that lands late catches up, within [MOMENTUM_MAX_STEPS_PER_TICK].
      */
-    private fun startFlingAtLift(state: IndirectTouchState, timestamp: Double) {
-        if (
-            state.verdict != IndirectTouchVerdict.ARMED &&
-                state.verdict != IndirectTouchVerdict.DISPATCHED
-        ) {
-            return
-        }
-        val last = state.lastSample ?: return
-        startFlingIfFarRingReached(state, last, timestamp)
-    }
-
-    /**
-     * Runs at most one move of the fling in progress, on the schedule its plan set. The remote stays
-     * authoritative: any press, any finger back on the pad and any move the scene did not consume
-     * end the momentum.
-     */
-    private fun stepFling(timestamp: Double) {
-        val fling = flingState ?: return
+    private fun stepBurst(timestamp: Double) {
+        val burst = momentumBurst ?: return
         if (!isFocusEnabled) {
             // A move can open a layer above this scene, and the rest of the momentum belongs to
             // whatever is on top now rather than to the scene it covered.
-            cancelFling("inactive")
+            cancelMomentum("inactive")
             return
         }
         if (touchOracle.anyButtonPressed()) {
-            cancelFling("press")
+            cancelMomentum("press")
             return
         }
-        if (isClickpadPressOverlapping(fling.startedAt, timestamp)) {
-            cancelFling("press")
+        if (isClickpadPressOverlapping(burst.startedAt, timestamp)) {
+            cancelMomentum("press")
             return
         }
-        // The finger that started the momentum is still on the far ring, so a finger on the pad no
-        // longer ends it. What ends it is that finger turning back: a contact that began after the
-        // momentum did is another finger and cancels it in the BEGAN branch instead.
-        if (isFlingSourceReversing(fling)) {
-            cancelFling("reversal")
+        if (isBurstSourceReversing(burst)) {
+            burst.stop()
+            cancelMomentum("reversal")
             return
         }
-        if (timestamp < fling.nextStepAt) return
-        val index = fling.nextIndex
-        val key = fling.plan.key
-        swipeDebug { "FLING step ${index + 1}/${fling.plan.steps}" }
-        val consumed = onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
-        // The KeyDown can trigger cancelFling re-entrantly, but the KeyUp is still owed to balance
-        // it, so it is sent before checking whether the fling is still the one in progress.
-        onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp))
-        // A dispatch runs key event handlers, which can dispose this mediator or cancel the fling.
-        if (flingState !== fling) return
-        if (!consumed) {
-            // Focus could not move any further in that direction. Which step and which direction
-            // that was tells a real focus edge from a move that was dropped on the way.
-            cancelFling("unconsumed step=${index + 1}/${fling.plan.steps} key=${directionName(key)}")
-            return
+        val key = burst.key
+        val due = minOf(burst.stepsDue(timestamp), MOMENTUM_MAX_STEPS_PER_TICK)
+        for (i in 0 until due) {
+            swipeDebug { "MOMENTUM step ${burst.emitted + 1}/${burst.rows}" }
+            val consumed = onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
+            // The KeyDown can cancel the burst re-entrantly, but the KeyUp is still owed to balance
+            // it, so it is sent before checking whether the burst is still the one in progress.
+            onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp))
+            // A dispatch runs key event handlers, which can dispose this mediator or cancel the
+            // burst.
+            if (momentumBurst !== burst) return
+            if (!consumed) {
+                // The focus system may be busy for a frame, which a retry covers; a move that is
+                // still refused is a real focus edge.
+                if (burstBusyRetries < MOMENTUM_BUSY_RETRIES) {
+                    burstBusyRetries++
+                    return
+                }
+                cancelMomentum(
+                    "unconsumed step=${burst.emitted + 1}/${burst.rows} key=${directionName(key)}"
+                )
+                return
+            }
+            burst.onStepEmitted()
+            swipeChain.onFocusMoved()
+            burstBusyRetries = 0
         }
-        fling.nextIndex = index + 1
-        if (fling.nextIndex >= fling.plan.steps) {
-            cancelFling("finished")
-            return
-        }
-        // Scheduled from the previous nextStepAt rather than from timestamp, so a tick that lands a
-        // little late does not push every following step back by the same amount. A tick that lands
-        // very late (the display link stalled) instead restarts the schedule from now, so steps
-        // never burst to catch up.
-        val interval = fling.plan.intervals[fling.nextIndex]
-        fling.nextStepAt += interval
-        if (fling.nextStepAt <= timestamp) {
-            fling.nextStepAt = timestamp + interval
+        // While the finger of the burst is down its travel can still raise the rows, so a burst
+        // that already emitted all of them is only over once that finger left.
+        val source = burstSource
+        val sourceLifted =
+            source == null || source.liftHandled || !indirectTouches.containsValue(source)
+        if (burst.isFinished && sourceLifted) {
+            cancelMomentum("finished")
         }
     }
 
     /**
-     * `true` when the finger that started [fling] is still down and has clearly turned back against
-     * the direction the momentum runs in. Once that contact ended nothing samples it any more, so
-     * its trailing window stops changing and the momentum runs out on its own schedule.
+     * `true` when the finger that started [burst] is still down and has clearly turned back against
+     * the direction the momentum runs in. Once that contact ended nothing samples it any more.
      */
-    private fun isFlingSourceReversing(fling: FlingState): Boolean {
-        val source = fling.source
+    private fun isBurstSourceReversing(burst: TvMomentumBurst): Boolean {
+        val source = burstSource ?: return false
         if (source.flingTrackingClosed) return false
-        val key = fling.plan.key
         val velocity =
-            source.flingSamples.velocityAlong(isHorizontalFlingKey(key), FLING_VELOCITY_WINDOW_S)
-                ?: return false
-        return signedSpeedAlongKey(key, velocity) < -FLING_REVERSAL_SPEED
+            source.flingSamples.velocityAlong(
+                isHorizontalFlingKey(burst.key),
+                FLING_VELOCITY_WINDOW_S,
+            ) ?: return false
+        return signedSpeedAlongKey(burst.key, velocity) < -FLING_REVERSAL_SPEED
     }
 
-    /** Ends the fling in progress, if any, and releases the sampling session it held. */
-    private fun cancelFling(reason: String) {
-        if (flingState == null && !isSamplingFling) return
-        if (flingState != null) {
-            swipeDebug { "FLING cancelled reason=$reason" }
+    /** Ends the burst in progress, if any, and releases the sampling session it held. */
+    private fun cancelMomentum(reason: String) {
+        if (momentumBurst == null && !isSamplingFling) return
+        if (momentumBurst != null) {
+            swipeDebug { "MOMENTUM cancelled reason=$reason" }
         }
-        flingState = null
+        momentumBurst = null
+        burstSource = null
+        burstBusyRetries = 0
         if (isSamplingFling) {
             isSamplingFling = false
             touchOracle.endSampling(flingSamplingToken)
@@ -1440,38 +1391,43 @@ internal class ComposeSceneMediator(
         swipeDebug { "SWIPE dispatch ${directionName(key)}" }
         state.verdict = IndirectTouchVerdict.DISPATCHED
         state.dispatchedKey = key
-        if (dispatchRemoteSwipe(state, key)) return
-        onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
+        val swipes = swipeChain.onSwipeDispatched(key, state.beginTimestamp)
+        swipeDebug {
+            val gap = swipeChain.currentGap
+            "CHAIN swipes=$swipes moves=${swipeChain.focusMoves} " +
+                "gap=${if (gap == Double.MAX_VALUE) "none" else "${gap * 1000.0}ms"}"
+        }
+        val rows = momentumRowsForTravel(state.maxTravel)
+        if (dispatchRemoteSwipe(state, key, rows)) {
+            cancelMomentum("replaced")
+            return
+        }
+        val consumed = onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
         onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp))
+        if (consumed) swipeChain.onFocusMoved()
+        cancelMomentum("replaced")
+        momentumBurst = TvMomentumBurst(key, CACurrentMediaTime(), rows)
+        burstSource = state
+        isSamplingFling = true
+        flingSamplingToken = touchOracle.beginSampling()
     }
 
     /**
      * Offers the move of [state] to the nearest `Modifier.remoteSwipe` on the focused element or on
      * one of its ancestors, and records on the contact whether one took it. That answer stands for
-     * the whole contact: a traverse recognised later sends nothing to the keys when the move was
-     * taken, and keeps the key momentum when it was not.
+     * the whole contact: the momentum of a taken move goes to the same node, and the momentum of a
+     * move nobody took goes to the keys.
      */
-    private fun dispatchRemoteSwipe(state: IndirectTouchState, key: Key): Boolean {
-        val traverseSpeed = state.traverseSpeed
-        val isTraverse = traverseSpeed != null && state.traverseSteps > 0
-        val velocity =
-            if (isTraverse) {
-                abs(traverseSpeed!!)
-            } else {
-                val axis =
-                    state.flingSamples.velocityAlong(
-                        isHorizontalFlingKey(key),
-                        FLING_VELOCITY_WINDOW_S,
-                    )
-                if (axis == null) 0f else abs(axis)
-            }
+    private fun dispatchRemoteSwipe(state: IndirectTouchState, key: Key, rows: Int): Boolean {
+        val isTraverse = rows > 1
+        state.announcedMomentumSteps = rows - 1
         val node =
             scene.dispatchRemoteSwipe(
                 RemoteSwipe(
                     direction = remoteSwipeDirection(key),
-                    velocity = velocity,
+                    velocity = swipeVelocity(state, key),
                     isTraverse = isTraverse,
-                    momentumSteps = if (isTraverse) state.traverseSteps else 0,
+                    momentumSteps = rows - 1,
                     origin =
                         if (state.ringOrigin) RemoteSwipeOrigin.Ring else RemoteSwipeOrigin.Center,
                 )
@@ -1484,12 +1440,19 @@ internal class ComposeSceneMediator(
         return node != null
     }
 
+    /** The speed of the finger of [state] along [key] over the trailing window, `0f` when unknown. */
+    private fun swipeVelocity(state: IndirectTouchState, key: Key): Float {
+        val axis =
+            state.flingSamples.velocityAlong(isHorizontalFlingKey(key), FLING_VELOCITY_WINDOW_S)
+        return if (axis == null) 0f else abs(axis)
+    }
+
     /**
-     * Delivers the momentum of a traverse whose move already went to a `Modifier.remoteSwipe`, as a
-     * second swipe with the speed the key momentum would have been sized from. It goes straight to
-     * the node the move went to, and is dropped when that node has left the hierarchy since.
+     * Delivers the final momentum of a swipe whose move already went to a `Modifier.remoteSwipe`,
+     * as a second swipe with [steps] extra moves. It goes straight to the node the move went to,
+     * and is dropped when that node has left the hierarchy since.
      */
-    private fun dispatchRemoteSwipeMomentum(state: IndirectTouchState, key: Key, plan: FlingPlan) {
+    private fun dispatchRemoteSwipeMomentum(state: IndirectTouchState, key: Key, steps: Int) {
         val node = state.remoteSwipeNode ?: return
         if (!node.node.isAttached) {
             swipeDebug { "SWIPE momentum dropped reason=detached" }
@@ -1498,9 +1461,9 @@ internal class ComposeSceneMediator(
         node.onRemoteSwipe(
             RemoteSwipe(
                 direction = remoteSwipeDirection(key),
-                velocity = abs(state.traverseSpeed ?: 0f),
+                velocity = swipeVelocity(state, key),
                 isTraverse = true,
-                momentumSteps = plan.steps,
+                momentumSteps = steps,
                 origin = if (state.ringOrigin) RemoteSwipeOrigin.Ring else RemoteSwipeOrigin.Center,
             )
         )
@@ -1726,7 +1689,8 @@ internal class ComposeSceneMediator(
 
     private fun dispose() {
         touchOracle.removeSampleListener(oracleSampleListener)
-        cancelFling("dispose")
+        cancelMomentum("dispose")
+        swipeChain.reset()
         if (isSamplingOracle) {
             isSamplingOracle = false
             touchOracle.endSampling(oracleSamplingToken)
@@ -1779,7 +1743,7 @@ internal class ComposeSceneMediator(
 
     fun sceneWillDisappear() {
         // No keyboard manager to stop on tvOS
-        cancelFling("disappear")
+        cancelMomentum("disappear")
     }
 
     fun didUpdateFocusInContext() {
@@ -1869,7 +1833,8 @@ internal class ComposeSceneMediator(
      */
     fun onKeyboardPresses(presses: Set<*>, pressesEvent: UIPressesEvent?): TvPressForwarding {
         // A real press outranks the momentum of the swipe before it.
-        cancelFling("press")
+        cancelMomentum("press")
+        swipeChain.reset()
         var passThrough: MutableSet<Any?>? = null
         var forwardingMode = TvPressForwardingMode.AsIs
         val forwardedKeyIds = mutableListOf<Long>()

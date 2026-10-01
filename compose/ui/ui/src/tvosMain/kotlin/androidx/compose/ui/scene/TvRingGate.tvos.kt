@@ -16,7 +16,6 @@
 
 package androidx.compose.ui.scene
 
-import kotlin.math.abs
 import kotlin.math.hypot
 
 // Where a Siri Remote contact started, and what a contact that started on the outer ring of arrow
@@ -55,34 +54,3 @@ internal fun isRingOrigin(x: Float, y: Float, hasRing: Boolean): Boolean =
  * may arm a swipe.
  */
 internal fun ringOriginMayArm(minRadius: Float): Boolean = minRadius <= RING_CROSSING_RADIUS
-
-/**
- * How far past the centre on the opposite side the last reported position of a contact has to be
- * for a traverse to count. The controller stream lags and snaps to (0, 0) at lift, so the far ring
- * itself is rarely observed: a real ring to ring traverse is last seen well inside the pad.
- * Device-measured 2026-09-18, provisional.
- */
-internal const val FAR_SIDE_RADIUS = 0.30f
-
-/**
- * Whether a contact that started on the ring at ([originX], [originY]) has travelled to the far side
- * of the pad at ([x], [y]), having crossed the centre pad on the way there, [minRadius] being the
- * smallest radius it was seen at since its origin was last anchored and [horizontal] telling which
- * axis its swipe went along. That traverse is the whole of a ring to ring swipe, so it is what earns
- * momentum; a drag around the ring keeps its radius and a swipe that stops in the centre never
- * arrives.
- */
-internal fun hasReachedFarRing(
-    originX: Float,
-    originY: Float,
-    x: Float,
-    y: Float,
-    minRadius: Float,
-    horizontal: Boolean,
-): Boolean {
-    if (!ringOriginMayArm(minRadius)) return false
-    val originAxis = if (horizontal) originX else originY
-    val axis = if (horizontal) x else y
-    if (originAxis * axis >= 0f) return false
-    return abs(axis) >= FAR_SIDE_RADIUS
-}

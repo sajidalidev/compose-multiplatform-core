@@ -31,7 +31,7 @@ public enum class RemoteSwipeOrigin {
     /** The centre of the pad, which is where a short swipe usually starts. */
     Center,
 
-    /** The outer ring of the pad, which is where a swipe straight across starts. */
+    /** The outer ring of the pad. */
     Ring,
 }
 
@@ -45,11 +45,10 @@ public enum class RemoteSwipeOrigin {
  * @property direction the direction the swipe travelled in.
  * @property velocity the speed of the finger along that direction when the swipe was recognised, in
  *   pad units per second, always positive. `0f` when the speed is not known.
- * @property isTraverse whether the swipe earned momentum: the finger went from the ring on one side,
- *   across the centre, to the ring on the far side, fast enough for the default handling to carry
- *   focus past the one move the swipe itself makes.
+ * @property isTraverse whether the swipe earned momentum: it travelled far enough along its axis for
+ *   the default handling to carry focus past the one move the swipe itself makes.
  * @property momentumSteps the number of extra moves the default handling would have sent after the
- *   first one. `0` when the swipe earned no momentum.
+ *   first one, 0 to 7. `0` when the swipe earned no momentum.
  * @property origin where on the pad the finger started.
  */
 public class RemoteSwipe

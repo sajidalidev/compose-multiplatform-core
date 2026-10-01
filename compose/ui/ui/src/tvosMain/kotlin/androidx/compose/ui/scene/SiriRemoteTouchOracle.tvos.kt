@@ -28,6 +28,7 @@ import platform.GameController.GCController
 import platform.GameController.GCControllerDidConnectNotification
 import platform.GameController.GCControllerDidDisconnectNotification
 import platform.GameController.GCMicroGamepad
+import platform.GameController.GCProductCategoryControlCenterRemote
 import platform.GameController.GCProductCategorySiriRemote1stGen
 import platform.QuartzCore.CADisplayLink
 import platform.darwin.NSObject
@@ -64,7 +65,8 @@ internal class SiriRemoteTouchOracle {
 
     private var controller: GCController? = null
     private var remoteGamepad: GCMicroGamepad? = null
-    private var productCategory: String? = null
+    internal var productCategory: String? = null
+        private set
     // The gamepad's own rotation mode, restored when the oracle lets go of it.
     private var previousAllowsRotation: Boolean? = null
 
@@ -85,19 +87,21 @@ internal class SiriRemoteTouchOracle {
         get() = remoteGamepad != null
 
     /**
-     * `true` for remotes whose clickpad has an outer ring of arrow buttons.
+     * `true` for remotes whose clickpad has an outer ring of arrow buttons, which gates where a
+     * swipe may arm: a contact that starts on the ring has to cross the centre pad first.
      *
-     * tvOS coalesces every paired remote into a single controller reporting the "Coalesced Remote"
-     * product category, so a physical remote's generation cannot be distinguished once connected.
-     * The ring gate is therefore the default, applying to the coalesced controller and any other
-     * unrecognised micro gamepad category. First-generation remotes have no ring and let a swipe
-     * start anywhere on the pad, so they are exempted here; so are genuine game controllers, which
-     * report an extended gamepad rather than a bare micro gamepad.
+     * The reported [productCategory] is not always the coalesced one (a second-generation remote
+     * reported "Siri Remote (2nd Generation)"), so the ring is assumed for every category except
+     * the ones known to have none: the first-generation remote and the Control Center remote.
+     * Genuine game controllers report an extended gamepad rather than a bare micro gamepad. Momentum
+     * never reads this: it follows swipe travel only, so a remote misreported as ringed only costs
+     * a contact that starts on its edge the centre crossing before it arms.
      */
     val hasRing: Boolean
         get() {
             val category = productCategory ?: return false
             if (category == GCProductCategorySiriRemote1stGen) return false
+            if (category == GCProductCategoryControlCenterRemote) return false
             return true
         }
 

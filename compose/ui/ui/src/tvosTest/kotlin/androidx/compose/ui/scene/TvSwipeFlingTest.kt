@@ -95,7 +95,7 @@ class TvSwipeFlingTest {
     }
 
     @Test
-    fun aTraverseThatReachesTheRingKeepsItsSpeed() {
+    fun aStraightTraverseKeepsItsSpeed() {
         // A straight traverse of the clickpad, from the ring on one side to the ring on the other.
         val buffer = FlingSampleBuffer()
         buffer.add(-0.90f, 0f, 1.0)
@@ -108,12 +108,10 @@ class TvSwipeFlingTest {
         val velocity = buffer.velocityAlong(horizontal = true, windowS = FLING_VELOCITY_WINDOW_S)
         assertNotNull(velocity)
         assertEquals(15f, velocity, 0.05f)
-        val plan = planFling(signedSpeedAlongKey(Key.DirectionRight, velocity), Key.DirectionRight)
-        assertNotNull(plan)
     }
 
     @Test
-    fun aRestOnTheEdgeEarnsNoFling() {
+    fun aRestOnTheEdgeHasNoVelocity() {
         // The window holds no second sample, so the finger was parked against the rail rather than
         // still travelling into it.
         val buffer = FlingSampleBuffer()
@@ -125,7 +123,7 @@ class TvSwipeFlingTest {
     }
 
     @Test
-    fun aRestInTheInteriorEarnsNoFling() {
+    fun aRestInTheInteriorHasNoVelocity() {
         val buffer = FlingSampleBuffer()
         buffer.add(0.20f, 0f, 1.0)
         buffer.add(0.45f, 0f, 1.0167)
@@ -137,11 +135,10 @@ class TvSwipeFlingTest {
         val velocity = buffer.velocityAlong(horizontal = true, windowS = FLING_VELOCITY_WINDOW_S)
         assertNotNull(velocity)
         assertEquals(0f, velocity, 1e-3f)
-        assertNull(planFling(signedSpeedAlongKey(Key.DirectionRight, velocity), Key.DirectionRight))
     }
 
     @Test
-    fun aReversalEarnsNoFling() {
+    fun aReversalHasNegativeSignedSpeed() {
         val buffer = FlingSampleBuffer()
         buffer.add(0.20f, 0f, 1.0)
         buffer.add(0.50f, 0f, 1.0167)
@@ -152,7 +149,6 @@ class TvSwipeFlingTest {
         val velocity = buffer.velocityAlong(horizontal = true, windowS = FLING_VELOCITY_WINDOW_S)
         assertNotNull(velocity)
         assertTrue(velocity < 0f, "the finger was moving back, velocity was $velocity")
-        assertNull(planFling(signedSpeedAlongKey(Key.DirectionRight, velocity), Key.DirectionRight))
     }
 
     @Test
@@ -170,71 +166,6 @@ class TvSwipeFlingTest {
         assertEquals(-4f, signedSpeedAlongKey(Key.DirectionUp, -4f))
         assertEquals(4f, signedSpeedAlongKey(Key.DirectionDown, -4f))
         assertEquals(-4f, signedSpeedAlongKey(Key.DirectionDown, 4f))
-    }
-
-    @Test
-    fun aSlowTraverseEarnsNoFling() {
-        assertNull(planFling(FLING_MIN_SPEED - 0.1f, Key.DirectionRight))
-    }
-
-    @Test
-    fun reversedSpeedEarnsNoFling() {
-        assertNull(planFling(-10f, Key.DirectionRight))
-        assertNull(planFling(0f, Key.DirectionRight))
-    }
-
-    @Test
-    fun theThresholdsThemselvesEarnAFling() {
-        val plan = planFling(FLING_MIN_SPEED, Key.DirectionRight)
-        assertNotNull(plan)
-        assertEquals(1, plan.steps)
-    }
-
-    @Test
-    fun stepCountFollowsTheSpeed() {
-        assertEquals(1, planFling(FLING_MIN_SPEED, Key.DirectionUp)?.steps)
-        assertEquals(
-            2,
-            planFling(FLING_MIN_SPEED + 1.5f * FLING_SPEED_PER_STEP, Key.DirectionUp)?.steps,
-        )
-        assertEquals(
-            4,
-            planFling(FLING_MIN_SPEED + 3f * FLING_SPEED_PER_STEP, Key.DirectionUp)?.steps,
-        )
-    }
-
-    @Test
-    fun theFullScheduleFitsWithinTheDurationCap() {
-        assertEquals(FLING_MAX_EXTRA_MOVES, planFling(100f, Key.DirectionUp)?.steps)
-    }
-
-    @Test
-    fun stepsGrowWithSpeedAndAreCapped() {
-        var previous = 0
-        var speed = FLING_MIN_SPEED
-        while (speed < FLING_MIN_SPEED + 40f) {
-            val plan = planFling(speed, Key.DirectionUp)
-            assertNotNull(plan)
-            assertTrue(plan.steps >= previous, "steps dropped at speed $speed")
-            assertTrue(plan.steps in 1..FLING_MAX_EXTRA_MOVES, "steps out of range at speed $speed")
-            previous = plan.steps
-            speed += 0.25f
-        }
-    }
-
-    @Test
-    fun intervalsDecelerateWithinTheirBounds() {
-        val plan = planFling(FLING_MIN_SPEED + 40f, Key.DirectionLeft)
-        assertNotNull(plan)
-        assertEquals(Key.DirectionLeft, plan.key)
-        assertEquals(plan.intervals.size, plan.steps)
-        for (i in plan.intervals.indices) {
-            assertTrue(plan.intervals[i] <= FLING_MAX_INTERVAL_S, "interval $i is too long")
-            if (i > 0) {
-                assertTrue(plan.intervals[i] > plan.intervals[i - 1], "interval $i did not grow")
-            }
-        }
-        assertTrue(plan.intervals.sum() <= FLING_MAX_DURATION_S, "fling lasts too long")
     }
 
     @Test

@@ -83,7 +83,9 @@ internal class TvSwipeChainTracker {
     var focusMoves: Int = 0
         private set
     private var lastLiftAt: Double? = null
-    private var currentGap: Double = Double.MAX_VALUE
+    /** Seconds between the previous lift and the touch of the current swipe, [Double.MAX_VALUE] when it starts a chain. */
+    var currentGap: Double = Double.MAX_VALUE
+        private set
 
     /**
      * Call when a swipe dispatches. Starts a new chain if the key differs, no lift is recorded, or
