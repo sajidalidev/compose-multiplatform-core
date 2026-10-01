@@ -46,6 +46,7 @@ data class DemoItem(val id: Int, val title: String, val description: String, val
 private const val TEXT_INPUT_DEMO_ID = 19
 private const val INPUT_CHECKS_DEMO_ID = 20
 private const val REMOTE_SWIPE_DEMO_ID = 21
+private const val LONG_LIST_DEMO_ID = 22
 
 @Composable
 fun TvOSDemoApp() {
@@ -97,6 +98,11 @@ fun TvOSDemoApp() {
                     )
                 } else if (item.id == REMOTE_SWIPE_DEMO_ID) {
                     RemoteSwipeScreen(
+                        focusRequester = overlayFocus,
+                        onDismiss = { selectedItem = null },
+                    )
+                } else if (item.id == LONG_LIST_DEMO_ID) {
+                    LongListScreen(
                         focusRequester = overlayFocus,
                         onDismiss = { selectedItem = null },
                     )
@@ -230,6 +236,7 @@ private val demoItems: List<DemoItem> =
             "Modifier.remoteSwipe vs D-pad",
             Color(0xFF00ACC1),
         ),
+        DemoItem(LONG_LIST_DEMO_ID, "Long List", "500 rows for swipe momentum", Color(0xFFEF6C00)),
     )
 
 @Composable
