@@ -42,6 +42,13 @@ class TvRingGateTest {
     }
 
     @Test
+    fun ringlessRemoteNeverHasRingOrigin() {
+        assertFalse(isRingOrigin(0f, 0f, hasRing = false))
+        assertFalse(isRingOrigin(CENTER_PAD_RADIUS, 0f, hasRing = false))
+        assertFalse(isRingOrigin(1f, 0f, hasRing = false))
+    }
+
+    @Test
     fun aRingContactThatCrossedTheCentreMayArm() {
         // A straight swipe across the ring passes through the centre pad.
         assertTrue(ringOriginMayArm(0.33f))

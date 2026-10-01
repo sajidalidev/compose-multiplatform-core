@@ -613,6 +613,10 @@ internal class ComposeSceneMediator(
     private var burstBusyRetries = 0
     private var isSamplingFling = false
     private var flingSamplingToken = 0
+
+    // Counts every call of cancelMomentum, dispose included, so a dispatch can tell that a handler
+    // it ran cancelled the momentum or disposed this mediator underneath it.
+    private var momentumCancellations = 0
     private val swipeChain = TvSwipeChainTracker()
     private val keyRepeatInitialDelayMs = 500L
     private val keyRepeatIntervalMs = 50L
@@ -1373,6 +1377,7 @@ internal class ComposeSceneMediator(
 
     /** Ends the burst in progress, if any, and releases the sampling session it held. */
     private fun cancelMomentum(reason: String) {
+        momentumCancellations++
         if (momentumBurst == null && !isSamplingFling) return
         if (momentumBurst != null) {
             swipeDebug { "MOMENTUM cancelled reason=$reason" }
@@ -1398,14 +1403,19 @@ internal class ComposeSceneMediator(
                 "gap=${if (gap == Double.MAX_VALUE) "none" else "${gap * 1000.0}ms"}"
         }
         val rows = momentumRowsForTravel(state.maxTravel)
-        if (dispatchRemoteSwipe(state, key, rows)) {
+        val cancellations = momentumCancellations
+        val tookSwipe = dispatchRemoteSwipe(state, key, rows)
+        if (cancellations != momentumCancellations) return
+        if (tookSwipe) {
             cancelMomentum("replaced")
             return
         }
         val consumed = onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
         onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp))
+        if (cancellations != momentumCancellations) return
         if (consumed) swipeChain.onFocusMoved()
         cancelMomentum("replaced")
+        if (!consumed) return
         momentumBurst = TvMomentumBurst(key, CACurrentMediaTime(), rows)
         burstSource = state
         isSamplingFling = true
