@@ -45,6 +45,44 @@ class TvFastScrollPhysicsTest {
     }
 
     @Test
+    fun stopDuringHoldEndsTheDriveAndAllowsExit() {
+        val p = TvFastScrollPhysics()
+        p.startFromHold(0.0, forward = true)
+        var t = 0.0
+        repeat(10) {
+            t += frame
+            p.step(t)
+        }
+        assertTrue(p.velocity > 0f)
+        assertFalse(p.shouldExit)
+        p.stop()
+        repeat(10) {
+            t += frame
+            p.step(t)
+            assertEquals(0f, p.velocity)
+        }
+        assertTrue(p.shouldExit)
+    }
+
+    @Test
+    fun restingFingerDoesNotStopAHeldDrive() {
+        val p = TvFastScrollPhysics()
+        p.startFromHold(0.0, forward = true)
+        p.onTouchDown(0.0)
+        var t = 0.0
+        repeat(30) {
+            t += frame
+            p.onTouchSample(0.5f, t)
+            p.step(t)
+        }
+        assertTrue(p.velocity > FAST_HOLD_START_VELOCITY_DP_S)
+        p.onHoldReleased(t)
+        t += frame
+        p.onTouchSample(0.5f, t)
+        assertTrue(p.step(t + frame) > 0f)
+    }
+
+    @Test
     fun coastDecaysWithFastTau() {
         val tau = FAST_TAU_S.toFloat()
         val schedules = listOf(
@@ -155,9 +193,9 @@ class TvFastScrollPhysicsTest {
 
         val key = TvFastScrollPhysics()
         key.startFromHold(0.0, forward = true)
-        key.stop()
         assertFalse(key.shouldExit)
         key.onHoldReleased(0.1)
+        key.stop()
         assertTrue(key.shouldExit)
     }
 

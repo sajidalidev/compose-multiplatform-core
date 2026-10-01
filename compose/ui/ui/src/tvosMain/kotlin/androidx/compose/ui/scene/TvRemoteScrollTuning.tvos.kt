@@ -78,6 +78,8 @@ internal const val FAST_PAN_GAIN_DP_PER_UNIT = 450f
 internal const val FAST_FLICK_MIN_SPEED = 2.0f
 /** Cap on the fast scroll velocity, in dp per second. Provisional, native shows no cap. */
 internal const val FAST_MAX_VELOCITY_DP_S = 25000f
+/** Longest a held key may drive fast scroll before the hold is released, in seconds, in case its release never arrives. Provisional guess. */
+internal const val FAST_HOLD_MAX_S = 30.0
 /** Speed below which fast scroll exits, in dp per second. Fitted. */
 internal const val FAST_EXIT_SPEED_DP_S = 5f
 /** How long a finger must rest on its anchor to stop fast scroll. Provisional. */

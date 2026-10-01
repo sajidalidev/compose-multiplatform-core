@@ -88,6 +88,9 @@ internal class TvFastScrollPhysics {
         if (anchorPosition.isNaN() || abs(forwardPosition - anchorPosition) > FAST_REST_TOLERANCE) {
             anchorPosition = forwardPosition
             anchorSince = now
+        } else if (held) {
+            // A finger resting while the drive key is held must not stop the drive.
+            anchorSince = now
         } else if (now - anchorSince >= FAST_REST_STOP_S) {
             stop()
         }
@@ -111,6 +114,7 @@ internal class TvFastScrollPhysics {
     fun stop() {
         velocity = 0f
         stopped = true
+        held = false
     }
 
     /** Advances to [now] and returns the dp to scroll since the previous call (coast or hold drive plus pending pan). */

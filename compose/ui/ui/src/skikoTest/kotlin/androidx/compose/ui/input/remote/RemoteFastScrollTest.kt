@@ -408,6 +408,32 @@ class RemoteFastScrollTest {
     }
 
     @Test
+    fun replacingTheStateDuringModeResetsTheOldOne() = runSkikoComposeUiTest {
+        val requester = FocusRequester()
+        val first = RemoteFastScrollState()
+        val second = RemoteFastScrollState()
+        var state by mutableStateOf(first)
+        setContent {
+            Box(Modifier.remoteFastScroll(state, RemoteFastScrollAxis.Vertical) { it }) {
+                Box(Modifier.size(10.dp).focusRequester(requester).focusable())
+            }
+        }
+        focus(requester)
+        assertTrue(begin())
+        val node = assertNotNull(node())
+        runOnIdle { node.fastScrollBy(10f, 500f) }
+        assertTrue(first.isActive)
+
+        runOnIdle { state = second }
+        waitForIdle()
+
+        assertFalse(first.isActive)
+        assertEquals(0f, first.velocity)
+        assertFalse(second.isActive)
+        assertFalse(node.isFastScrolling)
+    }
+
+    @Test
     fun detachDuringModeResetsState() = runSkikoComposeUiTest {
         val requester = FocusRequester()
         val state = RemoteFastScrollState()

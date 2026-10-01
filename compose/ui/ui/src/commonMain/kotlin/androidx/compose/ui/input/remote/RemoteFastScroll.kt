@@ -142,6 +142,8 @@ private class RemoteFastScrollElement(
         )
 
     override fun update(node: RemoteFastScrollNode) {
+        // The old state would stay active with its last velocity: end the mode before the swap.
+        if (node.state !== state) node.abortFastScroll()
         node.state = state
         node.axis = axis
         node.enabled = enabled
