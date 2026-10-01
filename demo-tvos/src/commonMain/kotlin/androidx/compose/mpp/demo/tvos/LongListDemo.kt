@@ -2,16 +2,23 @@ package androidx.compose.mpp.demo.tvos
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.remoteFastScroll
+import androidx.compose.foundation.gestures.rememberRemoteFastScrollState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -24,25 +31,37 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 
 private const val ROW_COUNT = 500
+private const val INDICATOR_DOTS = 15
 
 // 45 dp rows with 7 dp gaps are 90 pt and 14 pt at the scene's 1 dp = 2 pt, about 10 rows on a
 // 1080 pt screen. That matches the native reference list used to compare swipe momentum.
 private val ROW_HEIGHT = 45.dp
 private val ROW_SPACING = 7.dp
 
-/** A long list of focusable rows for judging how far a Siri Remote swipe carries focus. */
+/**
+ * A long list of focusable rows for judging how far a Siri Remote swipe carries focus. With
+ * [fastScroll] the list also uses [remoteFastScroll] and shows an app-side position indicator.
+ */
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
-fun LongListScreen(focusRequester: FocusRequester, onDismiss: () -> Unit) {
+fun LongListScreen(
+    focusRequester: FocusRequester,
+    onDismiss: () -> Unit,
+    fastScroll: Boolean = false,
+) {
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
     var focusedIndex by remember { mutableStateOf(0) }
+    val listState = rememberLazyListState()
+    val fastScrollState = rememberRemoteFastScrollState()
+    val fastActive = fastScroll && fastScrollState.isActive
 
-    Column(
+    Box(
         modifier =
             Modifier.fillMaxSize()
                 .background(Color(0xFF101418))
-                .padding(horizontal = 48.dp, vertical = 16.dp)
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyUp && event.key == Key.Back) {
                         onDismiss()
@@ -50,22 +69,63 @@ fun LongListScreen(focusRequester: FocusRequester, onDismiss: () -> Unit) {
                     } else false
                 }
     ) {
-        Text(
-            text = "Focused row: $focusedIndex",
-            fontSize = 20.sp,
-            color = Color(0xFF9CCC65),
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(ROW_SPACING),
-        ) {
-            items((0 until ROW_COUNT).toList()) { index ->
-                LongListRow(
-                    index = index,
-                    modifier = if (index == 0) Modifier.focusRequester(focusRequester) else Modifier,
-                    onFocused = { focusedIndex = index },
-                )
+        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 16.dp)) {
+            Text(
+                text =
+                    if (fastActive) {
+                        "Focused row: $focusedIndex   FAST ${fastScrollState.velocity.roundToInt()}"
+                    } else {
+                        "Focused row: $focusedIndex"
+                    },
+                fontSize = 20.sp,
+                color = Color(0xFF9CCC65),
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            LazyColumn(
+                state = listState,
+                modifier =
+                    Modifier.fillMaxSize()
+                        .then(
+                            if (fastScroll) {
+                                Modifier.remoteFastScroll(
+                                    scrollableState = listState,
+                                    orientation = Orientation.Vertical,
+                                    fastScrollState = fastScrollState,
+                                )
+                            } else Modifier
+                        ),
+                verticalArrangement = Arrangement.spacedBy(ROW_SPACING),
+            ) {
+                items((0 until ROW_COUNT).toList()) { index ->
+                    LongListRow(
+                        index = index,
+                        modifier = if (index == 0) Modifier.focusRequester(focusRequester) else Modifier,
+                        onFocused = { focusedIndex = index },
+                    )
+                }
+            }
+        }
+        if (fastActive) {
+            val highlighted =
+                (listState.firstVisibleItemIndex * INDICATOR_DOTS / ROW_COUNT)
+                    .coerceIn(0, INDICATOR_DOTS - 1)
+            Column(
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                repeat(INDICATOR_DOTS) { dot ->
+                    Box(
+                        modifier =
+                            Modifier.size(if (dot == highlighted) 14.dp else 8.dp)
+                                .background(
+                                    color =
+                                        if (dot == highlighted) Color(0xFF9CCC65)
+                                        else Color.White.copy(alpha = 0.35f),
+                                    shape = CircleShape,
+                                )
+                    )
+                }
             }
         }
     }
