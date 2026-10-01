@@ -21,7 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.indirect.IndirectPointerEvent
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.remote.RemoteFastScrollNode
 import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeDirection
 import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 
@@ -179,6 +181,13 @@ internal interface FocusOwner : FocusManager {
      * node left it to the keys.
      */
     fun dispatchRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode?
+
+    /**
+     * tvOS fork: the nearest [RemoteFastScrollNode] around the focused item, or around the
+     * container while it holds focus in the fast scrolling mode, that accepts a swipe in
+     * [direction]. `null` when there is none.
+     */
+    fun findRemoteFastScrollNode(direction: RemoteSwipeDirection): RemoteFastScrollNode? = null
 
     /** Dispatches an indirect pointer event through the compose hierarchy. */
     fun dispatchIndirectPointerEvent(event: IndirectPointerEvent): Boolean

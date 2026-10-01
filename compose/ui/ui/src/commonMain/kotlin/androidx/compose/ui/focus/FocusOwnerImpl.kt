@@ -43,11 +43,14 @@ import androidx.compose.ui.input.key.KeyEventType.Companion.KeyUp
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.remote.RemoteFastScrollNode
 import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeDirection
 import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.internal.requirePrecondition
 import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.DelegatingNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.NodeKind
 import androidx.compose.ui.node.Nodes
@@ -442,6 +445,33 @@ internal class FocusOwnerImpl(
         }
         focusTargetNode.remoteSwipeNodesIncludingSelf().fastForEach {
             if (it.onRemoteSwipe(event)) return it
+        }
+        return null
+    }
+
+    /**
+     * tvOS fork: walks the chain around the focused item, nearest first, and returns the first
+     * [RemoteFastScrollNode] that accepts [direction]. A node delegated to by another node is not
+     * in the chain, so the delegates of every visited node are searched too.
+     */
+    override fun findRemoteFastScrollNode(direction: RemoteSwipeDirection): RemoteFastScrollNode? {
+        if (focusInvalidationManager.hasPendingInvalidation()) return null
+
+        val focusTargetNode = findFocusTargetNode() ?: return null
+        focusTargetNode.visitAncestors(Nodes.Any, includeSelf = true) {
+            it.findFastScrollNode(direction)?.let { found -> return found }
+        }
+        return null
+    }
+
+    private fun Modifier.Node.findFastScrollNode(
+        direction: RemoteSwipeDirection
+    ): RemoteFastScrollNode? {
+        if (this is RemoteFastScrollNode && accepts(direction)) return this
+        if (this is DelegatingNode) {
+            forEachImmediateDelegate {
+                it.findFastScrollNode(direction)?.let { found -> return found }
+            }
         }
         return null
     }

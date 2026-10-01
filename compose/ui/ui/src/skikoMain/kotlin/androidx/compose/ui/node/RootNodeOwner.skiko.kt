@@ -61,7 +61,9 @@ import androidx.compose.ui.input.pointer.PointerInputEventProcessor
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.PositionCalculator
+import androidx.compose.ui.input.remote.RemoteFastScrollNode
 import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeDirection
 import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.layout.RootMeasurePolicy
@@ -394,6 +396,11 @@ internal class RootNodeOwner(
     // tvOS fork: swipes on the touch surface of a remote, delivered by the platform mediator.
     fun onRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? {
         return _owner.focusOwner.dispatchRemoteSwipe(event)
+    }
+
+    // tvOS fork: the node that fast scrolls for a swipe in [direction], if any.
+    fun findRemoteFastScrollNode(direction: RemoteSwipeDirection): RemoteFastScrollNode? {
+        return _owner.focusOwner.findRemoteFastScrollNode(direction)
     }
 
     /**

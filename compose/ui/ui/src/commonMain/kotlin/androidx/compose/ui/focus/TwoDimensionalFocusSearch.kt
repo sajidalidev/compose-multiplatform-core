@@ -26,6 +26,7 @@ import androidx.compose.ui.focus.FocusStateImpl.Active
 import androidx.compose.ui.focus.FocusStateImpl.ActiveParent
 import androidx.compose.ui.focus.FocusStateImpl.Captured
 import androidx.compose.ui.focus.FocusStateImpl.Inactive
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.Nodes
@@ -33,6 +34,7 @@ import androidx.compose.ui.node.requireLayoutNode
 import androidx.compose.ui.node.requireOwner
 import androidx.compose.ui.node.visitChildren
 import androidx.compose.ui.util.fastCoerceAtLeast
+import kotlin.math.abs
 
 private const val InvalidFocusDirection = "This function should only be used for 2-D focus search"
 private const val NoActiveChild = "ActiveParent must have a focusedChild"
@@ -230,6 +232,64 @@ private fun DelegatableNode.collectAccessibleChildren(
         }
     }
 }
+
+/**
+ * tvOS fork: the accessible child that is nearest to [anchor] along the main axis, for restoring
+ * focus after a fast scroll. A child whose extent contains the anchor has distance 0, others are
+ * measured to their nearer edge. Children outside this node's [focusRect] and children that are not
+ * placed are ignored. Ties within [FAST_SCROLL_TIE_PX] go to the child whose cross axis centre is
+ * closest to [crossAxisHint], or to the anchor's cross coordinate when the hint is NaN.
+ *
+ * @param anchor a point in root coordinates, the same space as [focusRect].
+ * @param isVertical whether the main axis of the container is vertical.
+ * @param crossAxisHint the cross axis centre of the item that was focused before, or NaN.
+ */
+internal fun FocusTargetNode.findAccessibleChildNearest(
+    anchor: Offset,
+    isVertical: Boolean,
+    crossAxisHint: Float,
+): FocusTargetNode? {
+    val children = MutableVector<FocusTargetNode>()
+    collectAccessibleChildren(children)
+    val bounds = focusRect()
+    val mainAnchor = if (isVertical) anchor.y else anchor.x
+    val crossTarget =
+        if (!crossAxisHint.isNaN()) crossAxisHint else if (isVertical) anchor.x else anchor.y
+
+    var best: FocusTargetNode? = null
+    var bestMain = Float.MAX_VALUE
+    var bestCross = Float.MAX_VALUE
+    children.forEach { child ->
+        if (!child.isEligibleForFocusSearch) return@forEach
+        val rect = child.focusRect()
+        if (!rect.overlaps(bounds)) return@forEach
+        val start = if (isVertical) rect.top else rect.left
+        val end = if (isVertical) rect.bottom else rect.right
+        val main =
+            when {
+                mainAnchor < start -> start - mainAnchor
+                mainAnchor > end -> mainAnchor - end
+                else -> 0f
+            }
+        val crossCentre = if (isVertical) rect.center.x else rect.center.y
+        val cross = abs(crossCentre - crossTarget)
+        val better =
+            when {
+                best == null -> true
+                main < bestMain - FAST_SCROLL_TIE_PX -> true
+                main > bestMain + FAST_SCROLL_TIE_PX -> false
+                else -> cross < bestCross
+            }
+        if (better) {
+            best = child
+            bestMain = main
+            bestCross = cross
+        }
+    }
+    return best
+}
+
+private const val FAST_SCROLL_TIE_PX = 0.5f
 
 // Iterate through this list of focus nodes and find best candidate in the specified direction.
 // TODO(b/182319711): For Left/Right focus moves, Consider finding the first candidate in the beam

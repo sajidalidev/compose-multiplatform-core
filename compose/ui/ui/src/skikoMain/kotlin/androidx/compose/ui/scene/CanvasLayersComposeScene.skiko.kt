@@ -35,7 +35,9 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerInputEvent
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.remote.RemoteFastScrollNode
 import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeDirection
 import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.node.RootNodeOwner
@@ -300,6 +302,13 @@ private class CanvasLayersComposeSceneImpl(
     // tvOS fork: swipes on the touch surface of a remote.
     override fun processRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? =
         focusedLayer?.onRemoteSwipe(event) ?: mainOwner.onRemoteSwipe(event)
+
+    // tvOS fork: the node that fast scrolls for a swipe, in the focused layer if there is one.
+    override fun processFindRemoteFastScrollNode(
+        direction: RemoteSwipeDirection
+    ): RemoteFastScrollNode? =
+        if (focusedLayer != null) focusedLayer?.findRemoteFastScrollNode(direction)
+        else mainOwner.findRemoteFastScrollNode(direction)
 
     override fun doMeasureAndLayout() {
         forEachOwner { it.measureAndLayout() }
@@ -668,6 +677,11 @@ private class CanvasLayersComposeSceneImpl(
         // tvOS fork: swipes on the touch surface of a remote.
         fun onRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? {
             return owner.onRemoteSwipe(event)
+        }
+
+        // tvOS fork: the node that fast scrolls for a swipe.
+        fun findRemoteFastScrollNode(direction: RemoteSwipeDirection): RemoteFastScrollNode? {
+            return owner.findRemoteFastScrollNode(direction)
         }
 
         override fun setOutsidePointerEventListener(

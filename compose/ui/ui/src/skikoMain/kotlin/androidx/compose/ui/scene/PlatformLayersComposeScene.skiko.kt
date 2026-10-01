@@ -24,7 +24,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerInputEvent
+import androidx.compose.ui.input.remote.RemoteFastScrollNode
 import androidx.compose.ui.input.remote.RemoteSwipe
+import androidx.compose.ui.input.remote.RemoteSwipeDirection
 import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.node.LayoutNode
@@ -198,6 +200,11 @@ private class PlatformLayersComposeSceneImpl(
     // tvOS fork: swipes on the touch surface of a remote.
     override fun processRemoteSwipe(event: RemoteSwipe): RemoteSwipeModifierNode? =
         mainOwner.onRemoteSwipe(event)
+
+    // tvOS fork: the node that fast scrolls for a swipe.
+    override fun processFindRemoteFastScrollNode(
+        direction: RemoteSwipeDirection
+    ): RemoteFastScrollNode? = mainOwner.findRemoteFastScrollNode(direction)
 
     override fun doMeasureAndLayout() {
         mainOwner.measureAndLayout()
