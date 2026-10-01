@@ -52,6 +52,11 @@ internal const val FAST_ENTRY_FOCUS_MOVES = 11
 /** Key repeat focus moves of a hold that switch to fast scrolling, the mode replacing the next tick. Measured. */
 internal const val FAST_HOLD_ENTRY_MOVES = 10
 
+/**
+ * Whether a held directional key repeats on the native cadence, [KEY_REPEAT_DELAYS_MS] then
+ * [KEY_REPEAT_STEADY_MS]. When `false` it repeats after 500 ms and then every 50 ms, as before.
+ */
+internal const val KEY_REPEAT_NATIVE_CADENCE = true
 /** Delays before the first three repeats of a held directional key, in milliseconds. Measured 510, 210, 140. */
 internal val KEY_REPEAT_DELAYS_MS = longArrayOf(500L, 200L, 150L)
 /** Delay between later repeats of a held directional key, in milliseconds. Measured. */
@@ -81,6 +86,8 @@ internal const val FAST_REST_STOP_S = 0.05
 internal const val FAST_MAX_FRAME_DT_S = 0.1
 /** Frames spent retrying to focus an item when fast scroll exits. Provisional guess. */
 internal const val FAST_EXIT_FOCUS_RETRY_FRAMES = 3
+/** Frames spent retrying the lookup of a fast scroll container at the lift of a swipe, while focus invalidation is pending. Provisional guess. */
+internal const val FAST_ENTRY_LOOKUP_RETRY_FRAMES = 3
 
 /** Scroll distance per pad unit used when the scene gives no better figure, in dp. Derived from the existing gates, 40 dp over 0.30. */
 internal const val FALLBACK_DP_PER_PAD_UNIT = 133f

@@ -49,6 +49,8 @@ import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.remote.RemoteFastScrollExitAnchor
+import androidx.compose.ui.input.remote.RemoteFastScrollNode
 import androidx.compose.ui.input.remote.RemoteSwipe
 import androidx.compose.ui.input.remote.RemoteSwipeDirection
 import androidx.compose.ui.input.remote.RemoteSwipeModifierNode
@@ -180,6 +182,9 @@ private const val DISPATCH_HOLD_S = 0.08
 // terminal event, e.g. when the keyboard overlay appears; without this the display link would
 // poll forever.
 private const val INDIRECT_CONTACT_MAX_AGE_S = 2.0
+// A finger that pans fast scrolling can stay down far longer than a swipe, so a contact that lost
+// its terminal event is only given up on after this long. An empty pad ends it sooner.
+private const val FAST_SCROLL_CONTACT_MAX_AGE_S = 20.0
 // A clickpad press this long before a contact starts belongs to that contact: finger contact
 // physically precedes the switch closing, and the two sensors stamp their events a few ms apart.
 private const val PRESS_SUPPRESSION_WINDOW_S = 0.15
@@ -297,6 +302,38 @@ private class IndirectTouchState(
      * after it belong to somebody else.
      */
     var flingTrackingClosed = false
+
+    /**
+     * Set when the contact began while fast scrolling ran: it pans and flicks the scroll instead of
+     * swiping, so the swipe recognition never looks at it. [fastScrollLifted] is set once the
+     * physics was told that the finger left.
+     */
+    var fastScrollContact: Boolean = false
+    var fastScrollLifted: Boolean = false
+}
+
+/**
+ * One run of the fast scrolling mode of a container: the node it drives, the physics, and what the
+ * exit needs. [holdKeyId] is the held key that drives it, if any.
+ */
+private class FastScrollSession(
+    val node: RemoteFastScrollNode,
+    val physics: TvFastScrollPhysics,
+    val vertical: Boolean,
+    var holdKeyId: Long?,
+    val samplingToken: Int,
+    val hadController: Boolean,
+    val startedAt: Double,
+) {
+    val exitRetries = TvRetryBudget(FAST_EXIT_FOCUS_RETRY_FRAMES)
+
+    /** The sign of the last scroll requested, which says which end the content ended at. */
+    var lastRequested: Float = 0f
+
+    /** Set once the physics asked to exit and focus is being restored, so nothing scrolls any more. */
+    var exitReason: String? = null
+    var exitAnchor: RemoteFastScrollExitAnchor = RemoteFastScrollExitAnchor.Center
+    var controllerLost: Boolean = false
 }
 
 /**
@@ -618,8 +655,16 @@ internal class ComposeSceneMediator(
     // it ran cancelled the momentum or disposed this mediator underneath it.
     private var momentumCancellations = 0
     private val swipeChain = TvSwipeChainTracker()
-    private val keyRepeatInitialDelayMs = 500L
-    private val keyRepeatIntervalMs = 50L
+
+    // The fast scrolling mode in progress, if any. It holds a sampling session of its own, which
+    // drives its display link, and the ids of presses that never reach the scene while it runs.
+    private var fastScroll: FastScrollSession? = null
+    private val swallowedFastScrollKeyIds = mutableSetOf<Long>()
+
+    // A lookup of a fast scroll container that found none at the lift of a swipe, retried while the
+    // burst of that swipe keeps the display link running: focus invalidation may be pending.
+    private var pendingFastEntryKey: Key? = null
+    private val fastEntryRetries = TvRetryBudget(FAST_ENTRY_LOOKUP_RETRY_FRAMES)
     private val platformScreenReader =
         object : PlatformScreenReader {
             override var isActive by mutableStateOf(false)
@@ -856,7 +901,11 @@ internal class ComposeSceneMediator(
         activitiesHandler.onActivitiesEnded(touches.count())
         // Only the cancelled contacts are forgotten: another contact of the same gesture may
         // still be live and must keep its verdict.
-        touches.forEach { indirectTouches.remove((it as UITouch).hashCode()) }
+        touches.forEach {
+            indirectTouches.remove((it as UITouch).hashCode())?.let { state ->
+                if (state.fastScrollContact) liftFastScrollContact(state, CACurrentMediaTime())
+            }
+        }
         cancelMomentum("cancelled")
         updateIndirectSampling()
         scene.cancelPointerInput()
@@ -922,11 +971,17 @@ internal class ComposeSceneMediator(
                         )
                     }
                 indirectTouches[key] = state
+                fastScroll?.let {
+                    // A finger landing during fast scroll pans and flicks it. It never swipes.
+                    state.fastScrollContact = true
+                    it.physics.onTouchDown(CACurrentMediaTime())
+                    swipeDebug { "FAST touch down" }
+                }
                 updateIndirectSampling()
             }
             TouchesEventKind.MOVED -> {
                 val state = indirectTouches[key] ?: return
-                if (!state.usesOracle) return
+                if (!state.usesOracle || state.fastScrollContact) return
                 val position = touchOracle.position()
                 if (position == null) {
                     swipeDebug { "SWIPE moved sample=null" }
@@ -939,6 +994,10 @@ internal class ComposeSceneMediator(
             TouchesEventKind.ENDED -> {
                 val state = indirectTouches.remove(key) ?: return
                 updateIndirectSampling()
+                if (state.fastScrollContact) {
+                    liftFastScrollContact(state, CACurrentMediaTime())
+                    return
+                }
                 if (state.usesOracle) {
                     if (state.verdict == IndirectTouchVerdict.PENDING) {
                         // The only sample of this contact arrives at its end: an origin with no
@@ -1011,7 +1070,7 @@ internal class ComposeSceneMediator(
         timestamp: Double,
         logSample: Boolean,
     ) {
-        if (!state.usesOracle) return
+        if (!state.usesOracle || state.fastScrollContact) return
         if (!state.flingTrackingClosed) {
             when (state.verdict) {
                 IndirectTouchVerdict.CANDIDATE,
@@ -1076,10 +1135,13 @@ internal class ComposeSceneMediator(
      */
     private fun onOracleSample(sample: Offset?) {
         if (isEvaluatingOracleSample) return
-        if (indirectTouches.isEmpty() && momentumBurst == null) return
+        if (indirectTouches.isEmpty() && momentumBurst == null && fastScroll == null) return
         isEvaluatingOracleSample = true
         try {
             val timestamp = CACurrentMediaTime()
+            // Fast scrolling runs first: it reads the contacts it owns and the frame it scrolls in.
+            stepFastScroll(timestamp, sample)
+            retryFastScrollEntry()
             // A burst runs while the pad reports no finger, i.e. exactly when there is no sample.
             stepBurst(timestamp)
             // Runs on every tick, empty pad included: a contact whose ENDED is lost while the pad
@@ -1123,7 +1185,8 @@ internal class ComposeSceneMediator(
         while (iterator.hasNext()) {
             val state = iterator.next()
             val maxAge =
-                when (state.verdict) {
+                if (state.fastScrollContact) FAST_SCROLL_CONTACT_MAX_AGE_S
+                else when (state.verdict) {
                     IndirectTouchVerdict.CANCELLED -> SWIPE_MAX_DURATION_S + DISPATCH_HOLD_S
                     // A dispatched contact is only in this map while its finger is still down, and
                     // its later samples carry the travel its momentum is sized from, so it is kept
@@ -1137,6 +1200,7 @@ internal class ComposeSceneMediator(
             if (timestamp - state.beginTimestamp > maxAge) {
                 iterator.remove()
                 removed = true
+                if (state.fastScrollContact) liftFastScrollContact(state, timestamp)
             }
         }
         if (removed) {
@@ -1295,6 +1359,7 @@ internal class ComposeSceneMediator(
             return
         }
         if (burstSource === state) momentumBurst?.raiseRows(rows)
+        if (swipeChain.shouldEnterFastMode()) tryEnterFastScrollFromSwipe(key)
     }
 
     /**
@@ -1385,10 +1450,248 @@ internal class ComposeSceneMediator(
         momentumBurst = null
         burstSource = null
         burstBusyRetries = 0
+        pendingFastEntryKey = null
         if (isSamplingFling) {
             isSamplingFling = false
             touchOracle.endSampling(flingSamplingToken)
         }
+    }
+
+    /**
+     * Looks for a fast scroll container for the chain of swipes that just lifted and enters the mode
+     * when there is one. Without one nothing changes and the burst goes on. A miss is retried on the
+     * next ticks of that burst, since focus invalidation may be pending.
+     */
+    private fun tryEnterFastScrollFromSwipe(key: Key) {
+        if (fastScroll != null || !isFocusEnabled) return
+        val node = findFastScrollNode(key, "swipe")
+        if (node != null) {
+            startFastScroll(node, key, "swipe", swipeChain.focusMoves, holdKeyId = null)
+        } else if (momentumBurst != null) {
+            pendingFastEntryKey = key
+            fastEntryRetries.reset()
+        }
+    }
+
+    /** Retries a lookup that found no fast scroll container at the lift, a few ticks at most. */
+    private fun retryFastScrollEntry() {
+        val key = pendingFastEntryKey ?: return
+        if (
+            fastScroll != null ||
+                momentumBurst == null ||
+                swipeChain.key != key ||
+                !swipeChain.shouldEnterFastMode() ||
+                !fastEntryRetries.tryConsume()
+        ) {
+            pendingFastEntryKey = null
+            return
+        }
+        val node = findFastScrollNode(key, "swipe") ?: return
+        pendingFastEntryKey = null
+        startFastScroll(node, key, "swipe", swipeChain.focusMoves, holdKeyId = null)
+    }
+
+    /**
+     * Enters fast scrolling in place of the repeat of the held [key] that would be its eleventh
+     * move. Returns `false` when there is no container to take it, and the hold keeps repeating.
+     */
+    private fun tryEnterFastScrollFromHold(key: Key, keyId: Long, moves: Int): Boolean {
+        if (fastScroll != null || !isFocusEnabled || tvOSTextInputService.isKeyboardVisible) {
+            return false
+        }
+        val node = findFastScrollNode(key, "hold") ?: return false
+        return startFastScroll(node, key, "hold", moves, holdKeyId = keyId)
+    }
+
+    private fun findFastScrollNode(key: Key, source: String): RemoteFastScrollNode? {
+        val direction = remoteSwipeDirection(key)
+        // A disabled modifier must stay inert, so the node is asked once more whether it accepts.
+        val node = scene.findRemoteFastScrollNode(direction)?.takeIf { it.accepts(direction) }
+        if (node == null) {
+            swipeDebug { "FAST lookup miss source=$source direction=$direction" }
+        }
+        return node
+    }
+
+    /** Takes focus on [node] and starts driving it. Returns `false`, with nothing changed, if it refused. */
+    private fun startFastScroll(
+        node: RemoteFastScrollNode,
+        key: Key,
+        source: String,
+        moves: Int,
+        holdKeyId: Long?,
+    ): Boolean {
+        val cancellations = momentumCancellations
+        val began = scene.runRemoteInput { node.beginFastScroll() }
+        // The callbacks of the app ran: they can dispose this mediator underneath the call.
+        if (cancellations != momentumCancellations) {
+            node.abortFastScroll()
+            return false
+        }
+        if (!began) {
+            swipeDebug { "FAST begin refused source=$source" }
+            return false
+        }
+        val now = CACurrentMediaTime()
+        val physics = TvFastScrollPhysics()
+        val forward = isForwardKey(key)
+        if (holdKeyId != null) physics.startFromHold(now, forward)
+        else physics.startFromSwipe(now, forward)
+        fastScroll =
+            FastScrollSession(
+                node = node,
+                physics = physics,
+                vertical = !isHorizontalFlingKey(key),
+                holdKeyId = holdKeyId,
+                samplingToken = touchOracle.beginSampling(),
+                hadController = touchOracle.isAvailable,
+                startedAt = now,
+            )
+        // The burst of the swipe that entered the mode is replaced by it.
+        cancelMomentum("fast scroll")
+        swipeDebug {
+            "FAST enter source=$source key=${directionName(key)} moves=$moves v=${physics.velocity}"
+        }
+        return true
+    }
+
+    /**
+     * Drives fast scrolling for one display-link tick: feeds the fingers on the pad to the physics,
+     * scrolls the container by what it asks for, and ends the mode when it says so.
+     */
+    private fun stepFastScroll(timestamp: Double, sample: Offset?) {
+        val session = fastScroll ?: return
+        val node = session.node
+        if (!isFocusEnabled) {
+            // A layer or another scene took the input: what is left of the mode is not ours.
+            forceEndFastScroll("inactive", restore = true)
+            return
+        }
+        if (!node.isFastScrolling) {
+            // The node ended itself: it was detached, or the app took focus from it.
+            forceEndFastScroll("abort", restore = false)
+            return
+        }
+        if (!node.enabled) {
+            forceEndFastScroll("disabled", restore = true)
+            return
+        }
+        val physics = session.physics
+        if (session.hadController && !session.controllerLost && !touchOracle.isAvailable) {
+            session.controllerLost = true
+            swipeDebug { "FAST controller lost" }
+            if (session.holdKeyId != null) {
+                session.holdKeyId = null
+                physics.onHoldReleased(timestamp)
+            }
+        }
+        for (state in indirectTouches.values.toList()) {
+            if (!state.fastScrollContact || state.fastScrollLifted) continue
+            if (sample == null) {
+                // The pad is empty: the finger left whether or not its ENDED arrived yet.
+                liftFastScrollContact(state, timestamp)
+            } else {
+                feedFastScrollContact(session, state, sample, timestamp)
+            }
+        }
+        if (session.exitReason != null) {
+            attemptFastScrollExit(session)
+            return
+        }
+        val dp = physics.step(timestamp)
+        if (dp != 0f) {
+            val density = scene.density.density
+            session.lastRequested = dp
+            val consumedPx =
+                scene.runRemoteInput { node.fastScrollBy(dp * density, physics.velocity * density) }
+            // The callbacks of the app ran: they can dispose this mediator underneath the call.
+            if (fastScroll !== session) return
+            physics.onConsumed(dp, consumedPx / density)
+        }
+        if (physics.shouldExit) {
+            session.exitReason = fastScrollExitReason(physics.hitEnd, physics.velocity)
+            attemptFastScrollExit(session)
+        }
+    }
+
+    private fun feedFastScrollContact(
+        session: FastScrollSession,
+        state: IndirectTouchState,
+        sample: Offset,
+        timestamp: Double,
+    ) {
+        if (!state.usesOracle) return
+        if (state.verdict == IndirectTouchVerdict.PENDING) {
+            resolveIndirectTouchOrigin(state, sample, timestamp)
+        }
+        updateIndirectMinRadius(state, sample)
+        // A finger that began on the ring only counts once it crossed into the centre pad.
+        if (state.ringOrigin && !ringOriginMayArm(state.minRadius)) return
+        val physics = session.physics
+        val wasMoving = physics.velocity != 0f
+        physics.onTouchSample(fastScrollForwardPosition(sample, session.vertical), timestamp)
+        if (wasMoving && physics.velocity == 0f) {
+            swipeDebug { "FAST stop by=rest" }
+        }
+    }
+
+    /** Tells the physics that the finger of [state] left the pad, once. */
+    private fun liftFastScrollContact(state: IndirectTouchState, timestamp: Double) {
+        if (state.fastScrollLifted) return
+        state.fastScrollLifted = true
+        fastScroll?.physics?.onTouchUp(timestamp)
+        swipeDebug { "FAST touch up" }
+    }
+
+    /**
+     * Hands focus back to the item at the anchor the physics ended at. The item may not be composed
+     * yet, so the search is retried for a few frames; after that the mode ends with the container
+     * still holding focus, which the next directional key moves into an item.
+     */
+    private fun attemptFastScrollExit(session: FastScrollSession) {
+        val physics = session.physics
+        val anchor = fastScrollExitAnchor(physics.hitEnd, session.lastRequested)
+        session.exitAnchor = anchor
+        val restored = scene.runRemoteInput { session.node.endFastScroll(anchor) }
+        // The callbacks of the app ran: they can dispose this mediator underneath the call.
+        if (fastScroll !== session) return
+        if (restored) {
+            finishFastScroll(session, restored = true)
+        } else if (!session.exitRetries.tryConsume()) {
+            session.node.abortFastScroll()
+            finishFastScroll(session, restored = false)
+        }
+    }
+
+    /**
+     * Ends the mode now, for a reason that is not the physics. With [restore] focus goes back to the
+     * item at the centre if there is one, otherwise the container is only released.
+     */
+    private fun forceEndFastScroll(reason: String, restore: Boolean) {
+        val session = fastScroll ?: return
+        session.exitReason = reason
+        var restored = false
+        if (restore && session.node.isFastScrolling) {
+            session.exitAnchor = RemoteFastScrollExitAnchor.Center
+            restored =
+                scene.runRemoteInput { session.node.endFastScroll(RemoteFastScrollExitAnchor.Center) }
+            if (fastScroll !== session) return
+        }
+        if (!restored) session.node.abortFastScroll()
+        finishFastScroll(session, restored)
+    }
+
+    private fun finishFastScroll(session: FastScrollSession, restored: Boolean) {
+        if (fastScroll !== session) return
+        fastScroll = null
+        touchOracle.endSampling(session.samplingToken)
+        swipeChain.reset()
+        swipeDebug {
+            val duration = (CACurrentMediaTime() - session.startedAt) * 1000.0
+            "FAST exit reason=${session.exitReason ?: "abort"} anchor=${session.exitAnchor} " +
+                "v=${session.physics.velocity} duration=${duration}ms"
+        }
+        swipeDebug { "FAST focus restored=$restored" }
     }
 
     private fun dispatchIndirectSwipe(state: IndirectTouchState, timestamp: Double) {
@@ -1699,6 +2002,9 @@ internal class ComposeSceneMediator(
 
     private fun dispose() {
         touchOracle.removeSampleListener(oracleSampleListener)
+        // The scene is about to close, so the container is released without any focus work.
+        forceEndFastScroll("dispose", restore = false)
+        swallowedFastScrollKeyIds.clear()
         cancelMomentum("dispose")
         swipeChain.reset()
         if (isSamplingOracle) {
@@ -1913,6 +2219,23 @@ internal class ComposeSceneMediator(
 
             when (phase) {
                 UIPressPhase.UIPressPhaseBegan -> {
+                    // A key swallowed by a mode that ended since is not owed a release any more.
+                    swallowedFastScrollKeyIds.remove(keyId)
+                    fastScroll?.let { session ->
+                        // Any press that starts while fast scrolling runs is a new one: the held
+                        // key, which drives the mode, only ever repeats.
+                        session.physics.stop()
+                        swipeDebug { "FAST stop by=press key=${event.key}" }
+                        if (isMenu) {
+                            // Back is delivered below as usual, to the item that has focus again.
+                            forceEndFastScroll("menu", restore = true)
+                        } else if (isSwallowedInFastScroll(event.key)) {
+                            // The container holds focus: an arrow would make the default handling
+                            // enter a child, and Select would click nothing.
+                            swallowedFastScrollKeyIds.add(keyId)
+                            return@forEach
+                        }
+                    }
                     // A new Began for this press id means the previous press is over even if
                     // its Ended never arrived (the system keyboard overlay can absorb it), so
                     // clear here what the Ended phase would have cleared.
@@ -1944,12 +2267,30 @@ internal class ComposeSceneMediator(
                             repeatingKeys[keyId]?.isActive != true
                     ) {
                         val repeatEvent = event.copy(isRepeat = true)
+                        // Only a directional key repeats on the native cadence and can end in fast
+                        // scrolling, which replaces the repeat that would be its eleventh move.
+                        val isDirectional = isDirectionalKey(event.key)
+                        val hold = TvHoldRepeatTracker(isDirectional)
+                        hold.onInitialPress(downConsumed)
                         repeatingKeys[keyId] =
                             CoroutineScope(coroutineContext).launch {
-                                delay(keyRepeatInitialDelayMs)
                                 while (isActive) {
-                                    onKeyboardEvent(repeatEvent, keyId)
-                                    delay(keyRepeatIntervalMs)
+                                    delay(hold.nextDelayMs())
+                                    if (
+                                        hold.shouldTryFastEntry() &&
+                                            tryEnterFastScrollFromHold(event.key, keyId, hold.moves)
+                                    ) {
+                                        break
+                                    }
+                                    val consumed = onKeyboardEvent(repeatEvent, keyId)
+                                    if (isDirectional) {
+                                        swipeDebug {
+                                            "KEYREPEAT tick=${hold.repeatIndex + 1} " +
+                                                "key=${directionName(event.key)} " +
+                                                "consumed=$consumed moves=${hold.moves}"
+                                        }
+                                    }
+                                    hold.onRepeatDispatched(consumed)
                                 }
                             }
                     }
@@ -1957,6 +2298,20 @@ internal class ComposeSceneMediator(
                 UIPressPhase.UIPressPhaseEnded,
                 UIPressPhase.UIPressPhaseCancelled -> {
                     repeatingKeys.remove(keyId)?.cancel()
+                    fastScroll?.let { session ->
+                        if (session.holdKeyId == keyId) {
+                            // The held key drove the mode: releasing it brakes the scroll.
+                            session.holdKeyId = null
+                            session.physics.onHoldReleased(CACurrentMediaTime())
+                            swallowedFastScrollKeyIds.add(keyId)
+                            swipeDebug { "FAST hold released" }
+                        }
+                    }
+                    if (swallowedFastScrollKeyIds.remove(keyId)) {
+                        // The scene never saw its KeyDown while the container held focus, or must
+                        // not see a KeyUp for the key that drove the mode.
+                        return@forEach
+                    }
                     val isEnded = phase == UIPressPhase.UIPressPhaseEnded
                     // Two-way policy:
                     //  - Ended: the KeyUp is dispatched whatever happened on the KeyDown, so a
