@@ -240,14 +240,20 @@ private fun DelegatableNode.collectAccessibleChildren(
  * placed are ignored. Ties within [FAST_SCROLL_TIE_PX] go to the child whose cross axis centre is
  * closest to [crossAxisHint], or to the anchor's cross coordinate when the hint is NaN.
  *
+ * With an [exitScore] the lowest absolute score decides first, and the distance to the anchor only
+ * breaks ties.
+ *
  * @param anchor a point in root coordinates, the same space as [focusRect].
  * @param isVertical whether the main axis of the container is vertical.
  * @param crossAxisHint the cross axis centre of the item that was focused before, or NaN.
+ * @param exitScore scores a child from its leading edge relative to this node, its size and the size
+ *   of this node along the main axis, lower is better, or `null` to use the anchor alone.
  */
 internal fun FocusTargetNode.findAccessibleChildNearest(
     anchor: Offset,
     isVertical: Boolean,
     crossAxisHint: Float,
+    exitScore: ((leading: Float, size: Float, containerSize: Float) -> Float)? = null,
 ): FocusTargetNode? {
     val children = MutableVector<FocusTargetNode>()
     collectAccessibleChildren(children)
@@ -257,6 +263,7 @@ internal fun FocusTargetNode.findAccessibleChildNearest(
         if (!crossAxisHint.isNaN()) crossAxisHint else if (isVertical) anchor.x else anchor.y
 
     var best: FocusTargetNode? = null
+    var bestScore = 0f
     var bestMain = Float.MAX_VALUE
     var bestCross = Float.MAX_VALUE
     children.forEach { child ->
@@ -273,15 +280,25 @@ internal fun FocusTargetNode.findAccessibleChildNearest(
             }
         val crossCentre = if (isVertical) rect.center.x else rect.center.y
         val cross = abs(crossCentre - crossTarget)
+        val score =
+            if (exitScore == null) 0f
+            else {
+                val boundsStart = if (isVertical) bounds.top else bounds.left
+                val boundsSize = if (isVertical) bounds.height else bounds.width
+                abs(exitScore(start - boundsStart, end - start, boundsSize))
+            }
         val better =
             when {
                 best == null -> true
+                score < bestScore - FAST_SCROLL_TIE_PX -> true
+                score > bestScore + FAST_SCROLL_TIE_PX -> false
                 main < bestMain - FAST_SCROLL_TIE_PX -> true
                 main > bestMain + FAST_SCROLL_TIE_PX -> false
                 else -> cross < bestCross
             }
         if (better) {
             best = child
+            bestScore = score
             bestMain = main
             bestCross = cross
         }

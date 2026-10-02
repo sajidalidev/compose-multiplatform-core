@@ -27,9 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.remote.RemoteFastScrollAxis
 import androidx.compose.ui.input.remote.RemoteFastScrollModifierNode
 import androidx.compose.ui.input.remote.RemoteFastScrollState
+import androidx.compose.ui.node.CompositionLocalConsumerModifierNode
 import androidx.compose.ui.node.DelegatingNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.TraversableNode
+import androidx.compose.ui.node.currentValueOf
 import androidx.compose.ui.platform.InspectorInfo
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -42,9 +44,11 @@ import kotlinx.coroutines.launch
  * no remote it is inert, and without this modifier no scroll container changes.
  *
  * While the mode runs, focus rests on the container and [fastScrollState] is updated. When it ends,
- * focus lands on the item at the centre of the viewport, and the container does not scroll to bring
- * that item into view. The scroll mutex of [scrollableState] is held at [MutatePriority.UserInput]
- * for the duration of the mode, so animations such as bring into view do not fight the scroll.
+ * focus lands on the item that [LocalBringIntoViewSpec] would scroll the least to rest, the item
+ * nearest to the centre among equals, and the container then brings it into view as for any other
+ * focus change. The scroll mutex of [scrollableState] is held at [MutatePriority.UserInput] for the
+ * duration of the mode, so animations such as bring into view do not fight the scroll, and is
+ * released right before focus moves back to an item.
  *
  * Sample usage:
  * ```
@@ -153,7 +157,7 @@ internal class RemoteFastScrollScrollableNode(
     private var fastScrollState: RemoteFastScrollState,
     private var enabled: Boolean,
     private var reverseDirection: Boolean,
-) : DelegatingNode(), TraversableNode {
+) : DelegatingNode(), TraversableNode, CompositionLocalConsumerModifierNode {
     // Lets tests find the node from a descendant modifier.
     override val traverseKey: Any = RemoteFastScrollTraverseKey
 
@@ -204,6 +208,8 @@ internal class RemoteFastScrollScrollableNode(
             enabled = enabled,
             onStart = ::startSession,
             onEnd = ::endSession,
+            onExitFocus = ::endSession,
+            exitScore = ::exitScore,
             onScrollBy = ::scrollBy,
         )
 
@@ -230,6 +236,9 @@ internal class RemoteFastScrollScrollableNode(
         sessionJob = null
         job?.cancel()
     }
+
+    private fun exitScore(leading: Float, size: Float, containerSize: Float): Float =
+        currentValueOf(LocalBringIntoViewSpec).calculateScrollDistance(leading, size, containerSize)
 
     private fun scrollBy(delta: Float): Float {
         val signed = if (reverseDirection) -delta else delta

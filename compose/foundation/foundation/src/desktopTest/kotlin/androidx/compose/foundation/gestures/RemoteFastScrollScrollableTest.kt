@@ -43,6 +43,7 @@ import androidx.compose.ui.test.SkikoComposeUiTest
 import androidx.compose.ui.test.runSkikoComposeUiTest
 import androidx.compose.ui.unit.dp
 import java.lang.reflect.Method
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -378,7 +379,7 @@ class RemoteFastScrollScrollableTest {
     }
 
     @Test
-    fun lazyColumnCentreItemIsFocusedAndPlacedAfterLongScroll() = runSkikoComposeUiTest {
+    fun lazyColumnPivotItemIsFocusedAndPlacedAfterLongScroll() = runSkikoComposeUiTest {
         setList { h ->
             requestFocus(h, 0)
             assertEquals(setOf(0), h.focused)
@@ -390,51 +391,51 @@ class RemoteFastScrollScrollableTest {
             driver.longScrollAndEnd(totalPx = 8000, stepPx = 100)
             // No idle wait between the last scroll and the exit: the same input call did both.
             waitForIdle()
-
-            val expected = (8000 + viewport / 2) / itemHeight
-            assertEquals(setOf(expected), h.focused)
-            val info = assertNotNull(h.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == expected })
-            assertTrue(info.offset <= viewport / 2 && viewport / 2 < info.offset + info.size)
+            val chosen = h.focused.single()
+            assertTrue(chosen in h.composed)
             assertFalse(h.fastState.isActive)
+
+            // The item with the leading edge nearest to the pivot at 30 percent of the viewport.
+            val pivot = 0.3f * viewport
+            val nearest = (8000 + pivot) / itemHeight
+            assertTrue(abs(chosen - nearest) <= 1f, "chosen=$chosen pivot item=$nearest")
         }
     }
 
     @Test
-    fun exitDoesNotScrollToTheBringIntoViewPivot() = runSkikoComposeUiTest {
+    fun exitSettlesTheFocusedItemAtTheBringIntoViewRestPosition() = runSkikoComposeUiTest {
         setList { h ->
-            // Sanity check of the setup: with the pivot spec a plain focus move does scroll.
-            requestFocus(h, 5)
-            mainClock.advanceTimeBy(2000)
-            val before = h.listState.firstVisibleItemScrollOffset + h.listState.firstVisibleItemIndex * itemHeight
-            requestFocus(h, 7)
-            mainClock.advanceTimeBy(2000)
-            val after = h.listState.firstVisibleItemScrollOffset + h.listState.firstVisibleItemIndex * itemHeight
-            assertTrue(after != before, "the pivot spec should scroll on a normal focus move")
-
+            requestFocus(h, 0)
             val driver = driver(h.found)
             assertTrue(driver.begin())
+            fun position() =
+                h.listState.firstVisibleItemScrollOffset + h.listState.firstVisibleItemIndex * itemHeight
             var atExit = -1
-            var itemTopAtExit = -1
             driver.input {
-                driver.scrollBy(4003f)
+                var left = 8003
+                while (left > 100) {
+                    driver.scrollBy(100f)
+                    left -= 100
+                }
+                driver.scrollBy(left.toFloat())
                 assertTrue(driver.endNoInput())
-                atExit = h.listState.firstVisibleItemIndex * itemHeight + h.listState.firstVisibleItemScrollOffset
+                atExit = position()
             }
-            val expected = h.focused.single()
-            fun top() =
-                assertNotNull(h.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == expected }).offset
-            itemTopAtExit = top()
             waitForIdle()
             mainClock.advanceTimeBy(2000)
             waitForIdle()
 
-            assertEquals(setOf(expected), h.focused)
-            assertEquals(
-                atExit,
-                h.listState.firstVisibleItemIndex * itemHeight + h.listState.firstVisibleItemScrollOffset,
+            val chosen = h.focused.single()
+            val info =
+                assertNotNull(h.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == chosen })
+            val residual = abs(position() - atExit)
+            println("fast scroll exit residual scroll: $residual px (item pitch $itemHeight px)")
+            assertTrue(residual < itemHeight, "residual=$residual")
+            assertTrue(
+                abs(pivotSpec.calculateScrollDistance(info.offset.toFloat(), info.size.toFloat(), viewport.toFloat())) <= 1f
             )
-            assertEquals(itemTopAtExit, top())
             assertFalse(h.listState.isScrollInProgress)
+            assertFalse(h.fastState.isActive)
         }
     }
 

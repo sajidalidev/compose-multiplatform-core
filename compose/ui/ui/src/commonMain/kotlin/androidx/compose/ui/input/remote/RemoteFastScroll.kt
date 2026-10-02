@@ -76,6 +76,12 @@ public class RemoteFastScrollState {
  *
  * @param onStart invoked when the mode starts, after focus moved to the container.
  * @param onEnd invoked when the mode ends for any reason.
+ * @param onExitFocus invoked right before focus moves back to an item when the mode ends, so the
+ *   caller can release what it holds for the mode and let the item be brought into view.
+ * @param exitScore scores an item for the focus that is restored when the mode ends normally, from
+ *   its leading edge relative to the container, its size and the size of the container along the
+ *   axis. The item with the lowest absolute score gets focus, ties go to the item nearest to the
+ *   centre. With `null` the item at the centre gets focus.
  */
 @ExperimentalComposeUiApi
 @JsName("funRemoteFastScrollModifierNode")
@@ -85,6 +91,8 @@ public fun RemoteFastScrollModifierNode(
     enabled: Boolean = true,
     onStart: () -> Unit = {},
     onEnd: () -> Unit = {},
+    onExitFocus: () -> Unit = {},
+    exitScore: ((leading: Float, size: Float, containerSize: Float) -> Float)? = null,
     onScrollBy: (delta: Float) -> Float,
 ): RemoteFastScrollModifierNode =
     RemoteFastScrollNode(
@@ -93,6 +101,8 @@ public fun RemoteFastScrollModifierNode(
         enabled = enabled,
         onStart = onStart,
         onEnd = onEnd,
+        onExitFocus = onExitFocus,
+        exitScore = exitScore,
         onScrollBy = onScrollBy,
     )
 
@@ -138,6 +148,8 @@ private class RemoteFastScrollElement(
             enabled = enabled,
             onStart = {},
             onEnd = {},
+            onExitFocus = {},
+            exitScore = null,
             onScrollBy = onScrollBy,
         )
 
@@ -192,6 +204,8 @@ internal class RemoteFastScrollNode(
     var enabled: Boolean,
     var onStart: () -> Unit,
     var onEnd: () -> Unit,
+    var onExitFocus: () -> Unit,
+    var exitScore: ((leading: Float, size: Float, containerSize: Float) -> Float)?,
     var onScrollBy: (Float) -> Float,
 ) : DelegatingNode(), RemoteFastScrollModifierNode {
     // Not focusable outside the mode, so the focus search never stops on the container.
@@ -252,7 +266,10 @@ internal class RemoteFastScrollNode(
         return consumed
     }
 
-    /** Focuses the child at [anchor] and ends the mode. Returns `false` if no child was found. */
+    /**
+     * Focuses the child at [anchor] and ends the mode. Returns `false` if no child was found. Only
+     * the [RemoteFastScrollExitAnchor.Center] anchor is scored by [exitScore].
+     */
     fun endFastScroll(anchor: RemoteFastScrollExitAnchor): Boolean {
         if (!isFastScrolling) return false
         val rect = focusTarget.focusRect()
@@ -267,12 +284,17 @@ internal class RemoteFastScrollNode(
                     else Offset(rect.right, rect.center.y)
             }
         val child =
-            focusTarget.findAccessibleChildNearest(anchorPoint, isVertical, crossAxisHint)
-                ?: return false
+            focusTarget.findAccessibleChildNearest(
+                anchorPoint,
+                isVertical,
+                crossAxisHint,
+                if (anchor == RemoteFastScrollExitAnchor.Center) exitScore else null,
+            ) ?: return false
 
         isEnding = true
         val focused =
             try {
+                onExitFocus()
                 child.requestFocus(FocusDirection.Enter)
             } finally {
                 isEnding = false

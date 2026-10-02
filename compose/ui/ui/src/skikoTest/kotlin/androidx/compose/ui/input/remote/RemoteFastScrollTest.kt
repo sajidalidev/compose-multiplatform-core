@@ -272,6 +272,46 @@ class RemoteFastScrollTest {
         assertEquals(1, ended)
     }
 
+    private fun SkikoComposeUiTest.focusedAfterEnd(
+        exitScore: ((Float, Float, Float) -> Float)?
+    ): Int {
+        val requesters = List(9) { FocusRequester() }
+        val focused = BooleanArray(9)
+        val state = RemoteFastScrollState()
+        setContent {
+            Column(
+                Modifier.height(270.dp)
+                    .width(50.dp)
+                    .testFastScroll(state, exitScore = exitScore)
+            ) {
+                requesters.forEachIndexed { i, r ->
+                    Box(
+                        Modifier.size(50.dp, 30.dp)
+                            .focusRequester(r)
+                            .onFocusChanged { focused[i] = it.isFocused }
+                            .focusable()
+                    )
+                }
+            }
+        }
+        focus(requesters[0])
+        assertTrue(begin())
+        assertTrue(end())
+        return focused.indexOf(true)
+    }
+
+    @Test
+    fun endWithExitScoreFocusesChildNearestThePreferredPosition() = runSkikoComposeUiTest {
+        // The leading edge of the child should rest at 30 percent of the container.
+        val index = focusedAfterEnd { leading, _, containerSize -> leading - 0.3f * containerSize }
+        assertEquals(3, index)
+    }
+
+    @Test
+    fun endWithoutExitScoreFocusesCentreChild() = runSkikoComposeUiTest {
+        assertEquals(4, focusedAfterEnd(null))
+    }
+
     @Test
     fun endAtEndAnchorFocusesLastChild() = runSkikoComposeUiTest {
         val requesters = List(5) { FocusRequester() }
@@ -464,14 +504,16 @@ class RemoteFastScrollTest {
         state: RemoteFastScrollState,
         onStart: () -> Unit = {},
         onEnd: () -> Unit = {},
-    ): Modifier = this then DelegatingElement(state, onStart, onEnd)
+        exitScore: ((Float, Float, Float) -> Float)? = null,
+    ): Modifier = this then DelegatingElement(state, onStart, onEnd, exitScore)
 
     private class DelegatingElement(
         val state: RemoteFastScrollState,
         val onStart: () -> Unit = {},
         val onEnd: () -> Unit = {},
+        val exitScore: ((Float, Float, Float) -> Float)? = null,
     ) : ModifierNodeElement<DelegatingTestNode>() {
-        override fun create() = DelegatingTestNode(state, onStart, onEnd)
+        override fun create() = DelegatingTestNode(state, onStart, onEnd, exitScore)
 
         override fun update(node: DelegatingTestNode) {}
 
@@ -484,6 +526,7 @@ class RemoteFastScrollTest {
         state: RemoteFastScrollState,
         onStart: () -> Unit,
         onEnd: () -> Unit,
+        exitScore: ((Float, Float, Float) -> Float)?,
     ) : DelegatingNode() {
         val fastScroll =
             delegate(
@@ -492,6 +535,7 @@ class RemoteFastScrollTest {
                     axis = RemoteFastScrollAxis.Vertical,
                     onStart = onStart,
                     onEnd = onEnd,
+                    exitScore = exitScore,
                     onScrollBy = { it },
                 )
             )
