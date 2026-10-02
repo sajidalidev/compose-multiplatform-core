@@ -113,8 +113,14 @@ internal class TvSwipeChainTracker {
         private set
     var swipes: Int = 0
         private set
+    /** Every focus move of the chain, logged only. */
     var focusMoves: Int = 0
         private set
+    /** Focus moves of the momentum swipes of the chain, the count that enters fast scrolling. */
+    var momentumMoves: Int = 0
+        private set
+    private var currentIsMomentum = false
+    private var currentUncommittedMoves = 0
     private var lastLiftAt: Double? = null
     /** Seconds between the previous lift and the touch of the current swipe, [Double.MAX_VALUE] when it starts a chain. */
     var currentGap: Double = Double.MAX_VALUE
@@ -131,11 +137,14 @@ internal class TvSwipeChainTracker {
             this.key = key
             swipes = 0
             focusMoves = 0
+            momentumMoves = 0
             currentGap = Double.MAX_VALUE
         } else {
             currentGap = gap
         }
         lastLiftAt = null
+        currentIsMomentum = false
+        currentUncommittedMoves = 0
         swipes++
         return swipes
     }
@@ -144,20 +153,38 @@ internal class TvSwipeChainTracker {
     fun currentBoost(boost: Float = CHAIN_BOOST): Float =
         if (swipes >= 2 && currentGap <= CHAIN_BOOST_MAX_GAP_S) boost else 1f
 
+    /** Counts moves of the current swipe: toward the momentum count only once it is a momentum swipe. */
     fun onFocusMoved(count: Int = 1) {
         focusMoves += count
+        if (currentIsMomentum) momentumMoves += count else currentUncommittedMoves += count
+    }
+
+    /**
+     * Call with the planned rows of the current swipe whenever they change. Once they exceed one the
+     * swipe is a momentum swipe, and the moves it made as a single row so far count as well.
+     */
+    fun onSwipeRows(rows: Int) {
+        if (rows <= 1 || currentIsMomentum) return
+        currentIsMomentum = true
+        momentumMoves += currentUncommittedMoves
+        currentUncommittedMoves = 0
     }
 
     fun onLift(now: Double) {
         lastLiftAt = now
     }
 
-    fun shouldEnterFastMode(): Boolean = focusMoves >= FAST_ENTRY_FOCUS_MOVES
+    /** True when the current swipe is a momentum swipe and the chain's momentum moves reach the threshold. */
+    fun shouldEnterFastMode(): Boolean =
+        currentIsMomentum && momentumMoves >= FAST_ENTRY_MOMENTUM_MOVES
 
     fun reset() {
         key = null
         swipes = 0
         focusMoves = 0
+        momentumMoves = 0
+        currentIsMomentum = false
+        currentUncommittedMoves = 0
         lastLiftAt = null
         currentGap = Double.MAX_VALUE
     }

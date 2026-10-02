@@ -235,14 +235,100 @@ class TvSwipeMomentumTest {
         assertEquals(0, t.swipes)
     }
 
+    /** Dispatches a swipe at [at] of [rows] rows, counts its [moves] moves and lifts it 0.2 s later. */
+    private fun TvSwipeChainTracker.swipe(at: Double, rows: Int, moves: Int = rows): Boolean {
+        onSwipeDispatched(down, at)
+        onSwipeRows(rows)
+        onFocusMoved(moves)
+        onLift(at + 0.2)
+        return shouldEnterFastMode()
+    }
+
     @Test
-    fun chainEntersFastModeAtElevenMoves() {
+    fun singleRowSwipesNeverEnterFastMode() {
+        val t = TvSwipeChainTracker()
+        for (i in 0 until 20) assertFalse(t.swipe(1.0 + i * 0.5, 1))
+        assertEquals(20, t.focusMoves)
+        assertEquals(0, t.momentumMoves)
+    }
+
+    @Test
+    fun momentumSwipesEnterAtLiftOfThird() {
+        val t = TvSwipeChainTracker()
+        assertFalse(t.swipe(1.0, 5))
+        assertFalse(t.swipe(1.5, 5))
+        assertEquals(10, t.momentumMoves)
+        assertTrue(t.swipe(2.0, 5))
+        assertEquals(15, t.momentumMoves)
+    }
+
+    @Test
+    fun singleSwipesBetweenMomentumSwipesNeitherCountNorReset() {
+        val t = TvSwipeChainTracker()
+        assertFalse(t.swipe(1.0, 5))
+        assertFalse(t.swipe(1.5, 1))
+        assertEquals(5, t.momentumMoves)
+        assertFalse(t.swipe(2.0, 5))
+        assertFalse(t.swipe(2.5, 1))
+        assertEquals(10, t.momentumMoves)
+        assertTrue(t.swipe(3.0, 5))
+        assertEquals(17, t.focusMoves)
+        assertEquals(5, t.swipes)
+    }
+
+    @Test
+    fun singleSwipeDoesNotEnterEvenOverThreshold() {
+        val t = TvSwipeChainTracker()
+        t.swipe(1.0, 5)
+        t.swipe(1.5, 5)
+        t.swipe(2.0, 5)
+        assertFalse(t.swipe(2.5, 1))
+        assertEquals(15, t.momentumMoves)
+    }
+
+    @Test
+    fun directionChangeResetsMomentumMoves() {
+        val t = TvSwipeChainTracker()
+        t.swipe(1.0, 5)
+        t.swipe(1.5, 5)
+        t.onSwipeDispatched(Key.DirectionUp, 2.0)
+        assertEquals(0, t.momentumMoves)
+        t.onSwipeRows(5)
+        t.onFocusMoved(5)
+        assertFalse(t.shouldEnterFastMode())
+        assertEquals(5, t.momentumMoves)
+    }
+
+    @Test
+    fun chainTimeoutResetsMomentumMoves() {
+        val t = TvSwipeChainTracker()
+        t.swipe(1.0, 5)
+        t.swipe(1.5, 5)
+        assertFalse(t.swipe(1.7 + CHAIN_MAX_GAP_S + 0.5, 5))
+        assertEquals(5, t.momentumMoves)
+    }
+
+    @Test
+    fun swipeThatGrowsBeforeLiftCountsAllItsMoves() {
         val t = TvSwipeChainTracker()
         t.onSwipeDispatched(down, 1.0)
-        t.onFocusMoved(10)
-        assertFalse(t.shouldEnterFastMode())
+        t.onSwipeRows(1)
         t.onFocusMoved()
-        assertTrue(t.shouldEnterFastMode())
+        assertEquals(0, t.momentumMoves)
+        t.onSwipeRows(4)
+        assertEquals(1, t.momentumMoves)
+        t.onFocusMoved(3)
+        assertEquals(4, t.momentumMoves)
+        assertEquals(4, t.focusMoves)
+    }
+
+    @Test
+    fun resetClearsMomentumMoves() {
+        val t = TvSwipeChainTracker()
+        t.swipe(1.0, 5)
+        t.reset()
+        assertEquals(0, t.momentumMoves)
+        assertFalse(t.shouldEnterFastMode())
     }
 
     @Test

@@ -62,8 +62,11 @@ internal const val CHAIN_BOOST = 1.0f
 /** Longest lift to touch gap that earns [CHAIN_BOOST]. Measured, low confidence. */
 internal const val CHAIN_BOOST_MAX_GAP_S = 0.45
 
-/** Focus moves within one chain that switch to fast scrolling. Measured and fitted. */
-internal const val FAST_ENTRY_FOCUS_MOVES = 11
+/**
+ * Focus moves of the momentum swipes (more than one row) within one chain that switch to fast
+ * scrolling. Single row swipes do not count. Measured and fitted.
+ */
+internal const val FAST_ENTRY_MOMENTUM_MOVES = 11
 /** Key repeat focus moves of a hold that switch to fast scrolling, the mode replacing the next tick. Measured. */
 internal const val FAST_HOLD_ENTRY_MOVES = 10
 
