@@ -119,6 +119,9 @@ internal class TvSwipeChainTracker {
     /** Focus moves of the momentum swipes of the chain, the count that enters fast scrolling. */
     var momentumMoves: Int = 0
         private set
+    /** Momentum swipes of the chain, each counted once when it becomes a momentum swipe. */
+    var momentumSwipes: Int = 0
+        private set
     private var currentIsMomentum = false
     private var currentUncommittedMoves = 0
     private var lastLiftAt: Double? = null
@@ -138,6 +141,7 @@ internal class TvSwipeChainTracker {
             swipes = 0
             focusMoves = 0
             momentumMoves = 0
+            momentumSwipes = 0
             currentGap = Double.MAX_VALUE
         } else {
             currentGap = gap
@@ -166,6 +170,7 @@ internal class TvSwipeChainTracker {
     fun onSwipeRows(rows: Int) {
         if (rows <= 1 || currentIsMomentum) return
         currentIsMomentum = true
+        momentumSwipes++
         momentumMoves += currentUncommittedMoves
         currentUncommittedMoves = 0
     }
@@ -174,15 +179,18 @@ internal class TvSwipeChainTracker {
         lastLiftAt = now
     }
 
-    /** True when the current swipe is a momentum swipe and the chain's momentum moves reach the threshold. */
+    /** True when the current swipe is a momentum swipe and the chain's momentum swipes and moves reach their thresholds. */
     fun shouldEnterFastMode(): Boolean =
-        currentIsMomentum && momentumMoves >= FAST_ENTRY_MOMENTUM_MOVES
+        currentIsMomentum &&
+            momentumSwipes >= FAST_ENTRY_MOMENTUM_SWIPES &&
+            momentumMoves >= FAST_ENTRY_MOMENTUM_MOVES
 
     fun reset() {
         key = null
         swipes = 0
         focusMoves = 0
         momentumMoves = 0
+        momentumSwipes = 0
         currentIsMomentum = false
         currentUncommittedMoves = 0
         lastLiftAt = null

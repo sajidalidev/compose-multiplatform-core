@@ -67,6 +67,11 @@ internal const val CHAIN_BOOST_MAX_GAP_S = 0.45
  * scrolling. Single row swipes do not count. Measured and fitted.
  */
 internal const val FAST_ENTRY_MOMENTUM_MOVES = 11
+/**
+ * Momentum swipes within one same direction chain needed before swipe entry to fast scrolling, on
+ * top of [FAST_ENTRY_MOMENTUM_MOVES]. Native tvOS entered on the third full swipe in device measurements.
+ */
+internal const val FAST_ENTRY_MOMENTUM_SWIPES = 3
 /** Key repeat focus moves of a hold that switch to fast scrolling, the mode replacing the next tick. Measured. */
 internal const val FAST_HOLD_ENTRY_MOVES = 10
 

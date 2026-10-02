@@ -1725,7 +1725,8 @@ internal class ComposeSceneMediator(
         cancelMomentum("fast scroll")
         swipeDebug {
             val label = if (source == "swipe") "momentumMoves" else "moves"
-            "FAST enter source=$source key=${directionName(key)} $label=$moves v=${physics.velocity}"
+            val swipesPart = if (source == "swipe") " momentumSwipes=${swipeChain.momentumSwipes}" else ""
+            "FAST enter source=$source key=${directionName(key)} $label=$moves$swipesPart v=${physics.velocity}"
         }
         return true
     }
@@ -1890,7 +1891,7 @@ internal class ComposeSceneMediator(
         swipeDebug {
             val gap = swipeChain.currentGap
             "CHAIN swipes=$swipes moves=${swipeChain.focusMoves} " +
-                "momentumMoves=${swipeChain.momentumMoves} gap=${if (gap == Double.MAX_VALUE) "none" else "${gap * 1000.0}ms"}"
+                "momentumMoves=${swipeChain.momentumMoves} momentumSwipes=${swipeChain.momentumSwipes} gap=${if (gap == Double.MAX_VALUE) "none" else "${gap * 1000.0}ms"}"
         }
         val rows = swipeRows(state)
         swipeChain.onSwipeRows(rows)

@@ -263,6 +263,67 @@ class TvSwipeMomentumTest {
     }
 
     @Test
+    fun twoSixRowSwipesDoNotEnterButThirdDoes() {
+        val t = TvSwipeChainTracker()
+        assertFalse(t.swipe(1.0, 6))
+        assertFalse(t.swipe(1.5, 6))
+        assertEquals(12, t.momentumMoves)
+        assertEquals(2, t.momentumSwipes)
+        assertTrue(t.swipe(2.0, 6))
+    }
+
+    @Test
+    fun threeThreeRowSwipesDoNotEnterButFourthDoes() {
+        val t = TvSwipeChainTracker()
+        assertFalse(t.swipe(1.0, 3))
+        assertFalse(t.swipe(1.5, 3))
+        assertFalse(t.swipe(2.0, 3))
+        assertEquals(9, t.momentumMoves)
+        assertTrue(t.swipe(2.5, 3))
+        assertEquals(12, t.momentumMoves)
+    }
+
+    @Test
+    fun growingSwipeCountsAsOneMomentumSwipe() {
+        val t = TvSwipeChainTracker()
+        t.onSwipeDispatched(down, 1.0)
+        t.onSwipeRows(1)
+        assertEquals(0, t.momentumSwipes)
+        t.onSwipeRows(2)
+        t.onSwipeRows(4)
+        t.onSwipeRows(6)
+        assertEquals(1, t.momentumSwipes)
+    }
+
+    @Test
+    fun singleRowSwipesDoNotCountOrResetMomentumSwipes() {
+        val t = TvSwipeChainTracker()
+        t.swipe(1.0, 6)
+        t.swipe(1.5, 1)
+        assertEquals(1, t.momentumSwipes)
+        t.swipe(2.0, 6)
+        t.swipe(2.5, 1)
+        assertEquals(2, t.momentumSwipes)
+        assertTrue(t.swipe(3.0, 6))
+        assertEquals(3, t.momentumSwipes)
+    }
+
+    @Test
+    fun directionChangeTimeoutAndResetClearMomentumSwipes() {
+        val t = TvSwipeChainTracker()
+        t.swipe(1.0, 6)
+        t.swipe(1.5, 6)
+        t.onSwipeDispatched(Key.DirectionUp, 2.0)
+        assertEquals(0, t.momentumSwipes)
+        t.swipe(3.0, 6)
+        t.swipe(3.5, 6)
+        assertFalse(t.swipe(3.7 + CHAIN_MAX_GAP_S + 0.5, 6))
+        assertEquals(1, t.momentumSwipes)
+        t.reset()
+        assertEquals(0, t.momentumSwipes)
+    }
+
+    @Test
     fun singleSwipesBetweenMomentumSwipesNeitherCountNorReset() {
         val t = TvSwipeChainTracker()
         assertFalse(t.swipe(1.0, 5))
