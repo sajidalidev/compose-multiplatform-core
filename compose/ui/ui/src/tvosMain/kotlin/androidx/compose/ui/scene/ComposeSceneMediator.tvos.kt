@@ -1824,7 +1824,17 @@ internal class ComposeSceneMediator(
         session.edgeWaiting = waiting
         session.node.setWaitingAtEdge(waiting)
         swipeDebug {
-            val phase = if (waiting) "start" else if (physics.hitEnd) "final" else "resume"
+            val phase = if (waiting) {
+                "start"
+            } else {
+                when (physics.lastEdgeWaitOutcome) {
+                    TvEdgeWaitOutcome.Timeout -> "final"
+                    TvEdgeWaitOutcome.Stopped -> "stop"
+                    TvEdgeWaitOutcome.Reversed -> "reverse"
+                    TvEdgeWaitOutcome.Slow -> "slow"
+                    else -> "resume"
+                }
+            }
             "FAST edge wait $phase waited=${(physics.edgeWaitedS * 1000.0).toLong()} t=${debugSeconds(timestamp)}"
         }
     }

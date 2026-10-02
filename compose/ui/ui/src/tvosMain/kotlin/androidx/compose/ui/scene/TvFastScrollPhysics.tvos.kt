@@ -24,6 +24,9 @@ private const val FAST_REST_TOLERANCE = 0.02f
 /** Shortfall in dp beyond which a scroll the container could not fully consume marks the end of the content. */
 internal const val FAST_END_SLACK_DP = 0.5f
 
+/** Why the last edge wait ended. */
+internal enum class TvEdgeWaitOutcome { None, Timeout, Consumed, Stopped, Reversed, Slow }
+
 /**
  * The motion of fast scrolling, in scene dp and seconds. Forward is toward the bottom or the right
  * of the screen. It coasts with exponential decay after a swipe or a flick, accelerates while a
@@ -44,6 +47,10 @@ internal class TvFastScrollPhysics {
 
     /** How long the current or the last edge wait lasted, in seconds, as of the last step. */
     var edgeWaitedS: Double = 0.0
+        private set
+
+    /** How the last edge wait ended, [TvEdgeWaitOutcome.None] before the first one ends. */
+    var lastEdgeWaitOutcome: TvEdgeWaitOutcome = TvEdgeWaitOutcome.None
         private set
 
     private var tau = FAST_TAU_S
@@ -122,11 +129,13 @@ internal class TvFastScrollPhysics {
         tau = FAST_TAU_S
         held = false
         stopped = false
-        if (isWaitingAtEdge && velocity != 0f && sign(velocity) != edgeSign) leaveEdgeWait()
+        if (isWaitingAtEdge && velocity != 0f && sign(velocity) != edgeSign) {
+            leaveEdgeWait(TvEdgeWaitOutcome.Reversed)
+        }
     }
 
     fun stop() {
-        leaveEdgeWait()
+        leaveEdgeWait(TvEdgeWaitOutcome.Stopped)
         velocity = 0f
         stopped = true
         held = false
@@ -159,7 +168,7 @@ internal class TvFastScrollPhysics {
         pendingPan = 0f
         if (isWaitingAtEdge) {
             if (delta != 0f && sign(delta) != edgeSign) {
-                leaveEdgeWait()
+                leaveEdgeWait(TvEdgeWaitOutcome.Reversed)
             } else {
                 delta = delta.coerceIn(-FAST_EDGE_WAIT_MAX_DELTA_DP, FAST_EDGE_WAIT_MAX_DELTA_DP)
             }
@@ -172,6 +181,11 @@ internal class TvFastScrollPhysics {
      * starts the edge wait, the velocity keeps running meanwhile, and consumption resuming ends it.
      */
     fun onConsumed(requested: Float, consumed: Float) {
+        if (isWaitingAtEdge && abs(requested) <= FAST_END_SLACK_DP && !held && !fingerDown) {
+            // Too slow to ever show consumption beyond the slack: not an end, the low speed exit applies.
+            leaveEdgeWait(TvEdgeWaitOutcome.Slow)
+            return
+        }
         if (abs(requested - consumed) > FAST_END_SLACK_DP) {
             if (!isWaitingAtEdge) {
                 edgeSince = lastStepAt
@@ -181,19 +195,22 @@ internal class TvFastScrollPhysics {
                 edgeWaitedS = lastStepAt - edgeSince
                 if (edgeWaitedS > FAST_EDGE_WAIT_S) finishEdgeWait()
             }
-        } else if (isWaitingAtEdge && abs(consumed) > FAST_END_SLACK_DP) {
-            leaveEdgeWait()
+        } else if (abs(consumed) > FAST_END_SLACK_DP) {
+            // Scrolling demonstrably resumed, so an earlier final end no longer holds.
+            hitEnd = false
+            leaveEdgeWait(TvEdgeWaitOutcome.Consumed)
         }
     }
 
-    private fun leaveEdgeWait() {
+    private fun leaveEdgeWait(outcome: TvEdgeWaitOutcome) {
         if (!isWaitingAtEdge) return
+        lastEdgeWaitOutcome = outcome
         edgeWaitedS = lastStepAt - edgeSince
         edgeSince = Double.NaN
     }
 
     private fun finishEdgeWait() {
-        leaveEdgeWait()
+        leaveEdgeWait(TvEdgeWaitOutcome.Timeout)
         hitEnd = true
         velocity = 0f
     }
@@ -203,6 +220,7 @@ internal class TvFastScrollPhysics {
         stopped = false
         hitEnd = false
         edgeSince = Double.NaN
+        lastEdgeWaitOutcome = TvEdgeWaitOutcome.None
     }
 
     private fun advanceClock(now: Double) {

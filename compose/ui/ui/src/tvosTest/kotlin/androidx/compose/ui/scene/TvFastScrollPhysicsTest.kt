@@ -15,6 +15,7 @@
  */
 package androidx.compose.ui.scene
 
+import androidx.compose.ui.input.remote.RemoteFastScrollExitAnchor
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.test.Test
@@ -401,14 +402,69 @@ class TvFastScrollPhysicsTest {
 
         frameWith(p, t + frame, 0f)
         t += frame
-        p.onHoldReleased(t)
         assertFalse(p.shouldExit)
         while (!p.hitEnd && t < 3.0) {
             t += frame
             frameWith(p, t, 0f)
         }
         assertTrue(p.hitEnd)
+        assertFalse(p.shouldExit)
+        p.onHoldReleased(t)
         assertTrue(p.shouldExit)
+    }
+
+    @Test
+    fun resumedScrollingClearsAStaleEndWhileTheDriveIsHeld() {
+        val p = TvFastScrollPhysics()
+        p.startFromHold(0.0, forward = true)
+        var t = 0.0
+        while (!p.hitEnd && t < 3.0) {
+            t += frame
+            frameWith(p, t, 0f)
+        }
+        assertTrue(p.hitEnd)
+        assertEquals(TvEdgeWaitOutcome.Timeout, p.lastEdgeWaitOutcome)
+        repeat(6) {
+            t += frame
+            frameWith(p, t, 1f)
+        }
+        assertFalse(p.hitEnd)
+        assertFalse(p.isWaitingAtEdge)
+        p.onHoldReleased(t)
+        assertFalse(p.hitEnd)
+        assertEquals("speed", fastScrollExitReason(p.hitEnd, p.velocity))
+        assertEquals(RemoteFastScrollExitAnchor.Center, fastScrollExitAnchor(p.hitEnd, 1f))
+    }
+
+    @Test
+    fun waitAtVeryLowSpeedLeavesWithoutDeclaringTheEnd() {
+        val p = TvFastScrollPhysics()
+        p.startFromSwipe(0.0, forward = true)
+        var t = 0.0
+        // Coast down to just above the speed where one frame requests the slack.
+        while (p.velocity > 45f) {
+            t += frame
+            frameWith(p, t, 1f)
+        }
+        t += frame
+        frameWith(p, t, 0f)
+        assertTrue(p.isWaitingAtEdge)
+        val waitStart = t
+        while (p.isWaitingAtEdge && t - waitStart < FAST_EDGE_WAIT_S - 2 * frame) {
+            t += frame
+            frameWith(p, t, 0f)
+        }
+        assertFalse(p.isWaitingAtEdge)
+        assertFalse(p.isWaitingAtEdge)
+        assertFalse(p.hitEnd)
+        assertEquals(TvEdgeWaitOutcome.Slow, p.lastEdgeWaitOutcome)
+        while (!p.shouldExit && t < 5.0) {
+            t += frame
+            frameWith(p, t, 0f)
+        }
+        assertTrue(p.shouldExit)
+        assertFalse(p.hitEnd)
+        assertEquals("speed", fastScrollExitReason(p.hitEnd, p.velocity))
     }
 
     @Test
