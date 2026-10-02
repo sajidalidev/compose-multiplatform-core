@@ -269,15 +269,145 @@ class TvFastScrollPhysicsTest {
         assertEquals(0f, p.step(0.1), 0.001f)
     }
 
+    /** Steps one frame at [t] and reports that the container consumed [gotFraction] of the request. */
+    private fun frameWith(p: TvFastScrollPhysics, t: Double, gotFraction: Float): Float {
+        val dp = p.step(t)
+        p.onConsumed(dp, dp * gotFraction)
+        return dp
+    }
+
     @Test
-    fun unconsumedDeltaSetsHitEnd() {
+    fun shortFrameStartsEdgeWaitInsteadOfEnding() {
         val p = swiping()
         p.onConsumed(100f, 99.7f)
-        assertFalse(p.hitEnd)
+        assertFalse(p.isWaitingAtEdge)
         assertEquals(FAST_SWIPE_ENTRY_VELOCITY_DP_S, p.velocity)
         p.onConsumed(100f, 40f)
+        assertTrue(p.isWaitingAtEdge)
+        assertFalse(p.hitEnd)
+        assertEquals(FAST_SWIPE_ENTRY_VELOCITY_DP_S, p.velocity)
+        assertFalse(p.shouldExit)
+    }
+
+    @Test
+    fun consumptionResumingContinuesWithDecayedVelocity() {
+        val p = swiping()
+        var t = 0.0
+        t += frame
+        frameWith(p, t, 0f)
+        assertTrue(p.isWaitingAtEdge)
+        val waitStart = t
+        val v0 = p.velocity
+        while (t - waitStart < 0.1) {
+            t += frame
+            frameWith(p, t, 0f)
+        }
+        t += frame
+        frameWith(p, t, 1f)
+        assertFalse(p.isWaitingAtEdge)
+        assertFalse(p.hitEnd)
+        val expected = v0 * exp(-(t - waitStart) / FAST_TAU_S).toFloat()
+        assertEquals(expected, p.velocity, expected * 0.02f)
+        assertTrue(p.step(t + frame) > 0f)
+    }
+
+    @Test
+    fun waitLongerThanTimeoutMakesTheEndFinal() {
+        val p = swiping()
+        var t = 0.0
+        while (!p.hitEnd && t < 2.0) {
+            t += frame
+            frameWith(p, t, 0f)
+        }
         assertTrue(p.hitEnd)
+        assertFalse(p.isWaitingAtEdge)
         assertEquals(0f, p.velocity)
+        assertTrue(p.shouldExit)
+        assertTrue(t <= FAST_EDGE_WAIT_S + 3 * frame)
+        assertTrue(t >= FAST_EDGE_WAIT_S)
+    }
+
+    @Test
+    fun requestWhileWaitingIsCapped() {
+        val p = TvFastScrollPhysics()
+        p.startFromHold(0.0, forward = true)
+        var t = 0.0
+        repeat(120) {
+            t += frame
+            p.step(t)
+        }
+        assertTrue(p.velocity > 1000f)
+        t += frame
+        frameWith(p, t, 0f)
+        assertTrue(p.isWaitingAtEdge)
+        t += frame
+        val dp = p.step(t)
+        assertEquals(FAST_EDGE_WAIT_MAX_DELTA_DP, dp, 0.001f)
+    }
+
+    @Test
+    fun oppositeFlickLeavesTheWait() {
+        val p = swiping()
+        frameWith(p, frame, 0f)
+        assertTrue(p.isWaitingAtEdge)
+        flick(p, 0.1, 0f, -1000f / FAST_PAN_GAIN_DP_PER_UNIT * 0.04f)
+        assertFalse(p.isWaitingAtEdge)
+        assertFalse(p.hitEnd)
+        assertTrue(p.velocity < 0f)
+        assertTrue(p.step(0.2) < 0f)
+    }
+
+    @Test
+    fun oppositePanLeavesTheWait() {
+        val p = swiping()
+        frameWith(p, frame, 0f)
+        p.onTouchDown(0.05)
+        p.onTouchSample(0.5f, 0.05)
+        p.onTouchSample(0.4f, 0.06)
+        assertTrue(p.step(0.07) < 0f)
+        assertFalse(p.isWaitingAtEdge)
+    }
+
+    @Test
+    fun stopDuringWaitEndsAsStop() {
+        val p = swiping()
+        frameWith(p, frame, 0f)
+        assertTrue(p.isWaitingAtEdge)
+        p.stop()
+        assertFalse(p.isWaitingAtEdge)
+        assertFalse(p.hitEnd)
+        assertEquals(0f, p.velocity)
+        assertTrue(p.shouldExit)
+    }
+
+    @Test
+    fun heldDriveResumesAfterShortWaitAndExitsAfterFinalEnd() {
+        val p = TvFastScrollPhysics()
+        p.startFromHold(0.0, forward = true)
+        var t = 0.0
+        t += frame
+        frameWith(p, t, 0f)
+        repeat(6) {
+            t += frame
+            frameWith(p, t, 0f)
+        }
+        assertTrue(p.isWaitingAtEdge)
+        t += frame
+        frameWith(p, t, 1f)
+        assertFalse(p.isWaitingAtEdge)
+        assertFalse(p.hitEnd)
+        assertTrue(p.velocity > FAST_HOLD_START_VELOCITY_DP_S)
+        assertFalse(p.shouldExit)
+
+        frameWith(p, t + frame, 0f)
+        t += frame
+        p.onHoldReleased(t)
+        assertFalse(p.shouldExit)
+        while (!p.hitEnd && t < 3.0) {
+            t += frame
+            frameWith(p, t, 0f)
+        }
+        assertTrue(p.hitEnd)
         assertTrue(p.shouldExit)
     }
 

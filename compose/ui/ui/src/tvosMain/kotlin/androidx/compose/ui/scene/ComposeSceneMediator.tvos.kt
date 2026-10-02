@@ -185,6 +185,10 @@ private const val INDIRECT_CONTACT_MAX_AGE_S = 2.0
 // A finger that pans fast scrolling can stay down far longer than a swipe, so a contact that lost
 // its terminal event is only given up on after this long. An empty pad ends it sooner.
 private const val FAST_SCROLL_CONTACT_MAX_AGE_S = 20.0
+/** Interval between two fast scroll steps beyond which the slow step is logged, in seconds. */
+private const val FAST_SLOW_STEP_S = 0.025
+/** Least time between two lines of the same rate limited fast scroll debug log, in seconds. */
+private const val FAST_LOG_INTERVAL_S = 0.1
 // A clickpad press this long before a contact starts belongs to that contact: finger contact
 // physically precedes the switch closing, and the two sensors stamp their events a few ms apart.
 private const val PRESS_SUPPRESSION_WINDOW_S = 0.15
@@ -362,6 +366,10 @@ private class FastScrollSession(
     var exitReason: String? = null
     var exitAnchor: RemoteFastScrollExitAnchor = RemoteFastScrollExitAnchor.Center
     var controllerLost: Boolean = false
+    var edgeWaiting: Boolean = false
+    var lastStepLogAt: Double = startedAt
+    var lastShortLogAt: Double = Double.NEGATIVE_INFINITY
+    var lastSlowLogAt: Double = Double.NEGATIVE_INFINITY
 }
 
 /**
@@ -1776,6 +1784,12 @@ internal class ComposeSceneMediator(
             attemptFastScrollExit(session)
             return
         }
+        val stepGapS = timestamp - session.lastStepLogAt
+        session.lastStepLogAt = timestamp
+        if (stepGapS > FAST_SLOW_STEP_S && timestamp - session.lastSlowLogAt >= FAST_LOG_INTERVAL_S) {
+            session.lastSlowLogAt = timestamp
+            swipeDebug { "FAST slow dt=${(stepGapS * 1000.0).toLong()} t=${debugSeconds(timestamp)}" }
+        }
         val dp = physics.step(timestamp)
         if (dp != 0f) {
             val density = scene.density.density
@@ -1785,10 +1799,33 @@ internal class ComposeSceneMediator(
             // The callbacks of the app ran: they can dispose this mediator underneath the call.
             if (fastScroll !== session) return
             physics.onConsumed(dp, consumedPx / density)
+            val gotDp = consumedPx / density
+            if (abs(dp - gotDp) > FAST_END_SLACK_DP &&
+                timestamp - session.lastShortLogAt >= FAST_LOG_INTERVAL_S
+            ) {
+                session.lastShortLogAt = timestamp
+                swipeDebug {
+                    "FAST short req=$dp got=$gotDp v=${physics.velocity} t=${debugSeconds(timestamp)}"
+                }
+            }
         }
+        syncEdgeWait(session, timestamp)
         if (physics.shouldExit) {
             session.exitReason = fastScrollExitReason(physics.hitEnd, physics.velocity)
             attemptFastScrollExit(session)
+        }
+    }
+
+    /** Mirrors the edge wait of the physics to the node state and logs its transitions. */
+    private fun syncEdgeWait(session: FastScrollSession, timestamp: Double) {
+        val physics = session.physics
+        val waiting = physics.isWaitingAtEdge
+        if (waiting == session.edgeWaiting) return
+        session.edgeWaiting = waiting
+        session.node.setWaitingAtEdge(waiting)
+        swipeDebug {
+            val phase = if (waiting) "start" else if (physics.hitEnd) "final" else "resume"
+            "FAST edge wait $phase waited=${(physics.edgeWaitedS * 1000.0).toLong()} t=${debugSeconds(timestamp)}"
         }
     }
 
@@ -1877,7 +1914,7 @@ internal class ComposeSceneMediator(
         swipeDebug {
             val duration = (CACurrentMediaTime() - session.startedAt) * 1000.0
             "FAST exit reason=${session.exitReason ?: "abort"} anchor=${session.exitAnchor} " +
-                "v=${session.physics.velocity} duration=${duration}ms"
+                "hitEnd=${session.physics.hitEnd} v=${session.physics.velocity} duration=${duration}ms"
         }
         swipeDebug { "FAST focus restored=$restored" }
     }

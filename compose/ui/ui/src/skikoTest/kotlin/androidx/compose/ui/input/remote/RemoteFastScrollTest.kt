@@ -500,6 +500,32 @@ class RemoteFastScrollTest {
         assertEquals(1, ended)
     }
 
+    @Test
+    fun waitingAtEdgeIsResetByEndAndAbort() = runSkikoComposeUiTest {
+        val requester = FocusRequester()
+        val state = RemoteFastScrollState()
+        setContent {
+            Box(Modifier.testFastScroll(state)) {
+                Box(Modifier.size(10.dp).focusRequester(requester).focusable())
+            }
+        }
+        focus(requester)
+        assertTrue(begin())
+        val node = assertNotNull(node())
+        assertFalse(state.isWaitingAtEdge)
+        runOnIdle { node.setWaitingAtEdge(true) }
+        assertTrue(state.isWaitingAtEdge)
+        assertTrue(end())
+        assertFalse(state.isWaitingAtEdge)
+
+        assertTrue(begin())
+        runOnIdle { node.setWaitingAtEdge(true) }
+        assertTrue(state.isWaitingAtEdge)
+        runOnIdle { node.abortFastScroll() }
+        assertFalse(state.isActive)
+        assertFalse(state.isWaitingAtEdge)
+    }
+
     private fun Modifier.testFastScroll(
         state: RemoteFastScrollState,
         onStart: () -> Unit = {},

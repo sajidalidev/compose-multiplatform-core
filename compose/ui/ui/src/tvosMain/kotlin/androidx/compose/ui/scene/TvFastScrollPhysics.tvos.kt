@@ -22,7 +22,7 @@ import kotlin.math.sign
 /** How far a resting finger may drift from its anchor, in pad units, and still count as resting. */
 private const val FAST_REST_TOLERANCE = 0.02f
 /** Shortfall in dp beyond which a scroll the container could not fully consume marks the end of the content. */
-private const val FAST_END_SLACK_DP = 0.5f
+internal const val FAST_END_SLACK_DP = 0.5f
 
 /**
  * The motion of fast scrolling, in scene dp and seconds. Forward is toward the bottom or the right
@@ -35,12 +35,25 @@ internal class TvFastScrollPhysics {
     var hitEnd: Boolean = false
         private set
 
+    /**
+     * Whether the container delivered less than asked and the scroll waits for more content, for at
+     * most [FAST_EDGE_WAIT_S], before the end is final.
+     */
+    val isWaitingAtEdge: Boolean
+        get() = !edgeSince.isNaN()
+
+    /** How long the current or the last edge wait lasted, in seconds, as of the last step. */
+    var edgeWaitedS: Double = 0.0
+        private set
+
     private var tau = FAST_TAU_S
     private var held = false
     private var heldSign = 1f
     private var fingerDown = false
     private var stopped = false
     private var lastStepAt = Double.NaN
+    private var edgeSince = Double.NaN
+    private var edgeSign = 0f
     private var pendingPan = 0f
     private var lastPosition = Float.NaN
     private var anchorPosition = Float.NaN
@@ -49,7 +62,7 @@ internal class TvFastScrollPhysics {
 
     /** No finger down, not held, and either slower than [FAST_EXIT_SPEED_DP_S], stopped or at the end. */
     val shouldExit: Boolean
-        get() = !fingerDown && !held && (abs(velocity) < FAST_EXIT_SPEED_DP_S || stopped || hitEnd)
+        get() = !fingerDown && !held && ((abs(velocity) < FAST_EXIT_SPEED_DP_S && !isWaitingAtEdge) || stopped || hitEnd)
 
     fun startFromSwipe(now: Double, forward: Boolean) {
         begin(now)
@@ -109,9 +122,11 @@ internal class TvFastScrollPhysics {
         tau = FAST_TAU_S
         held = false
         stopped = false
+        if (isWaitingAtEdge && velocity != 0f && sign(velocity) != edgeSign) leaveEdgeWait()
     }
 
     fun stop() {
+        leaveEdgeWait()
         velocity = 0f
         stopped = true
         held = false
@@ -121,6 +136,14 @@ internal class TvFastScrollPhysics {
     fun step(now: Double): Float {
         val dt = if (lastStepAt.isNaN()) 0.0 else (now - lastStepAt).coerceIn(0.0, FAST_MAX_FRAME_DT_S)
         lastStepAt = now
+        if (isWaitingAtEdge) {
+            edgeWaitedS = now - edgeSince
+            if (edgeWaitedS > FAST_EDGE_WAIT_S) {
+                finishEdgeWait()
+                pendingPan = 0f
+                return 0f
+            }
+        }
         var delta: Float
         if (held) {
             val a = heldSign * FAST_HOLD_ACCEL_DP_S2
@@ -134,20 +157,52 @@ internal class TvFastScrollPhysics {
         }
         delta += pendingPan
         pendingPan = 0f
+        if (isWaitingAtEdge) {
+            if (delta != 0f && sign(delta) != edgeSign) {
+                leaveEdgeWait()
+            } else {
+                delta = delta.coerceIn(-FAST_EDGE_WAIT_MAX_DELTA_DP, FAST_EDGE_WAIT_MAX_DELTA_DP)
+            }
+        }
         return delta
     }
 
+    /**
+     * Reports what the container consumed of the [requested] dp of the last [step]. A shortfall
+     * starts the edge wait, the velocity keeps running meanwhile, and consumption resuming ends it.
+     */
     fun onConsumed(requested: Float, consumed: Float) {
         if (abs(requested - consumed) > FAST_END_SLACK_DP) {
-            hitEnd = true
-            velocity = 0f
+            if (!isWaitingAtEdge) {
+                edgeSince = lastStepAt
+                edgeSign = sign(requested)
+                edgeWaitedS = 0.0
+            } else {
+                edgeWaitedS = lastStepAt - edgeSince
+                if (edgeWaitedS > FAST_EDGE_WAIT_S) finishEdgeWait()
+            }
+        } else if (isWaitingAtEdge && abs(consumed) > FAST_END_SLACK_DP) {
+            leaveEdgeWait()
         }
+    }
+
+    private fun leaveEdgeWait() {
+        if (!isWaitingAtEdge) return
+        edgeWaitedS = lastStepAt - edgeSince
+        edgeSince = Double.NaN
+    }
+
+    private fun finishEdgeWait() {
+        leaveEdgeWait()
+        hitEnd = true
+        velocity = 0f
     }
 
     private fun begin(now: Double) {
         lastStepAt = now
         stopped = false
         hitEnd = false
+        edgeSince = Double.NaN
     }
 
     private fun advanceClock(now: Double) {

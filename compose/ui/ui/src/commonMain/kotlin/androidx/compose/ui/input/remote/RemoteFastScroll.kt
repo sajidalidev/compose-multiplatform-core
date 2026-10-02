@@ -62,6 +62,13 @@ public class RemoteFastScrollState {
     /** Signed speed in pixels per second, positive toward the bottom or the right. Snapshot state. */
     public var velocity: Float by mutableFloatStateOf(0f)
         internal set
+
+    /**
+     * Whether the mode waits at an edge of the content for more of it, for example while a paged
+     * list loads the next page. Snapshot state.
+     */
+    public var isWaitingAtEdge: Boolean by mutableStateOf(false)
+        internal set
 }
 
 /**
@@ -266,6 +273,10 @@ internal class RemoteFastScrollNode(
         return consumed
     }
 
+    fun setWaitingAtEdge(waiting: Boolean) {
+        if (isFastScrolling) state.isWaitingAtEdge = waiting
+    }
+
     /**
      * Focuses the child at [anchor] and ends the mode. Returns `false` if no child was found. Only
      * the [RemoteFastScrollExitAnchor.Center] anchor is scored by [exitScore].
@@ -316,6 +327,7 @@ internal class RemoteFastScrollNode(
         isFastScrolling = false
         state.isActive = false
         state.velocity = 0f
+        state.isWaitingAtEdge = false
         onEnd()
     }
 

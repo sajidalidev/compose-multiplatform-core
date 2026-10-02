@@ -116,3 +116,7 @@ internal const val FAST_ENTRY_LOOKUP_RETRY_FRAMES = 3
 
 /** Scroll distance per pad unit used when the scene gives no better figure, in dp. Derived from the existing gates, 40 dp over 0.30. */
 internal const val FALLBACK_DP_PER_PAD_UNIT = 133f
+/** How long fast scroll waits for more content after the container delivered less than asked, before the end is final, in seconds. Provisional. */
+internal const val FAST_EDGE_WAIT_S = 0.4
+/** Cap on the dp requested per frame while fast scroll waits at an edge, so no backlog builds up. Provisional. */
+internal const val FAST_EDGE_WAIT_MAX_DELTA_DP = 40f
