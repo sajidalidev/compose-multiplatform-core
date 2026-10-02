@@ -44,6 +44,7 @@ import androidx.compose.ui.test.runSkikoComposeUiTest
 import androidx.compose.ui.unit.dp
 import java.lang.reflect.Method
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -378,6 +379,18 @@ class RemoteFastScrollScrollableTest {
         assertFalse(listState.isScrollInProgress)
     }
 
+    // 8020 px is 200 items plus half a pitch. The pivot sits at 90 px, so the item nearest to it
+    // at exit has its leading edge a quarter item (10 px) away from the rest position.
+    private val misalignedScroll = 8020
+
+    /** The index the exit should choose: leading edge nearest to the pivot at the given offset. */
+    private fun expectedChosen(scrollOffset: Int): Int {
+        // Item i has its leading edge at i * itemHeight - scrollOffset, and the pivot is where the
+        // spec rests a focused item. The nearest item is the one closest to scrollOffset + pivot.
+        val pivot = 0.3f * viewport
+        return ((scrollOffset + pivot) / itemHeight).roundToInt()
+    }
+
     @Test
     fun lazyColumnPivotItemIsFocusedAndPlacedAfterLongScroll() = runSkikoComposeUiTest {
         setList { h ->
@@ -388,17 +401,19 @@ class RemoteFastScrollScrollableTest {
             assertTrue(h.fastState.isActive)
             assertTrue(h.focused.isEmpty())
 
-            driver.longScrollAndEnd(totalPx = 8000, stepPx = 100)
+            driver.longScrollAndEnd(totalPx = misalignedScroll, stepPx = 100)
             // No idle wait between the last scroll and the exit: the same input call did both.
+            waitForIdle()
+            mainClock.advanceTimeBy(2000)
             waitForIdle()
             val chosen = h.focused.single()
             assertTrue(chosen in h.composed)
             assertFalse(h.fastState.isActive)
 
-            // The item with the leading edge nearest to the pivot at 30 percent of the viewport.
-            val pivot = 0.3f * viewport
-            val nearest = (8000 + pivot) / itemHeight
-            assertTrue(abs(chosen - nearest) <= 1f, "chosen=$chosen pivot item=$nearest")
+            assertEquals(expectedChosen(misalignedScroll), chosen)
+            // The item focused before the mode is released and gone from the composition.
+            assertFalse(0 in h.focused)
+            assertFalse(0 in h.composed)
         }
     }
 
@@ -410,9 +425,16 @@ class RemoteFastScrollScrollableTest {
             assertTrue(driver.begin())
             fun position() =
                 h.listState.firstVisibleItemScrollOffset + h.listState.firstVisibleItemIndex * itemHeight
+            fun distance(index: Int, scrollOffset: Int) =
+                pivotSpec.calculateScrollDistance(
+                    (index * itemHeight - scrollOffset).toFloat(),
+                    itemHeight.toFloat(),
+                    viewport.toFloat(),
+                )
             var atExit = -1
+            var chosenAtExit = -1
             driver.input {
-                var left = 8003
+                var left = misalignedScroll
                 while (left > 100) {
                     driver.scrollBy(100f)
                     left -= 100
@@ -420,16 +442,25 @@ class RemoteFastScrollScrollableTest {
                 driver.scrollBy(left.toFloat())
                 assertTrue(driver.endNoInput())
                 atExit = position()
+                chosenAtExit = h.focused.single()
             }
+            val misalignmentAtExit = abs(distance(chosenAtExit, misalignedScroll))
+            println("fast scroll exit misalignment: $misalignmentAtExit px, chosen=$chosenAtExit")
+            // The chosen item is clearly off the rest position when the mode ends.
+            assertTrue(misalignmentAtExit > 5f, "misalignment=$misalignmentAtExit")
+            assertEquals(expectedChosen(misalignedScroll), chosenAtExit)
             waitForIdle()
             mainClock.advanceTimeBy(2000)
             waitForIdle()
 
             val chosen = h.focused.single()
+            assertEquals(chosenAtExit, chosen)
             val info =
                 assertNotNull(h.listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == chosen })
             val residual = abs(position() - atExit)
             println("fast scroll exit residual scroll: $residual px (item pitch $itemHeight px)")
+            // Bring-into-view moved the list, by less than one item, and the item came to rest.
+            assertTrue(residual > 0, "residual=$residual")
             assertTrue(residual < itemHeight, "residual=$residual")
             assertTrue(
                 abs(pivotSpec.calculateScrollDistance(info.offset.toFloat(), info.size.toFloat(), viewport.toFloat())) <= 1f
