@@ -35,6 +35,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.DelegatingNode
 import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.requireLayoutNode
 import androidx.compose.ui.node.requireOwner
 import androidx.compose.ui.platform.InspectorInfo
 import kotlin.js.JsName
@@ -226,6 +227,7 @@ internal class RemoteFastScrollNode(
 
     private var crossAxisHint = Float.NaN
     private var isEnding = false
+    private var previousFocusTarget: FocusTargetNode? = null
 
     var isFastScrolling: Boolean = false
         private set
@@ -248,7 +250,8 @@ internal class RemoteFastScrollNode(
         if (isFastScrolling) return true
         if (!isAttached) return false
 
-        val focused = requireOwner().focusOwner.activeFocusTargetNode?.focusRect()
+        val previous = requireOwner().focusOwner.activeFocusTargetNode
+        val focused = previous?.focusRect()
         crossAxisHint =
             when {
                 focused == null -> Float.NaN
@@ -260,6 +263,7 @@ internal class RemoteFastScrollNode(
             focusTarget.focusability = Focusability.Never
             return false
         }
+        previousFocusTarget = previous?.takeIf { it !== focusTarget }
         isFastScrolling = true
         state.isActive = true
         onStart()
@@ -317,6 +321,38 @@ internal class RemoteFastScrollNode(
         return true
     }
 
+    /**
+     * Ends the mode by giving focus back to the target that had it when the mode began, for a
+     * container with no item to hand focus to. Returns `false` if there is no such target or it
+     * refuses focus; the mode then still runs.
+     */
+    fun restorePreviousFocusAndEnd(): Boolean {
+        if (!isFastScrolling) return false
+        val previous = previousFocusTarget ?: return false
+        if (!previous.isAttached || previous === focusTarget) return false
+
+        isEnding = true
+        val focused =
+            try {
+                onExitFocus()
+                previous.requestFocus(FocusDirection.Enter)
+            } finally {
+                isEnding = false
+            }
+        if (!focused) return false
+
+        focusTarget.focusability = Focusability.Never
+        finishFastScroll()
+        return true
+    }
+
+    /** Whether the target that had focus before the mode began sits on the layout node of the container. */
+    fun previousFocusIsOnContainer(): Boolean {
+        val previous = previousFocusTarget ?: return false
+        if (!previous.isAttached || !isAttached) return false
+        return previous.requireLayoutNode() === requireLayoutNode()
+    }
+
     /** Ends the mode without any focus work: resets the state and calls `onEnd`. */
     fun abortFastScroll() {
         if (!isFastScrolling) return
@@ -324,6 +360,7 @@ internal class RemoteFastScrollNode(
     }
 
     private fun finishFastScroll() {
+        previousFocusTarget = null
         isFastScrolling = false
         state.isActive = false
         state.velocity = 0f

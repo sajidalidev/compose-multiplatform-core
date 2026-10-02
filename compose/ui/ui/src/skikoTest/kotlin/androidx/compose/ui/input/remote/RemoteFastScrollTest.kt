@@ -34,6 +34,12 @@ import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.InternalKeyEvent
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.node.DelegatingNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.platform.LocalFocusManager
@@ -524,6 +530,143 @@ class RemoteFastScrollTest {
         runOnIdle { node.abortFastScroll() }
         assertFalse(state.isActive)
         assertFalse(state.isWaitingAtEdge)
+    }
+
+    @Test
+    fun containerWithOwnFocusableIsFoundInBothModifierOrders() = runSkikoComposeUiTest {
+        val before = RemoteFastScrollState()
+        val after = RemoteFastScrollState()
+        val beforeRequester = FocusRequester()
+        val afterRequester = FocusRequester()
+        setContent {
+            Column {
+                Box(
+                    Modifier.size(10.dp)
+                        .remoteFastScroll(before, RemoteFastScrollAxis.Vertical) { it }
+                        .focusRequester(beforeRequester)
+                        .focusable()
+                )
+                Box(
+                    Modifier.size(10.dp)
+                        .focusRequester(afterRequester)
+                        .focusable()
+                        .remoteFastScroll(after, RemoteFastScrollAxis.Vertical) { it }
+                )
+            }
+        }
+
+        focus(beforeRequester)
+        assertSame(before, node()?.state)
+        assertNull(node(RemoteSwipeDirection.Left))
+
+        focus(afterRequester)
+        assertSame(after, node()?.state)
+        assertNull(node(RemoteSwipeDirection.Left))
+    }
+
+    @Test
+    fun restoringPreviousFocusReturnsFocusToContainerWithoutChildren() = runSkikoComposeUiTest {
+        val requester = FocusRequester()
+        val state = RemoteFastScrollState()
+        var focused = false
+        var keys = 0
+        var scrolled = 0f
+        var ended = 0
+        setContent {
+            Box(
+                Modifier.size(50.dp)
+                    .focusRequester(requester)
+                    .onFocusChanged { focused = it.isFocused }
+                    .onKeyEvent {
+                        keys++
+                        true
+                    }
+                    .focusable()
+                    .remoteFastScroll(state, RemoteFastScrollAxis.Vertical) {
+                        scrolled += it
+                        it
+                    }
+            )
+        }
+        focus(requester)
+        assertTrue(focused)
+
+        assertTrue(begin())
+        assertFalse(focused)
+        assertTrue(state.isActive)
+        val node = assertNotNull(node())
+        runOnIdle { node.fastScrollBy(12f, 300f) }
+        assertEquals(12f, scrolled)
+        assertEquals(300f, state.velocity)
+        assertTrue(runOnIdle { scene.runRemoteInput { node.restorePreviousFocusAndEnd() } })
+        waitForIdle()
+
+        assertTrue(focused)
+        assertFalse(state.isActive)
+        assertEquals(0f, state.velocity)
+        assertFalse(node.isFastScrolling)
+        assertFalse(node.restorePreviousFocusAndEnd())
+        scene.sendKeyEvent(
+            KeyEvent(
+                nativeKeyEvent =
+                    InternalKeyEvent(
+                        key = Key.DirectionDown,
+                        type = KeyEventType.KeyDown,
+                        codePoint = 0,
+                        modifiers = PointerKeyboardModifiers(),
+                        nativeEvent = null,
+                    )
+            )
+        )
+        assertEquals(1, keys)
+    }
+
+    @Test
+    fun restoringPreviousFocusIsRefusedAfterAbort() = runSkikoComposeUiTest {
+        val requester = FocusRequester()
+        val state = RemoteFastScrollState()
+        setContent {
+            Box(
+                Modifier.size(50.dp)
+                    .remoteFastScroll(state, RemoteFastScrollAxis.Vertical) { it }
+                    .focusRequester(requester)
+                    .focusable()
+            )
+        }
+        focus(requester)
+        assertTrue(begin())
+        val node = assertNotNull(node())
+
+        runOnIdle { node.abortFastScroll() }
+
+        assertFalse(state.isActive)
+        assertFalse(runOnIdle { node.restorePreviousFocusAndEnd() })
+        assertFalse(node.previousFocusIsOnContainer())
+    }
+
+    @Test
+    fun endStillFocusesChildWhenContainerHasChildren() = runSkikoComposeUiTest {
+        val requester = FocusRequester()
+        val state = RemoteFastScrollState()
+        var childFocused = false
+        setContent {
+            Box(Modifier.size(50.dp).testFastScroll(state)) {
+                Box(
+                    Modifier.size(50.dp)
+                        .focusRequester(requester)
+                        .onFocusChanged { childFocused = it.isFocused }
+                        .focusable()
+                )
+            }
+        }
+        focus(requester)
+        assertTrue(begin())
+        assertFalse(childFocused)
+
+        assertTrue(end())
+
+        assertTrue(childFocused)
+        assertFalse(state.isActive)
     }
 
     private fun Modifier.testFastScroll(

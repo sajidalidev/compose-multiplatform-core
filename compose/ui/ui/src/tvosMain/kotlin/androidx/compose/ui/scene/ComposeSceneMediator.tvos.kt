@@ -1885,15 +1885,28 @@ internal class ComposeSceneMediator(
         val physics = session.physics
         val anchor = fastScrollExitAnchor(physics.hitEnd, session.lastRequested)
         session.exitAnchor = anchor
-        val restored = scene.runRemoteInput { session.node.endFastScroll(anchor) }
+        val node = session.node
+        val restored = scene.runRemoteInput { node.endFastScroll(anchor) }
         // The callbacks of the app ran: they can dispose this mediator underneath the call.
         if (fastScroll !== session) return
         if (restored) {
             finishFastScroll(session, restored = true)
-        } else if (!session.exitRetries.tryConsume()) {
-            session.node.abortFastScroll()
+        } else if (node.previousFocusIsOnContainer() || !session.exitRetries.tryConsume()) {
+            // No item to focus and the focus came from the container itself: nothing will be placed
+            // later, so skip the retries.
+            if (restoreFastScrollPreviousFocus(session)) return
+            if (fastScroll !== session) return
+            node.abortFastScroll()
             finishFastScroll(session, restored = false)
         }
+    }
+
+    private fun restoreFastScrollPreviousFocus(session: FastScrollSession): Boolean {
+        val restored = scene.runRemoteInput { session.node.restorePreviousFocusAndEnd() }
+        if (fastScroll !== session) return true
+        if (!restored) return false
+        finishFastScroll(session, restored = true, previous = true)
+        return true
     }
 
     /**
@@ -1909,12 +1922,24 @@ internal class ComposeSceneMediator(
             restored =
                 scene.runRemoteInput { session.node.endFastScroll(RemoteFastScrollExitAnchor.Center) }
             if (fastScroll !== session) return
+            if (!restored && session.node.isFastScrolling) {
+                restored = scene.runRemoteInput { session.node.restorePreviousFocusAndEnd() }
+                if (fastScroll !== session) return
+                if (restored) {
+                    finishFastScroll(session, restored = true, previous = true)
+                    return
+                }
+            }
         }
         if (!restored) session.node.abortFastScroll()
         finishFastScroll(session, restored)
     }
 
-    private fun finishFastScroll(session: FastScrollSession, restored: Boolean) {
+    private fun finishFastScroll(
+        session: FastScrollSession,
+        restored: Boolean,
+        previous: Boolean = false,
+    ) {
         if (fastScroll !== session) return
         fastScroll = null
         // The key that drove the mode may still be down: its release is not owed to the scene.
@@ -1926,7 +1951,7 @@ internal class ComposeSceneMediator(
             "FAST exit reason=${session.exitReason ?: "abort"} anchor=${session.exitAnchor} " +
                 "hitEnd=${session.physics.hitEnd} v=${session.physics.velocity} duration=${duration}ms"
         }
-        swipeDebug { "FAST focus restored=$restored" }
+        swipeDebug { "FAST focus restored=${if (previous) "previous" else restored}" }
     }
 
     private fun dispatchIndirectSwipe(state: IndirectTouchState, timestamp: Double) {

@@ -461,6 +461,13 @@ internal class FocusOwnerImpl(
         focusTargetNode.visitAncestors(Nodes.Any, includeSelf = true) {
             it.findFastScrollNode(direction)?.let { found -> return found }
         }
+        // `Modifier.focusable().remoteFastScroll()` puts the node below the focus target on the same
+        // layout node, where the ancestor walk does not reach.
+        focusTargetNode.visitLocalDescendants(Nodes.FocusTarget or Nodes.Any) {
+            // A node that delegates to a focus target counts as one: look at it before the stop.
+            it.findFastScrollNode(direction)?.let { found -> return found }
+            if (it.isKind(Nodes.FocusTarget)) return null
+        }
         return null
     }
 
