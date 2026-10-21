@@ -24,14 +24,32 @@ import kotlin.math.floor
  * at least [MOMENTUM_MIN_START_OFFSET] behind the pad centre and travel at least
  * [MOMENTUM_SINGLE_ROW_TRAVEL]; every other swipe moves one row. [startOffset] is how far behind the
  * centre the origin lies along the swipe axis, against the swipe direction (negative when it lies
- * past the centre), and `null` when it is unknown, as on the relative fallback path.
+ * past the centre), and `null` when it is unknown, as on the relative fallback path. A swipe with
+ * momentum moves the larger of the rows its [travel] and its [peakSpeed] (pad units per second
+ * along the swipe axis, 0 when unknown) give, from two to [MOMENTUM_MAX_ROWS].
  */
-internal fun momentumRowsFor(startOffset: Float?, travel: Float): Int {
+internal fun momentumRowsFor(startOffset: Float?, travel: Float, peakSpeed: Float = 0f): Int {
     if (startOffset == null || startOffset < MOMENTUM_MIN_START_OFFSET) return 1
     if (travel < MOMENTUM_SINGLE_ROW_TRAVEL) return 1
-    val rows = floor(MOMENTUM_ROWS_INTERCEPT + MOMENTUM_ROWS_PER_TRAVEL * travel + 0.5f).toInt()
-    return rows.coerceIn(2, MOMENTUM_MAX_ROWS)
+    val travelRows =
+        floor(MOMENTUM_ROWS_INTERCEPT + MOMENTUM_ROWS_PER_TRAVEL * travel + 0.5f).toInt()
+    return maxOf(travelRows, speedRowsFor(peakSpeed)).coerceIn(2, MOMENTUM_MAX_ROWS)
 }
+
+/** Rows a swipe earns from its peak speed alone, 0 below [MOMENTUM_SPEED_MIN]. */
+internal fun speedRowsFor(peakSpeed: Float): Int =
+    if (peakSpeed < MOMENTUM_SPEED_MIN) {
+        0
+    } else {
+        2 + floor((peakSpeed - MOMENTUM_SPEED_MIN) / MOMENTUM_SPEED_PER_ROW).toInt()
+    }
+
+/**
+ * The displacement [dx], [dy] along the axis of [key], positive toward [key], in the oracle's space
+ * where y is positive toward the top of the remote.
+ */
+internal fun displacementAlongKey(key: Key, dx: Float, dy: Float): Float =
+    signedSpeedAlongKey(key, if (isHorizontalFlingKey(key)) dx else dy)
 
 /**
  * The start offset of a contact whose origin component along the axis of [key] is [originAxis], in
@@ -94,8 +112,13 @@ internal class TvMomentumBurst(
     fun stepsDue(now: Double): Int =
         (floor(position(now)).toInt().coerceAtMost(rows) - emitted).coerceAtLeast(0)
 
+    /**
+     * Counts one more step as emitted. A step the finger paid for by travelling can go out ahead of
+     * the curve, so the rows follow the emitted count rather than capping it.
+     */
     fun onStepEmitted() {
         emitted++
+        if (rows < emitted) rows = emitted
     }
 
     /** Freezes the burst at the steps already emitted. */

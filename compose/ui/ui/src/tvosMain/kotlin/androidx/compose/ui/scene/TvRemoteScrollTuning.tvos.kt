@@ -29,20 +29,59 @@ internal const val MOMENTUM_ROW_BIAS = 0.5
 internal const val MOMENTUM_SINGLE_ROW_TRAVEL = 0.6f
 /**
  * How far behind the pad centre, along the swipe axis and against the swipe direction, a contact
- * must start for its swipe to earn more than one row, in pad units. Provisional: this is the
- * conservative end of a range (0.04 to 0.58 could not be separated in the native data) and must be
- * tuned on device.
+ * must start for its swipe to earn more than one row, in pad units. The native data could not
+ * separate a threshold anywhere between 0.04 and 0.58. On an Apple TV 4K with a first generation
+ * Siri Remote, downward swipes start about 0.45 above the centre and upward ones about 0.9 below
+ * it, and the native UI gives both momentum, so the threshold sits below both.
  */
-internal const val MOMENTUM_MIN_START_OFFSET = 0.60f
+internal const val MOMENTUM_MIN_START_OFFSET = 0.25f
+/**
+ * Pad travel along the swipe axis for each further focus move while the finger stays down after the
+ * first move, in pad units. The native focus engine follows a gliding finger item by item; the
+ * distance per item scales with the item's size there, this is a single figure, equal to the gate
+ * of the first move. Provisional.
+ */
+internal const val DRAG_STEP_TRAVEL = 0.30f
+/**
+ * Travel back from the furthest point a dispatched contact reached, in pad units, at which the
+ * finger is taken to have turned: the contact starts over from that furthest point, in the opposite
+ * direction, as the native focus engine does under a finger that comes back. Provisional.
+ */
+internal const val DRAG_REVERSAL_TRAVEL = 0.15f
+/**
+ * How far ahead of the tick the momentum curve is read, in seconds: half a frame at 60 Hz, so a
+ * step due just after a tick goes out on that tick instead of a whole frame later. Read on the tick
+ * itself, the steps trail the fitted curve by a steady 15 to 25 ms on device.
+ */
+internal const val MOMENTUM_TICK_LOOKAHEAD_S = 0.008
 /**
  * Travel along the dominant axis at which a contact that never armed still swipes once, one row, at
  * lift. Provisional.
  */
 internal const val SWIPE_LIFT_DISTANCE = 0.20f
-/** Intercept of the rows to travel fit, in rows. Fitted, provisional. */
-internal const val MOMENTUM_ROWS_INTERCEPT = 0.31f
+/**
+ * Intercept of the rows to travel fit, in rows. The travel alone runs the ladder 2, 3, 4… from
+ * [MOMENTUM_SINGLE_ROW_TRAVEL] on, one row per 0.25 pad unit as the fitted slope says: a moderate
+ * swipe moves two or three rows, as on the native UI side by side on device. The native fit itself
+ * (0.31) gives three rows at the single-row limit, which moves more items than the native UI for a
+ * moderate swipe; what a fast flick earns beyond that comes from its speed ([MOMENTUM_SPEED_MIN]).
+ * Provisional.
+ */
+internal const val MOMENTUM_ROWS_INTERCEPT = -0.69f
 /** Slope of the rows to travel fit, in rows per pad unit. Fitted, provisional. */
 internal const val MOMENTUM_ROWS_PER_TRAVEL = 3.93f
+/**
+ * Peak finger speed along the swipe axis, in pad units per second, from which the speed of a swipe
+ * sizes its momentum: a swipe this fast earns two rows, and one more row for every
+ * [MOMENTUM_SPEED_PER_ROW] beyond, up to [MOMENTUM_MAX_ROWS]. A swipe earns the larger of the rows
+ * its travel and its speed give. The native UI carries a fast flick much further than a moderate
+ * swipe of the same length, which the travel alone cannot tell apart. A traverse ends between 9 and
+ * 29 units per second on the device, so the scale spans that range. Provisional, pending a
+ * calibration against the speeds the MOMENTUM plan debug line reports.
+ */
+internal const val MOMENTUM_SPEED_MIN = 8f
+/** Peak speed in pad units per second for each row beyond two. See [MOMENTUM_SPEED_MIN]. */
+internal const val MOMENTUM_SPEED_PER_ROW = 4f
 /** Most rows a single swipe moves focus. Measured range is 3 to 7. */
 internal const val MOMENTUM_MAX_ROWS = 7
 /** Most rows a chained swipe moves focus once the chain boost is applied. Measured maximum. */
