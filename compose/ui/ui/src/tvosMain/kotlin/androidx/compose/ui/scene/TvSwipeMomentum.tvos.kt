@@ -34,6 +34,13 @@ internal fun momentumRowsFor(startOffset: Float?, travel: Float): Int {
 }
 
 /**
+ * The displacement [dx], [dy] along the axis of [key], positive toward [key], in the oracle's space
+ * where y is positive toward the top of the remote.
+ */
+internal fun displacementAlongKey(key: Key, dx: Float, dy: Float): Float =
+    signedSpeedAlongKey(key, if (isHorizontalFlingKey(key)) dx else dy)
+
+/**
  * The start offset of a contact whose origin component along the axis of [key] is [originAxis], in
  * the oracle's space where y is positive toward the top of the remote.
  */
@@ -94,8 +101,13 @@ internal class TvMomentumBurst(
     fun stepsDue(now: Double): Int =
         (floor(position(now)).toInt().coerceAtMost(rows) - emitted).coerceAtLeast(0)
 
+    /**
+     * Counts one more step as emitted. A step the finger paid for by travelling can go out ahead of
+     * the curve, so the rows follow the emitted count rather than capping it.
+     */
     fun onStepEmitted() {
         emitted++
+        if (rows < emitted) rows = emitted
     }
 
     /** Freezes the burst at the steps already emitted. */

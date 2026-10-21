@@ -39,15 +39,23 @@ class TvSwipeMomentumTest {
         assertEquals(5, momentumRowsFor(0.8f, 1.2f))
         assertEquals(7, momentumRowsFor(0.8f, 2.5f))
     }
-
     @Test
     fun startOffsetGatesMomentumAtItsThreshold() {
-        assertEquals(1, momentumRowsFor(0.59f, 1.2f))
-        assertEquals(5, momentumRowsFor(0.6f, 1.2f))
+        val below = MOMENTUM_MIN_START_OFFSET - 0.01f
+        assertEquals(1, momentumRowsFor(below, 1.2f))
+        assertEquals(5, momentumRowsFor(MOMENTUM_MIN_START_OFFSET, 1.2f))
         assertEquals(1, momentumRowsFor(0.0f, 1.2f))
         assertEquals(1, momentumRowsFor(-0.5f, 1.2f))
-        assertEquals(1, momentumRowsFor(0.6f, 0.59f))
-        assertEquals(3, momentumRowsFor(0.6f, 0.6f))
+        assertEquals(1, momentumRowsFor(MOMENTUM_MIN_START_OFFSET, 0.59f))
+        assertEquals(3, momentumRowsFor(MOMENTUM_MIN_START_OFFSET, 0.6f))
+    }
+
+    @Test
+    fun deviceStartOffsetsOfBothDirectionsEarnMomentum() {
+        // Measured on an Apple TV 4K: downward swipes start about 0.45 above the centre, upward
+        // ones about 0.9 below it. Both must keep their momentum.
+        assertEquals(5, momentumRowsFor(0.45f, 1.2f))
+        assertEquals(5, momentumRowsFor(0.9f, 1.2f))
     }
 
     @Test
@@ -98,7 +106,6 @@ class TvSwipeMomentumTest {
         assertEquals(1f, CHAIN_BOOST)
         assertTrue(SWIPE_LIFT_DISTANCE < 0.30f)
     }
-
     @Test
     fun burstStartsWithOwnMoveEmitted() {
         val b = burst(5)
@@ -157,6 +164,20 @@ class TvSwipeMomentumTest {
         b.raiseRows(6)
         assertFalse(b.isFinished)
         assertEquals(3, b.stepsDue(b.startedAt + 1.0))
+    }
+
+    @Test
+    fun stepPaidByTravelRaisesRowsAheadOfTheCurve() {
+        // A dragging finger pays for moves the curve never planned: the burst follows.
+        val b = burst(1)
+        assertTrue(b.isFinished)
+        b.onStepEmitted()
+        assertEquals(2, b.emitted)
+        assertEquals(2, b.rows)
+        assertTrue(b.isFinished)
+        assertEquals(0, b.stepsDue(b.startedAt + 1.0))
+        b.raiseRows(1)
+        assertEquals(2, b.rows)
     }
 
     @Test

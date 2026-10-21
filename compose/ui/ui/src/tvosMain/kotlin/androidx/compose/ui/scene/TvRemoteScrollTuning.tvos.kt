@@ -29,11 +29,31 @@ internal const val MOMENTUM_ROW_BIAS = 0.5
 internal const val MOMENTUM_SINGLE_ROW_TRAVEL = 0.6f
 /**
  * How far behind the pad centre, along the swipe axis and against the swipe direction, a contact
- * must start for its swipe to earn more than one row, in pad units. Provisional: this is the
- * conservative end of a range (0.04 to 0.58 could not be separated in the native data) and must be
- * tuned on device.
+ * must start for its swipe to earn more than one row, in pad units. The native data could not
+ * separate a threshold anywhere between 0.04 and 0.58. On an Apple TV 4K with a first generation
+ * Siri Remote, downward swipes start about 0.45 above the centre and upward ones about 0.9 below
+ * it, and the native UI gives both momentum, so the threshold sits below both.
  */
-internal const val MOMENTUM_MIN_START_OFFSET = 0.60f
+internal const val MOMENTUM_MIN_START_OFFSET = 0.25f
+/**
+ * Pad travel along the swipe axis for each further focus move while the finger stays down after the
+ * first move, in pad units. The native focus engine follows a gliding finger item by item; the
+ * distance per item scales with the item's size there, this is a single figure, equal to the gate
+ * of the first move. Provisional.
+ */
+internal const val DRAG_STEP_TRAVEL = 0.30f
+/**
+ * Travel back from the furthest point a dispatched contact reached, in pad units, at which the
+ * finger is taken to have turned: the contact starts over from that furthest point, in the opposite
+ * direction, as the native focus engine does under a finger that comes back. Provisional.
+ */
+internal const val DRAG_REVERSAL_TRAVEL = 0.15f
+/**
+ * How far ahead of the tick the momentum curve is read, in seconds: half a frame at 60 Hz, so a
+ * step due just after a tick goes out on that tick instead of a whole frame later. Read on the tick
+ * itself, the steps trail the fitted curve by a steady 15 to 25 ms on device.
+ */
+internal const val MOMENTUM_TICK_LOOKAHEAD_S = 0.008
 /**
  * Travel along the dominant axis at which a contact that never armed still swipes once, one row, at
  * lift. Provisional.

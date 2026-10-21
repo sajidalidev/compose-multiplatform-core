@@ -137,11 +137,14 @@ import platform.UIKit.setAccessibilityElements
 // the outer ring of arrow buttons only becomes one once it crossed into the centre pad. That is
 // what a straight swipe from one edge of the ring to the opposite edge does, and what a circular
 // drag around the ring never does. A swipe that passes the gates below moves focus once, wherever
-// it started, and then keeps focus moving for as many rows as the finger travelled along its axis;
-// that momentum is in TvSwipeMomentum.
-// A contact that lasts longer than this is a rest or a drag, not a swipe: genuine swipes cross
-// the distance gate within 151 ms, while the contact roll of a centre click that lands partly on
-// the ring takes 300 ms or more to cover the same distance.
+// it started, then keeps focus moving for as many rows as the finger travelled along its axis, and
+// item by item while the finger glides on; that momentum is in TvSwipeMomentum.
+// A contact that crosses the distance gate later than this is a drag, not a swipe: it still moves
+// focus, and keeps moving it as the finger glides on (DRAG_STEP_TRAVEL), but it earns no momentum,
+// the way a slow finger moves the native focus engine item by item without a flick. Genuine swipes
+// cross the gate within 151 ms, while the contact roll of a centre click that lands partly on the
+// ring takes 300 ms or more to cover the same distance, so a slow contact only moves focus once it
+// travelled the full gate and no press claimed it.
 private const val SWIPE_MAX_DURATION_S = 0.25
 // Minimum travel along the dominant axis, in absolute clickpad units.
 private const val SWIPE_DISTANCE_NORMALIZED = 0.30f
@@ -158,8 +161,10 @@ private const val SWIPE_DISTANCE_FALLBACK_DP = 40f
 private const val SWIPE_AXIS_DOMINANCE = 2f
 // A swipe that crossed the distance gate waits this long before it is dispatched, so a Select
 // press that arrives right after the contact rolled far enough cancels it instead of firing both.
-// A contact that ends while armed is dispatched at once: a lifted finger can no longer click.
-private const val DISPATCH_HOLD_S = 0.08
+// A contact that ends while armed is dispatched at once: a lifted finger can no longer click. The
+// native engine has no such wait, so the hold is kept short; no click got through during device
+// tests at this value, but the press race was not timed. Provisional.
+private const val DISPATCH_HOLD_S = 0.05
 // A contact live for longer than this lost its terminal event: tvOS can absorb a touch's
 // terminal event, e.g. when the keyboard overlay appears; without this the display link would
 // poll forever.
@@ -257,9 +262,26 @@ private class IndirectTouchState(
 
     /**
      * The furthest the contact travelled along the axis of its armed key, in pad units, which is
-     * what its momentum is sized from.
+     * what its momentum is sized from, with the sample and the time it was reached at: a finger
+     * that comes back from there starts over at that point.
      */
     var maxTravel: Float = 0f
+    var maxTravelSample: Offset? = null
+    var maxTravelTime: Double = 0.0
+
+    /**
+     * Set when the contact crossed the distance gate slower than [SWIPE_MAX_DURATION_S]: its moves
+     * follow the finger and it earns no momentum at lift.
+     */
+    var dragOnly: Boolean = false
+
+    /**
+     * The moves the travel of a dispatched contact has paid for, its own move included, and the
+     * travel at which the next one is due. A move the momentum curve has not emitted by the time
+     * the finger paid for it goes out at once.
+     */
+    var travelSteps: Int = 0
+    var dragNextTravel: Float = 0f
 
     /** Set once the lift of the contact was handled, which happens at most once. */
     var liftHandled: Boolean = false
@@ -1060,7 +1082,7 @@ internal class ComposeSceneMediator(
                         state.verdict == IndirectTouchVerdict.ARMED ||
                             state.verdict == IndirectTouchVerdict.DISPATCHED
                     ) {
-                        updateSwipeTravel(state, sample)
+                        updateSwipeTravel(state, sample, timestamp)
                     }
                 }
                 else -> {}
@@ -1075,7 +1097,7 @@ internal class ComposeSceneMediator(
                 updateIndirectMinRadius(state, sample)
                 evaluateIndirectTouch(state, sample, timestamp, logSample)
                 if (state.verdict == IndirectTouchVerdict.ARMED && !state.flingTrackingClosed) {
-                    updateSwipeTravel(state, sample)
+                    updateSwipeTravel(state, sample, timestamp)
                 }
             }
             IndirectTouchVerdict.ARMED -> {
@@ -1083,7 +1105,7 @@ internal class ComposeSceneMediator(
                 holdArmedIndirectTouch(state, timestamp)
                 updateMomentum(state)
             }
-            IndirectTouchVerdict.DISPATCHED -> updateMomentum(state)
+            IndirectTouchVerdict.DISPATCHED -> updateDispatchedContact(state, sample, timestamp)
             else -> {}
         }
     }
@@ -1231,16 +1253,13 @@ internal class ComposeSceneMediator(
             swipeDebug { "SWIPE cancelled reason=press" }
             return
         }
-        if (elapsed > SWIPE_MAX_DURATION_S) {
-            if (!state.usesOracle) {
-                state.verdict = IndirectTouchVerdict.CANCELLED
-                swipeDebug { "SWIPE cancelled reason=duration" }
-                return
-            }
-            // Too slow to be this swipe, but a later fast swipe in the same contact can still be
-            // one: start over from here, the way a rest does.
-            swipeDebug { "SWIPE reanchor reason=duration ring=${state.ringOrigin}" }
-            reanchorIndirectTouch(state, position, timestamp)
+        // A slow contact keeps accumulating travel: once it covers the gate it moves focus as a
+        // drag, one row and no momentum. Only the relative fallback, which cannot follow a finger,
+        // gives up on it. A finger that stops is re-anchored by the rest detection above.
+        val slow = elapsed > SWIPE_MAX_DURATION_S
+        if (slow && !state.usesOracle) {
+            state.verdict = IndirectTouchVerdict.CANCELLED
+            swipeDebug { "SWIPE cancelled reason=duration" }
             return
         }
         val distance =
@@ -1279,12 +1298,13 @@ internal class ComposeSceneMediator(
         state.verdict = IndirectTouchVerdict.ARMED
         state.armedKey = key
         state.armedAt = timestamp
+        state.dragOnly = slow
         if (!state.usesOracle) {
             // The relative location is in pixels: the pad units of the oracle are recovered from
             // the distance gate the two sources share.
             state.maxTravel = dominant / screenDensity.density / FALLBACK_DP_PER_PAD_UNIT
         }
-        swipeDebug { "SWIPE armed ${directionName(key)}" }
+        swipeDebug { "SWIPE armed ${directionName(key)}${if (slow) " drag" else ""}" }
     }
 
     /**
@@ -1315,13 +1335,29 @@ internal class ComposeSceneMediator(
      * Keeps [IndirectTouchState.maxTravel] at the furthest [state] went from its origin along the
      * axis of its armed key, in the direction of that key.
      */
-    private fun updateSwipeTravel(state: IndirectTouchState, sample: Offset) {
+    private fun updateSwipeTravel(state: IndirectTouchState, sample: Offset, timestamp: Double) {
         val key = state.armedKey ?: return
-        val displacement =
-            if (isHorizontalFlingKey(key)) sample.x - state.origin.x else sample.y - state.origin.y
-        val travel = signedSpeedAlongKey(key, displacement)
-        if (travel > state.maxTravel) state.maxTravel = travel
+        val travel = travelAlongKey(state, key, sample)
+        val turnSample = state.maxTravelSample
+        if (travel > state.maxTravel) {
+            state.maxTravel = travel
+            state.maxTravelSample = sample
+            state.maxTravelTime = timestamp
+        } else if (
+            turnSample != null &&
+                hypot(sample.x - turnSample.x, sample.y - turnSample.y) <= REST_ANCHOR_TOLERANCE
+        ) {
+            // A finger resting where it went furthest: a turn starts when it leaves that point.
+            state.maxTravelTime = timestamp
+        }
     }
+
+    /**
+     * The signed travel of [state] from its origin to [sample] along the axis of [key], toward
+     * [key].
+     */
+    private fun travelAlongKey(state: IndirectTouchState, key: Key, sample: Offset): Float =
+        displacementAlongKey(key, sample.x - state.origin.x, sample.y - state.origin.y)
 
     /** Raises the rows of the burst [state] started to what its travel has earned by now. */
     private fun updateMomentum(state: IndirectTouchState) {
@@ -1334,12 +1370,76 @@ internal class ComposeSceneMediator(
     }
 
     /**
+     * Follows the finger of a dispatched contact, the way the native focus engine follows a gliding
+     * finger item by item. A finger that came back [DRAG_REVERSAL_TRAVEL] from the furthest point
+     * it reached has turned: the contact starts over there, in the direction it now moves in.
+     * Otherwise every [DRAG_STEP_TRAVEL] of further travel pays for one move, sent at once when the
+     * momentum curve has not emitted it by then; a fast swipe's curve runs ahead of its finger, so
+     * this only adds moves for a finger that keeps going past what the swipe earned.
+     */
+    private fun updateDispatchedContact(
+        state: IndirectTouchState,
+        sample: Offset,
+        timestamp: Double,
+    ) {
+        if (state.flingTrackingClosed) return
+        val key = state.dispatchedKey ?: return
+        if (state.maxTravel - travelAlongKey(state, key, sample) >= DRAG_REVERSAL_TRAVEL) {
+            restartContactAtTurn(state, sample, timestamp)
+            return
+        }
+        updateMomentum(state)
+        while (state.maxTravel >= state.dragNextTravel) {
+            state.travelSteps++
+            state.dragNextTravel += DRAG_STEP_TRAVEL
+        }
+        val burst = momentumBurst ?: return
+        if (burstSource !== state) return
+        if (state.travelSteps > burst.emitted) emitBurstStep(burst, timestamp, "DRAG")
+    }
+
+    /**
+     * Starts [state] over at the furthest point it reached, as a candidate for a swipe in the
+     * direction its finger now moves in. The momentum it drove is over, the ring verdict is read
+     * where it turned, and the swipe timer runs from the turn, so a quick flick back earns momentum
+     * and a slow return drags.
+     */
+    private fun restartContactAtTurn(state: IndirectTouchState, sample: Offset, timestamp: Double) {
+        val turnSample = state.maxTravelSample
+        val origin = turnSample ?: sample
+        val turnTime = if (turnSample != null) state.maxTravelTime else timestamp
+        swipeDebug {
+            "SWIPE turned at=(${origin.x}, ${origin.y}) travel=${state.maxTravel} " +
+                "t=${debugSeconds(timestamp)}"
+        }
+        if (burstSource === state) cancelMomentum("turned")
+        reanchorIndirectTouch(state, origin, turnTime)
+        state.ringOrigin = isRingOrigin(origin.x, origin.y, touchOracle.hasRing)
+        state.minRadius = hypot(origin.x, origin.y)
+        state.verdict =
+            if (state.ringOrigin) {
+                IndirectTouchVerdict.RING_CANDIDATE
+            } else {
+                IndirectTouchVerdict.CANDIDATE
+            }
+        state.armedKey = null
+        state.dispatchedKey = null
+        state.maxTravelSample = null
+        state.dragOnly = false
+        state.liftArmed = false
+        state.travelSteps = 0
+        state.dragNextTravel = 0f
+        updateIndirectMinRadius(state, sample)
+        evaluateIndirectTouch(state, sample, timestamp, logSample = false)
+    }
+
+    /**
      * The rows the swipe of [state] earns by now. The start offset is measured from the origin the
      * travel is measured from. The relative fallback has no absolute origin, so its start offset is
      * unknown and it earns no momentum.
      */
     private fun swipeRows(state: IndirectTouchState): Int {
-        if (state.liftArmed) return 1
+        if (state.liftArmed || state.dragOnly) return 1
         val key = state.armedKey ?: return 1
         val startOffset =
             if (state.usesOracle) {
@@ -1476,34 +1576,12 @@ internal class ComposeSceneMediator(
             cancelMomentum("reversal")
             return
         }
-        val key = burst.key
-        val due = minOf(burst.stepsDue(timestamp), MOMENTUM_MAX_STEPS_PER_TICK)
+        // The curve is read half a frame ahead: a step due just after this tick goes out now rather
+        // than a whole frame late.
+        val due =
+            minOf(burst.stepsDue(timestamp + MOMENTUM_TICK_LOOKAHEAD_S), MOMENTUM_MAX_STEPS_PER_TICK)
         for (i in 0 until due) {
-            swipeDebug {
-                "MOMENTUM step ${burst.emitted + 1}/${burst.rows} t=${debugSeconds(timestamp)}"
-            }
-            val consumed = onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
-            // The KeyDown can cancel the burst re-entrantly, but the KeyUp is still owed to balance
-            // it, so it is sent before checking whether the burst is still the one in progress.
-            onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp))
-            // A dispatch runs key event handlers, which can dispose this mediator or cancel the
-            // burst.
-            if (momentumBurst !== burst) return
-            if (!consumed) {
-                // The focus system may be busy for a frame, which a retry covers; a move that is
-                // still refused is a real focus edge.
-                if (burstBusyRetries < MOMENTUM_BUSY_RETRIES) {
-                    burstBusyRetries++
-                    return
-                }
-                cancelMomentum(
-                    "unconsumed step=${burst.emitted + 1}/${burst.rows} key=${directionName(key)}"
-                )
-                return
-            }
-            burst.onStepEmitted()
-            swipeChain.onFocusMoved()
-            burstBusyRetries = 0
+            if (!emitBurstStep(burst, timestamp, "MOMENTUM")) return
         }
         // While the finger of the burst is down its travel can still raise the rows, so a burst
         // that already emitted all of them is only over once that finger left.
@@ -1516,12 +1594,45 @@ internal class ComposeSceneMediator(
     }
 
     /**
+     * Sends one step of [burst] as a KeyDown/KeyUp pair, logged under [tag]. Returns `false` when
+     * nothing more should go out on this tick: the burst was cancelled by a handler, the scene was
+     * busy and the step is retried next tick, or the move was refused and the burst is over.
+     */
+    private fun emitBurstStep(burst: TvMomentumBurst, timestamp: Double, tag: String): Boolean {
+        val key = burst.key
+        swipeDebug { "$tag step ${burst.emitted + 1}/${burst.rows} t=${debugSeconds(timestamp)}" }
+        val consumed = onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown))
+        // The KeyDown can cancel the burst re-entrantly, but the KeyUp is still owed to balance
+        // it, so it is sent before checking whether the burst is still the one in progress.
+        onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp))
+        // A dispatch runs key event handlers, which can dispose this mediator or cancel the burst.
+        if (momentumBurst !== burst) return false
+        if (!consumed) {
+            // The focus system may be busy for a frame, which a retry covers; a move that is
+            // still refused is a real focus edge.
+            if (burstBusyRetries < MOMENTUM_BUSY_RETRIES) {
+                burstBusyRetries++
+                return false
+            }
+            cancelMomentum(
+                "unconsumed step=${burst.emitted + 1}/${burst.rows} key=${directionName(key)}"
+            )
+            return false
+        }
+        burst.onStepEmitted()
+        swipeChain.onFocusMoved()
+        burstBusyRetries = 0
+        return true
+    }
+
+    /**
      * `true` when the finger that started [burst] is still down and has clearly turned back against
-     * the direction the momentum runs in. Once that contact ended nothing samples it any more.
+     * the direction the momentum runs in. Once that contact ended nothing samples it any more. A
+     * drag has no momentum to cut short: its finger is followed by travel, turn included.
      */
     private fun isBurstSourceReversing(burst: TvMomentumBurst): Boolean {
         val source = burstSource ?: return false
-        if (source.flingTrackingClosed) return false
+        if (source.flingTrackingClosed || source.dragOnly) return false
         val velocity =
             source.flingSamples.velocityAlong(
                 isHorizontalFlingKey(burst.key),
@@ -1877,6 +1988,9 @@ internal class ComposeSceneMediator(
         swipeDebug { "SWIPE dispatch ${directionName(key)} t=${debugSeconds(timestamp)}" }
         state.verdict = IndirectTouchVerdict.DISPATCHED
         state.dispatchedKey = key
+        // This move is paid for; the finger pays for the next one a step further along its axis.
+        state.travelSteps = 1
+        state.dragNextTravel = state.maxTravel + DRAG_STEP_TRAVEL
         val swipes = swipeChain.onSwipeDispatched(key, state.beginTimestamp)
         swipeDebug {
             val gap = swipeChain.currentGap
