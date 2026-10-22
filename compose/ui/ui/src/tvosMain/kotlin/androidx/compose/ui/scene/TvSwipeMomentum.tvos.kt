@@ -16,21 +16,70 @@
 package androidx.compose.ui.scene
 
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.remote.RemoteSwipe
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.floor
 
 /**
- * Rows a swipe moves focus, its own move included. Multi-row momentum belongs to swipes that start
- * at least [MOMENTUM_MIN_START_OFFSET] behind the pad centre and travel at least
- * [MOMENTUM_SINGLE_ROW_TRAVEL]; every other swipe moves one row. [startOffset] is how far behind the
- * centre the origin lies along the swipe axis, against the swipe direction (negative when it lies
- * past the centre), and `null` when it is unknown, as on the relative fallback path.
+ * Rows a swipe moves focus, its own move included. [startOffset] is how far behind the centre the
+ * origin lies along the swipe axis, against the swipe direction (negative when it lies past the
+ * centre), and `null` when it is unknown, as on the relative fallback path, which earns one row.
+ *
+ * A swipe earns multi-row momentum when it starts at least [MOMENTUM_MIN_START_OFFSET] behind the
+ * centre and travels at least [MOMENTUM_SINGLE_ROW_TRAVEL], or, when it [followsMomentumSwipe] in
+ * its chain and is quick (at least [MOMENTUM_SPEED_MIN] fast, or a [quickContact]), when it travels
+ * at least [CHAIN_SINGLE_ROW_TRAVEL] wherever it starts. Every other swipe moves one row. A swipe
+ * with momentum moves the larger of the rows its [travel] and its [peakSpeed] (pad units per second
+ * along the swipe axis, 0 when unknown) give, from two to [MOMENTUM_MAX_ROWS].
  */
-internal fun momentumRowsFor(startOffset: Float?, travel: Float): Int {
-    if (startOffset == null || startOffset < MOMENTUM_MIN_START_OFFSET) return 1
-    if (travel < MOMENTUM_SINGLE_ROW_TRAVEL) return 1
-    val rows = floor(MOMENTUM_ROWS_INTERCEPT + MOMENTUM_ROWS_PER_TRAVEL * travel + 0.5f).toInt()
-    return rows.coerceIn(2, MOMENTUM_MAX_ROWS)
+internal fun momentumRowsFor(
+    startOffset: Float?,
+    travel: Float,
+    peakSpeed: Float = 0f,
+    followsMomentumSwipe: Boolean = false,
+    quickContact: Boolean = false,
+): Int {
+    if (startOffset == null) return 1
+    if (followsMomentumSwipe && (peakSpeed >= MOMENTUM_SPEED_MIN || quickContact)) {
+        // A quick swipe that keeps a chain of momentum swipes going: the finger repeats shorter
+        // strokes from wherever the previous one left it, so only a shorter travel is asked of it.
+        if (travel < CHAIN_SINGLE_ROW_TRAVEL) return 1
+    } else {
+        if (startOffset < MOMENTUM_MIN_START_OFFSET) return 1
+        if (travel < MOMENTUM_SINGLE_ROW_TRAVEL) return 1
+    }
+    val travelRows =
+        floor(MOMENTUM_ROWS_INTERCEPT + MOMENTUM_ROWS_PER_TRAVEL * travel + 0.5f).toInt()
+    return maxOf(travelRows, speedRowsFor(peakSpeed)).coerceIn(2, MOMENTUM_MAX_ROWS)
+}
+
+/** Rows a swipe earns from its peak speed alone, 0 below [MOMENTUM_SPEED_MIN]. */
+internal fun speedRowsFor(peakSpeed: Float): Int =
+    if (peakSpeed < MOMENTUM_SPEED_MIN) {
+        0
+    } else {
+        2 + floor((peakSpeed - MOMENTUM_SPEED_MIN) / MOMENTUM_SPEED_PER_ROW).toInt()
+    }
+
+/**
+ * The displacement [dx], [dy] along the axis of [key], positive toward [key], in the oracle's space
+ * where y is positive toward the top of the remote.
+ */
+internal fun displacementAlongKey(key: Key, dx: Float, dy: Float): Float =
+    signedSpeedAlongKey(key, if (isHorizontalFlingKey(key)) dx else dy)
+
+/**
+ * The key a contact displaced by [dx], [dy] swipes in when it continues a series of swipes in
+ * [seriesKey], in the oracle's space: [seriesKey] when the displacement runs toward it along its
+ * axis by at least [SERIES_AXIS_DOMINANCE] times the displacement across, `null` otherwise or
+ * without a series.
+ */
+internal fun seriesSwipeKey(seriesKey: Key?, dx: Float, dy: Float): Key? {
+    if (seriesKey == null) return null
+    val along = displacementAlongKey(seriesKey, dx, dy)
+    val across = abs(if (isHorizontalFlingKey(seriesKey)) dy else dx)
+    return if (along > 0f && along >= SERIES_AXIS_DOMINANCE * across) seriesKey else null
 }
 
 /**
@@ -75,16 +124,27 @@ internal class TvMomentumBurst(
     val startedAt: Double,
     rows: Int,
     private val tau: Double = MOMENTUM_TAU_S,
+    /** Rows left unemitted by the burst this one replaced, owed on top of this swipe's own. */
+    val carried: Int = 0,
+    /** What the key events of the burst carry: the swipe of the contact that started it. */
+    val swipe: RemoteSwipe? = null,
 ) {
-    var rows: Int = rows
+    var rows: Int = rows + carried
         private set
     var emitted: Int = 1
         private set
 
-    /** Raises the row count to [rows]. Never lowers it and never goes below [emitted]. */
+    /**
+     * Raises the row count to [rows] of this swipe plus [carried]. Never lowers it and never goes
+     * below [emitted].
+     */
     fun raiseRows(rows: Int) {
-        this.rows = maxOf(this.rows, rows, emitted)
+        this.rows = maxOf(this.rows, rows + carried, emitted)
     }
+
+    /** The rows still owed. */
+    val remaining: Int
+        get() = (rows - emitted).coerceAtLeast(0)
 
     fun position(now: Double): Double {
         val n = rows + MOMENTUM_ROW_BIAS
@@ -94,8 +154,26 @@ internal class TvMomentumBurst(
     fun stepsDue(now: Double): Int =
         (floor(position(now)).toInt().coerceAtMost(rows) - emitted).coerceAtLeast(0)
 
+    /**
+     * Like [stepsDue], but a step still owed goes out once [MOMENTUM_MAX_STEP_INTERVAL_S] passed
+     * since [lastStepAt], the last step out, however slowly the tail of the curve runs.
+     */
+    fun stepsDue(now: Double, lastStepAt: Double): Int {
+        val due = stepsDue(now)
+        return if (due == 0 && remaining > 0 && now - lastStepAt >= MOMENTUM_MAX_STEP_INTERVAL_S) {
+            1
+        } else {
+            due
+        }
+    }
+
+    /**
+     * Counts one more step as emitted. A step the finger paid for by travelling can go out ahead of
+     * the curve, so the rows follow the emitted count rather than capping it.
+     */
     fun onStepEmitted() {
         emitted++
+        if (rows < emitted) rows = emitted
     }
 
     /** Freezes the burst at the steps already emitted. */
@@ -124,6 +202,10 @@ internal class TvSwipeChainTracker {
         private set
     private var currentIsMomentum = false
     private var currentUncommittedMoves = 0
+    /** Whether the current swipe continues the chain right after a momentum swipe. */
+    var followsMomentumSwipe: Boolean = false
+        private set
+
     private var lastLiftAt: Double? = null
     /** Seconds between the previous lift and the touch of the current swipe, [Double.MAX_VALUE] when it starts a chain. */
     var currentGap: Double = Double.MAX_VALUE
@@ -143,14 +225,25 @@ internal class TvSwipeChainTracker {
             momentumMoves = 0
             momentumSwipes = 0
             currentGap = Double.MAX_VALUE
+            followsMomentumSwipe = false
         } else {
             currentGap = gap
+            followsMomentumSwipe = currentIsMomentum
         }
         lastLiftAt = null
         currentIsMomentum = false
         currentUncommittedMoves = 0
         swipes++
         return swipes
+    }
+
+    /**
+     * The direction of the chain a contact that began at [touchBeganAt] would continue, `null` when
+     * its gap to the last lift is too long or no swipe of the chain lifted yet.
+     */
+    fun continuingKey(touchBeganAt: Double): Key? {
+        val liftAt = lastLiftAt ?: return null
+        return if (touchBeganAt - liftAt <= CHAIN_MAX_GAP_S) key else null
     }
 
     /** CHAIN_BOOST when the current swipe is at least the second of the chain and its gap was at most CHAIN_BOOST_MAX_GAP_S, else 1f. */
@@ -195,6 +288,7 @@ internal class TvSwipeChainTracker {
         currentUncommittedMoves = 0
         lastLiftAt = null
         currentGap = Double.MAX_VALUE
+        followsMomentumSwipe = false
     }
 }
 
