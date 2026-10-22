@@ -45,6 +45,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.remote.RemoteFastScrollNode
 import androidx.compose.ui.input.remote.RemoteSwipeDirection
+import androidx.compose.ui.input.remote.RemoteTapNode
 import androidx.compose.ui.input.rotary.RotaryScrollEvent
 import androidx.compose.ui.internal.requirePrecondition
 import androidx.compose.ui.node.DelegatableNode
@@ -445,6 +446,39 @@ internal class FocusOwnerImpl(
             // A node that delegates to a focus target counts as one: look at it before the stop.
             it.findFastScrollNode(direction)?.let { found -> return found }
             if (it.isKind(Nodes.FocusTarget)) return null
+        }
+        return null
+    }
+
+    /**
+     * tvOS fork: calls the nearest [RemoteTapNode] around the focused item, searched the way
+     * [findRemoteFastScrollNode] searches.
+     */
+    override fun dispatchRemoteTap(): Boolean {
+        if (focusInvalidationManager.hasPendingInvalidation()) return false
+
+        val focusTargetNode = findFocusTargetNode() ?: return false
+        focusTargetNode.visitAncestors(Nodes.Any, includeSelf = true) {
+            it.findRemoteTapNode()?.let { found -> return found.tap() }
+        }
+        focusTargetNode.visitLocalDescendants(Nodes.FocusTarget or Nodes.Any) {
+            it.findRemoteTapNode()?.let { found -> return found.tap() }
+            if (it.isKind(Nodes.FocusTarget)) return false
+        }
+        return false
+    }
+
+    private fun RemoteTapNode.tap(): Boolean {
+        onTap()
+        return true
+    }
+
+    private fun Modifier.Node.findRemoteTapNode(): RemoteTapNode? {
+        if (this is RemoteTapNode) return this
+        if (this is DelegatingNode) {
+            forEachImmediateDelegate {
+                it.findRemoteTapNode()?.let { found -> return found }
+            }
         }
         return null
     }

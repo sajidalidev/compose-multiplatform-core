@@ -34,20 +34,140 @@ class TvSwipeMomentumTest {
 
     @Test
     fun rowsGrowWithTravelAndCap() {
-        assertEquals(3, momentumRowsFor(0.8f, 0.6f))
-        assertEquals(4, momentumRowsFor(0.8f, 0.9f))
-        assertEquals(5, momentumRowsFor(0.8f, 1.2f))
+        // One row per 0.254 pad unit from two rows at the single-row limit, capped at seven
+        assertEquals(2, momentumRowsFor(0.8f, 0.6f))
+        assertEquals(2, momentumRowsFor(0.8f, 0.81f))
+        assertEquals(3, momentumRowsFor(0.8f, 0.82f))
+        assertEquals(3, momentumRowsFor(0.8f, 0.9f))
+        assertEquals(4, momentumRowsFor(0.8f, 1.2f))
+        assertEquals(6, momentumRowsFor(0.8f, 1.6f))
+        assertEquals(7, momentumRowsFor(0.8f, 1.9f))
         assertEquals(7, momentumRowsFor(0.8f, 2.5f))
     }
 
     @Test
     fun startOffsetGatesMomentumAtItsThreshold() {
-        assertEquals(1, momentumRowsFor(0.59f, 1.2f))
-        assertEquals(5, momentumRowsFor(0.6f, 1.2f))
+        val below = MOMENTUM_MIN_START_OFFSET - 0.01f
+        assertEquals(1, momentumRowsFor(below, 1.2f))
+        assertEquals(4, momentumRowsFor(MOMENTUM_MIN_START_OFFSET, 1.2f))
         assertEquals(1, momentumRowsFor(0.0f, 1.2f))
         assertEquals(1, momentumRowsFor(-0.5f, 1.2f))
-        assertEquals(1, momentumRowsFor(0.6f, 0.59f))
-        assertEquals(3, momentumRowsFor(0.6f, 0.6f))
+        assertEquals(1, momentumRowsFor(MOMENTUM_MIN_START_OFFSET, 0.59f))
+        assertEquals(2, momentumRowsFor(MOMENTUM_MIN_START_OFFSET, 0.6f))
+    }
+
+    @Test
+    fun deviceStartOffsetsOfBothDirectionsEarnMomentum() {
+        // Measured on an Apple TV 4K: downward swipes start about 0.45 above the centre, upward
+        // ones about 0.9 below it. Both must keep their momentum.
+        assertEquals(4, momentumRowsFor(0.45f, 1.2f))
+        assertEquals(4, momentumRowsFor(0.9f, 1.2f))
+    }
+
+    @Test
+    fun speedRowsClimbOneRowPerStepFromTheMinimum() {
+        assertEquals(0, speedRowsFor(0f))
+        assertEquals(0, speedRowsFor(MOMENTUM_SPEED_MIN - 0.1f))
+        assertEquals(2, speedRowsFor(MOMENTUM_SPEED_MIN))
+        assertEquals(3, speedRowsFor(MOMENTUM_SPEED_MIN + MOMENTUM_SPEED_PER_ROW))
+        assertEquals(7, speedRowsFor(MOMENTUM_SPEED_MIN + 5 * MOMENTUM_SPEED_PER_ROW))
+    }
+
+    @Test
+    fun fastFlickOutrunsItsTravel() {
+        // A moderate swipe keeps the rows of its travel; a fast flick of the same length goes
+        // further, capped at the single swipe maximum.
+        assertEquals(2, momentumRowsFor(0.8f, 0.7f, peakSpeed = 6f))
+        assertEquals(5, momentumRowsFor(0.8f, 0.7f, peakSpeed = 20f))
+        assertEquals(MOMENTUM_MAX_ROWS, momentumRowsFor(0.8f, 1.6f, peakSpeed = 60f))
+        // The travel still sets the floor of a slow long swipe.
+        assertEquals(6, momentumRowsFor(0.8f, 1.6f, peakSpeed = 5f))
+    }
+
+    @Test
+    fun speedDoesNotBypassTheMomentumGates() {
+        assertEquals(1, momentumRowsFor(0.8f, 0.5f, peakSpeed = 30f))
+        assertEquals(1, momentumRowsFor(0.1f, 1.2f, peakSpeed = 30f))
+        assertEquals(1, momentumRowsFor(null, 1.2f, peakSpeed = 30f))
+    }
+
+    @Test
+    fun fastSwipeThatKeepsAChainGoingNeedsLessTravel() {
+        // Short, fast, started near the centre: one row alone, momentum within a chain.
+        assertEquals(1, momentumRowsFor(0.1f, 0.5f, peakSpeed = 12f))
+        assertEquals(3, momentumRowsFor(0.1f, 0.5f, peakSpeed = 12f, followsMomentumSwipe = true))
+        // Too slow for the chain rule: the usual gates apply.
+        assertEquals(1, momentumRowsFor(0.1f, 0.5f, peakSpeed = 6f, followsMomentumSwipe = true))
+        // Still a floor on the travel.
+        val short = CHAIN_SINGLE_ROW_TRAVEL - 0.01f
+        assertEquals(1, momentumRowsFor(0.8f, short, peakSpeed = 20f, followsMomentumSwipe = true))
+        assertEquals(1, momentumRowsFor(null, 0.5f, peakSpeed = 20f, followsMomentumSwipe = true))
+    }
+
+    @Test
+    fun briefFlickKeepsAChainGoingWithoutAMeasuredSpeed() {
+        // Sampled once before the pad went empty: no speed, a short known travel.
+        assertEquals(
+            2,
+            momentumRowsFor(0.1f, 0.22f, followsMomentumSwipe = true, quickContact = true),
+        )
+        assertEquals(1, momentumRowsFor(0.1f, 0.22f, quickContact = true))
+        assertEquals(1, momentumRowsFor(0.1f, 0.22f, peakSpeed = 5f, followsMomentumSwipe = true))
+        val short = CHAIN_SINGLE_ROW_TRAVEL - 0.01f
+        assertEquals(
+            1,
+            momentumRowsFor(0.1f, short, followsMomentumSwipe = true, quickContact = true),
+        )
+    }
+
+    @Test
+    fun seriesTakesASwipeUpToFortyFiveDegreesOffItsAxis() {
+        val up = Key.DirectionUp
+        // Oracle space: y is positive toward the top of the remote.
+        assertEquals(up, seriesSwipeKey(up, dx = 0.35f, dy = 0.40f))
+        assertEquals(up, seriesSwipeKey(up, dx = -0.40f, dy = 0.40f))
+        assertEquals(null, seriesSwipeKey(up, dx = 0.50f, dy = 0.40f))
+        // A stroke back against the series is not taken.
+        assertEquals(null, seriesSwipeKey(up, dx = 0.10f, dy = -0.60f))
+        assertEquals(null, seriesSwipeKey(null, dx = 0.0f, dy = 0.60f))
+        assertEquals(Key.DirectionLeft, seriesSwipeKey(Key.DirectionLeft, dx = -0.5f, dy = 0.3f))
+        assertEquals(0.4f, displacementAlongKey(down, dx = 0.1f, dy = -0.4f))
+    }
+
+    @Test
+    fun seriesContinuesOnlyWithinTheChainGap() {
+        val t = TvSwipeChainTracker()
+        assertEquals(null, t.continuingKey(1.0))
+        t.onSwipeDispatched(down, 1.0)
+        assertEquals(null, t.continuingKey(1.1))
+        t.onLift(1.2)
+        assertEquals(down, t.continuingKey(1.5))
+        assertEquals(null, t.continuingKey(1.2 + CHAIN_MAX_GAP_S + 0.01))
+    }
+
+    @Test
+    fun chainKnowsWhetherItsPreviousSwipeHadMomentum() {
+        val t = TvSwipeChainTracker()
+        t.onSwipeDispatched(down, 1.0)
+        assertFalse(t.followsMomentumSwipe)
+        t.onSwipeRows(4)
+        t.onLift(1.1)
+        t.onSwipeDispatched(down, 1.4)
+        assertTrue(t.followsMomentumSwipe)
+        // A single-row swipe does not carry it to the next one.
+        t.onSwipeRows(1)
+        t.onLift(1.5)
+        t.onSwipeDispatched(down, 1.8)
+        assertFalse(t.followsMomentumSwipe)
+        t.onSwipeRows(5)
+        t.onLift(1.9)
+        // Direction change and long gap both start a new chain.
+        t.onSwipeDispatched(Key.DirectionUp, 2.0)
+        assertFalse(t.followsMomentumSwipe)
+        t.onSwipeRows(5)
+        t.onLift(2.1)
+        t.onSwipeDispatched(Key.DirectionUp, 2.1 + CHAIN_MAX_GAP_S + 0.1)
+        assertFalse(t.followsMomentumSwipe)
     }
 
     @Test
@@ -77,7 +197,7 @@ class TvSwipeMomentumTest {
             Key.DirectionRight to -0.8f,
             Key.DirectionLeft to 0.8f,
         )) {
-            assertEquals(4, momentumRowsFor(swipeStartOffset(key, origin), 0.9f))
+            assertEquals(3, momentumRowsFor(swipeStartOffset(key, origin), 0.9f))
             assertEquals(1, momentumRowsFor(swipeStartOffset(key, -origin), 0.9f))
         }
     }
@@ -94,9 +214,34 @@ class TvSwipeMomentumTest {
     }
 
     @Test
-    fun chainBoostIsOffByDefault() {
-        assertEquals(1f, CHAIN_BOOST)
+    fun chainBoostLeavesSingleRowSwipesAlone() {
+        assertTrue(CHAIN_BOOST > 1f)
+        assertEquals(1, boostedRows(1, CHAIN_BOOST))
+        assertTrue(boostedRows(5, CHAIN_BOOST) > 5)
+    }
+
+    @Test
+    fun liftDistanceStaysBelowTheArmingGate() {
         assertTrue(SWIPE_LIFT_DISTANCE < 0.30f)
+    }
+
+    @Test
+    fun tailStepsNeverWaitLongerThanTheMaximumInterval() {
+        val b = TvMomentumBurst(down, 0.0, rows = 4, tau = MOMENTUM_CHAIN_TAU_S)
+        var now = 0.0
+        var last = 0.0
+        var longest = 0.0
+        while (!b.isFinished) {
+            now += 0.001
+            repeat(b.stepsDue(now, last)) {
+                b.onStepEmitted()
+                longest = maxOf(longest, now - last)
+                last = now
+            }
+        }
+        assertTrue(longest <= MOMENTUM_MAX_STEP_INTERVAL_S + 0.0015, "longest $longest")
+        // Without the cap the last step trails the previous one by about 175 ms.
+        assertTrue(now < 0.28, "finished at $now")
     }
 
     @Test
@@ -160,6 +305,48 @@ class TvSwipeMomentumTest {
     }
 
     @Test
+    fun stepPaidByTravelRaisesRowsAheadOfTheCurve() {
+        // A dragging finger pays for moves the curve never planned: the burst follows.
+        val b = burst(1)
+        assertTrue(b.isFinished)
+        b.onStepEmitted()
+        assertEquals(2, b.emitted)
+        assertEquals(2, b.rows)
+        assertTrue(b.isFinished)
+        assertEquals(0, b.stepsDue(b.startedAt + 1.0))
+        b.raiseRows(1)
+        assertEquals(2, b.rows)
+    }
+
+    @Test
+    fun carriedRowsAreOwedOnTopOfTheSwipesOwn() {
+        val b = TvMomentumBurst(down, 10.0, rows = 3, carried = 2)
+        assertEquals(5, b.rows)
+        b.raiseRows(4)
+        assertEquals(6, b.rows)
+        b.raiseRows(2)
+        assertEquals(6, b.rows)
+        assertEquals(5, b.remaining)
+    }
+
+    @Test
+    fun chainTauSpreadsTheSameRowsOverLonger() {
+        fun lastStepAt(tau: Double): Double {
+            val b = TvMomentumBurst(down, 0.0, rows = 4, tau = tau)
+            var now = 0.0
+            while (!b.isFinished) {
+                now += 0.001
+                repeat(b.stepsDue(now)) { b.onStepEmitted() }
+            }
+            return now
+        }
+        val single = lastStepAt(MOMENTUM_TAU_S)
+        val chained = lastStepAt(MOMENTUM_CHAIN_TAU_S)
+        assertTrue(single in 0.12..0.16, "single $single")
+        assertTrue(chained in 0.28..0.34, "chained $chained")
+    }
+
+    @Test
     fun stopFreezesBurst() {
         val b = burst(6)
         b.onStepEmitted()
@@ -214,7 +401,7 @@ class TvSwipeMomentumTest {
         assertEquals(1f, t.currentBoost())
         t.onLift(1.5)
         t.onSwipeDispatched(down, 1.8)
-        assertEquals(1f, t.currentBoost())
+        assertEquals(CHAIN_BOOST, t.currentBoost())
         assertEquals(1.3f, t.currentBoost(1.3f))
         t.onLift(2.0)
         t.onSwipeDispatched(down, 2.8)

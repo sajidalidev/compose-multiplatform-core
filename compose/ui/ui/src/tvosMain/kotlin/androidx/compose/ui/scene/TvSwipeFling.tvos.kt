@@ -25,6 +25,17 @@ import androidx.compose.ui.input.key.Key
 /** Trailing window the velocity is measured over, in seconds. Provisional pending device calibration. */
 internal const val FLING_VELOCITY_WINDOW_S = 0.05
 /**
+ * Shortest span of samples the peak speed of a swipe is measured over, in seconds: two display
+ * frames at 60 Hz. Shorter spans are dominated by the offset between the two timebases of the
+ * samples; on device they produced speeds up to 10 000 units per second.
+ */
+internal const val PEAK_SPEED_MIN_SPAN_S = 0.03
+/**
+ * Shortest time since a swipe started over which its average speed stands in for its peak speed, in
+ * seconds. Over that long the offset between the two timebases of the samples is negligible.
+ */
+internal const val AVERAGE_SPEED_MIN_ELAPSED_S = 0.02
+/**
  * Minimum speed along the dispatched axis, in clickpad units per second. A traverse ends between 9
  * and 29 units per second on the device, so this sits below the slowest of them. Device-measured
  * 2026-09-18, provisional.
@@ -68,12 +79,24 @@ internal class FlingSampleBuffer {
      * or `null` when that window holds no second sample, which is what a finger that has been
      * resting for longer than the window leaves behind.
      */
-    fun velocityAlong(horizontal: Boolean, windowS: Double): Float? {
+    fun velocityAlong(horizontal: Boolean, windowS: Double, minSpanS: Double = 0.0): Float? {
         if (count < 2) return null
-        return velocityEndingAt(count - 1, horizontal, windowS)
+        return velocityEndingAt(count - 1, horizontal, windowS, minSpanS)
     }
 
-    private fun velocityEndingAt(endLogical: Int, horizontal: Boolean, windowS: Double): Float? {
+    /**
+     * The velocity over the samples of the [windowS] seconds ending at [endLogical], `null` when
+     * they span less than [minSpanS]. The samples come from UIKit callbacks stamped with the
+     * hardware time of the touch and from display-link ticks stamped with the time of the tick, so
+     * two of them can lie a fraction of a millisecond apart around a real movement, which reads as
+     * thousands of units per second.
+     */
+    private fun velocityEndingAt(
+        endLogical: Int,
+        horizontal: Boolean,
+        windowS: Double,
+        minSpanS: Double,
+    ): Float? {
         if (endLogical < 1) return null
         val end = indexOf(endLogical)
         val endTime = timestamps[end]
@@ -87,7 +110,7 @@ internal class FlingSampleBuffer {
         }
         if (oldest < 0) return null
         val span = endTime - timestamps[oldest]
-        if (span <= 0.0) return null
+        if (span <= 0.0 || span < minSpanS) return null
         val delta = if (horizontal) xs[end] - xs[oldest] else ys[end] - ys[oldest]
         return (delta / span).toFloat()
     }

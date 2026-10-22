@@ -266,6 +266,9 @@ internal abstract class BaseComposeScene(
     internal fun findRemoteFastScrollNode(direction: RemoteSwipeDirection): RemoteFastScrollNode? =
         processFindRemoteFastScrollNode(direction)
 
+    // tvOS fork: sends a tap on the touch surface of a remote around the focused item.
+    internal fun dispatchRemoteTap(): Boolean = processRemoteTap()
+
     // tvOS fork: runs a call made by the platform mediator on a remote fast scroll node, with
     // invalidations postponed and a trampoline dispatch after it, like a key event.
     internal fun <T> runRemoteInput(block: () -> T): T =
@@ -325,6 +328,9 @@ internal abstract class BaseComposeScene(
         direction: RemoteSwipeDirection
     ): RemoteFastScrollNode?
 
+    // tvOS fork: the remote tap, sent from the focused item.
+    protected abstract fun processRemoteTap(): Boolean
+
     protected abstract fun doMeasureAndLayout()
 
     protected abstract fun doDraw(canvas: Canvas)
@@ -345,6 +351,10 @@ internal fun ComposeScene.findRemoteFastScrollNode(
     direction: RemoteSwipeDirection
 ): RemoteFastScrollNode? =
     (this as? BaseComposeScene)?.findRemoteFastScrollNode(direction)
+
+// tvOS fork: sends a tap on the touch surface of a remote; `false` when nothing took it.
+internal fun ComposeScene.dispatchRemoteTap(): Boolean =
+    (this as? BaseComposeScene)?.dispatchRemoteTap() ?: false
 
 /**
  * tvOS fork: runs [block] with invalidations postponed and a trampoline dispatch after it, like
