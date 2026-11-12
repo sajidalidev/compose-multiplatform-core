@@ -389,6 +389,11 @@ internal class RootNodeOwner(
         return _owner.focusOwner.findRemoteFastScrollNode(direction)
     }
 
+    // tvOS fork: calls the nearest remote tap node around the focused item.
+    fun onRemoteTap(): Boolean {
+        return _owner.focusOwner.dispatchRemoteTap()
+    }
+
     /**
      * Perform hit test and return the [InteropView] associated with the resulting
      * [PointerInputModifierNode] node in case it is a [Modifier.pointerInteropFilter],

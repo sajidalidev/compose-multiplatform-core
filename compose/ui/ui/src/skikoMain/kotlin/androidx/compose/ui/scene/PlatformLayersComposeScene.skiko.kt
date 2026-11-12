@@ -200,6 +200,9 @@ private class PlatformLayersComposeSceneImpl(
         direction: RemoteSwipeDirection
     ): RemoteFastScrollNode? = mainOwner.findRemoteFastScrollNode(direction)
 
+    // tvOS fork: the remote tap.
+    override fun processRemoteTap(): Boolean = mainOwner.onRemoteTap()
+
     override fun doMeasureAndLayout() {
         mainOwner.measureAndLayout()
     }

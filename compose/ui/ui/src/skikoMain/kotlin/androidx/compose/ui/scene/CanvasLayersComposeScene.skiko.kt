@@ -304,6 +304,10 @@ private class CanvasLayersComposeSceneImpl(
         if (focusedLayer != null) focusedLayer?.findRemoteFastScrollNode(direction)
         else mainOwner.findRemoteFastScrollNode(direction)
 
+    // tvOS fork: the remote tap, in the focused layer if there is one.
+    override fun processRemoteTap(): Boolean =
+        focusedLayer?.onRemoteTap() ?: mainOwner.onRemoteTap()
+
     override fun doMeasureAndLayout() {
         forEachOwner { it.measureAndLayout() }
     }
@@ -671,6 +675,10 @@ private class CanvasLayersComposeSceneImpl(
         // tvOS fork: the node that fast scrolls for a swipe.
         fun findRemoteFastScrollNode(direction: RemoteSwipeDirection): RemoteFastScrollNode? {
             return owner.findRemoteFastScrollNode(direction)
+        }
+
+        fun onRemoteTap(): Boolean {
+            return owner.onRemoteTap()
         }
 
         override fun setOutsidePointerEventListener(

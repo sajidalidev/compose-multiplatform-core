@@ -34,6 +34,25 @@ class TvSwipeFlingTest {
     }
 
     @Test
+    fun peakSpeedIgnoresSamplesTooCloseInTime() {
+        // A UIKit sample and a tick half a millisecond apart around a real movement.
+        val buffer = FlingSampleBuffer()
+        buffer.add(0.10f, 0f, 1.0000)
+        buffer.add(0.15f, 0f, 1.0005)
+        assertTrue(
+            buffer.velocityAlong(horizontal = true, windowS = FLING_VELOCITY_WINDOW_S)!! > 50f
+        )
+        assertNull(
+            buffer.velocityAlong(true, FLING_VELOCITY_WINDOW_S, minSpanS = PEAK_SPEED_MIN_SPAN_S)
+        )
+        // Once the window spans long enough, the speed is the real one.
+        buffer.add(0.40f, 0f, 1.0300)
+        val velocity =
+            buffer.velocityAlong(true, FLING_VELOCITY_WINDOW_S, minSpanS = PEAK_SPEED_MIN_SPAN_S)!!
+        assertEquals(10f, velocity, 0.01f)
+    }
+
+    @Test
     fun equalTimestampsHaveNoVelocity() {
         val buffer = FlingSampleBuffer()
         buffer.add(0f, 0f, 1.0)

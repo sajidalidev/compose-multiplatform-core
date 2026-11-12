@@ -178,6 +178,12 @@ internal interface FocusOwner : FocusManager {
      */
     fun findRemoteFastScrollNode(direction: RemoteSwipeDirection): RemoteFastScrollNode? = null
 
+    /**
+     * tvOS fork: calls the nearest [RemoteTapNode] around the focused item. Returns `false` when
+     * there is none.
+     */
+    fun dispatchRemoteTap(): Boolean = false
+
     /** Dispatches an indirect pointer event through the compose hierarchy. */
     fun dispatchIndirectPointerEvent(event: IndirectPointerEvent): Boolean
 
