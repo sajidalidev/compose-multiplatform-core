@@ -15,6 +15,7 @@
  */
 package androidx.compose.ui.scene
 
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.remote.RemoteSwipe
 import kotlin.math.abs
@@ -53,6 +54,59 @@ internal fun momentumRowsFor(
         floor(MOMENTUM_ROWS_INTERCEPT + MOMENTUM_ROWS_PER_TRAVEL * travel + 0.5f).toInt()
     return maxOf(travelRows, speedRowsFor(peakSpeed)).coerceIn(2, MOMENTUM_MAX_ROWS)
 }
+
+/**
+ * How far a move took focus along the swipe axis, as a share of [sceneExtent], the size of the
+ * scene along that axis: the distance between the centres of the focus rect [before] and [after]
+ * the move, or the size of the item it left when that is larger. `null` when focus stayed where it
+ * was, as on a surface that handles the directional keys itself, or when the rects are unknown.
+ */
+internal fun focusMovePitch(
+    horizontal: Boolean,
+    before: Rect?,
+    after: Rect?,
+    sceneExtent: Int,
+): Float? {
+    if (before == null || before.isEmpty || after == null || sceneExtent <= 0) return null
+    if (before == after) return null
+    val size = if (horizontal) before.width else before.height
+    val distance =
+        if (after.isEmpty) {
+            // The item focus moved to is not placed yet: the item it left stands in for the pitch.
+            0f
+        } else if (horizontal) {
+            abs(after.center.x - before.center.x)
+        } else {
+            abs(after.center.y - before.center.y)
+        }
+    return maxOf(distance, size) / sceneExtent
+}
+
+/**
+ * The rows a swipe moves focus when it earned [rows] on rows of [MOMENTUM_REFERENCE_PITCH] and one
+ * move covers [pitch] of the scene: its own move, then as many more as fit in the distance the
+ * momentum would have covered there. [rows] when [pitch] is unknown or no larger than the
+ * reference.
+ */
+internal fun momentumRowsForPitch(rows: Int, pitch: Float?): Int {
+    if (rows <= 1 || pitch == null || pitch <= MOMENTUM_REFERENCE_PITCH) return rows
+    return 1 + floor((rows - 1) * MOMENTUM_REFERENCE_PITCH / pitch + PITCH_ROUNDING).toInt()
+}
+
+/**
+ * The pad travel that pays for one further move under a gliding finger when one move covers
+ * [pitch] of the scene: [DRAG_STEP_TRAVEL] on rows of [MOMENTUM_REFERENCE_PITCH], and in proportion
+ * beyond.
+ */
+internal fun dragStepTravelFor(pitch: Float?): Float =
+    if (pitch == null || pitch <= MOMENTUM_REFERENCE_PITCH) {
+        DRAG_STEP_TRAVEL
+    } else {
+        DRAG_STEP_TRAVEL * pitch / MOMENTUM_REFERENCE_PITCH
+    }
+
+/** Keeps a pitch that is a whole multiple of the reference from losing a row to float rounding. */
+private const val PITCH_ROUNDING = 1e-3f
 
 /** Rows a swipe earns from its peak speed alone, 0 below [MOMENTUM_SPEED_MIN]. */
 internal fun speedRowsFor(peakSpeed: Float): Int =

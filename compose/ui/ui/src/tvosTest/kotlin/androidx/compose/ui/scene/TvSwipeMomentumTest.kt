@@ -15,10 +15,12 @@
  */
 package androidx.compose.ui.scene
 
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.key.Key
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TvSwipeMomentumTest {
@@ -584,6 +586,69 @@ class TvSwipeMomentumTest {
         assertEquals(7, boostedRows(5, 1.3f))
         assertEquals(8, boostedRows(7, 1.3f))
         assertEquals(4, boostedRows(4, 1f))
+    }
+
+    @Test
+    fun movePitchIsTheDistanceBetweenTheFocusRects() {
+        // Cards 200 px tall in rows 340 px apart on a 1080 px scene
+        val card = Rect(100f, 200f, 420f, 400f)
+        val below = card.translate(0f, 340f)
+        assertEquals(340f / 1080f, focusMovePitch(false, card, below, 1080)!!, 1e-4f)
+        // Their neighbours are 350 px apart on its 1920 px width
+        val beside = card.translate(350f, 0f)
+        assertEquals(350f / 1920f, focusMovePitch(true, card, beside, 1920)!!, 1e-4f)
+    }
+
+    @Test
+    fun movePitchIsAtLeastTheItemLeft() {
+        val banner = Rect(0f, 0f, 1920f, 500f)
+        val row = Rect(100f, 520f, 420f, 700f)
+        assertEquals(500f / 1080f, focusMovePitch(false, banner, row, 1080)!!, 1e-4f)
+        // An item that is not placed yet has an empty rect
+        assertEquals(500f / 1080f, focusMovePitch(false, banner, Rect.Zero, 1080)!!, 1e-4f)
+    }
+
+    @Test
+    fun movePitchIsUnknownWhenFocusStays() {
+        val surface = Rect(0f, 0f, 1920f, 1080f)
+        assertNull(focusMovePitch(false, surface, surface, 1080))
+        assertNull(focusMovePitch(false, null, surface, 1080))
+        assertNull(focusMovePitch(false, surface, null, 1080))
+        assertNull(focusMovePitch(false, surface, surface.translate(0f, 10f), 0))
+    }
+
+    @Test
+    fun rowsKeepTheirCountUpToTheReferencePitch() {
+        assertEquals(7, momentumRowsForPitch(7, null))
+        assertEquals(7, momentumRowsForPitch(7, MOMENTUM_REFERENCE_PITCH))
+        assertEquals(7, momentumRowsForPitch(7, 0.03f))
+        assertEquals(1, momentumRowsForPitch(1, 0.5f))
+    }
+
+    @Test
+    fun largerItemsTakeFewerMovesForTheSameDistance() {
+        // Twice the reference: the six rows of momentum cover three items
+        assertEquals(4, momentumRowsForPitch(7, 2 * MOMENTUM_REFERENCE_PITCH))
+        assertEquals(2, momentumRowsForPitch(3, 2 * MOMENTUM_REFERENCE_PITCH))
+        assertEquals(1, momentumRowsForPitch(2, 2 * MOMENTUM_REFERENCE_PITCH))
+        // Rows of cards a third of the screen apart: only the longest flick reaches a second row
+        val cardRows = 340f / 1080f
+        assertEquals(1, momentumRowsForPitch(3, cardRows))
+        assertEquals(1, momentumRowsForPitch(6, cardRows))
+        assertEquals(2, momentumRowsForPitch(7, cardRows))
+        assertEquals(2, momentumRowsForPitch(MOMENTUM_MAX_ROWS_CHAINED, cardRows))
+        // Cards 350 px apart across the 1920 px width
+        val cards = 350f / 1920f
+        assertEquals(1, momentumRowsForPitch(3, cards))
+        assertEquals(2, momentumRowsForPitch(4, cards))
+        assertEquals(3, momentumRowsForPitch(7, cards))
+    }
+
+    @Test
+    fun glideStepGrowsWithThePitch() {
+        assertEquals(DRAG_STEP_TRAVEL, dragStepTravelFor(null))
+        assertEquals(DRAG_STEP_TRAVEL, dragStepTravelFor(0.03f))
+        assertEquals(2 * DRAG_STEP_TRAVEL, dragStepTravelFor(2 * MOMENTUM_REFERENCE_PITCH), 1e-4f)
     }
 
     @Test

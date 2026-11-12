@@ -58,6 +58,19 @@ internal const val DRAG_STEP_TRAVEL = 0.30f
  */
 internal const val DRAG_REVERSAL_TRAVEL = 0.15f
 /**
+ * Share of the scene, along the swipe axis, that one focus move covers on the lists the row counts
+ * and [DRAG_STEP_TRAVEL] were measured on: a 66 pt row of a UITableView on the 1080 pt screen.
+ * Where a move takes focus further than that, the momentum and the glide of the finger cover the
+ * same share of the screen in fewer moves, the way the native focus engine asks more travel of the
+ * finger between larger items: seven rows of momentum are a third of the screen on such a list and
+ * more than two screens on rows of cards a third of the screen apart. The same share is taken of
+ * the width for a horizontal move, the pad being square and the screen not; that is an assumption,
+ * the native lists measured were vertical. On device it gives one row per swipe, two for the
+ * longest flicks, on rows 0.34 of the height apart, one to three cards 0.21 of the width apart and
+ * up to five tiles 0.09 of the width apart, which felt right. Provisional.
+ */
+internal const val MOMENTUM_REFERENCE_PITCH = 0.061f
+/**
  * How far ahead of the tick the momentum curve is read, in seconds: half a frame at 60 Hz, so a
  * step due just after a tick goes out on that tick instead of a whole frame later. Read on the tick
  * itself, the steps trail the fitted curve by a steady 15 to 25 ms on device.

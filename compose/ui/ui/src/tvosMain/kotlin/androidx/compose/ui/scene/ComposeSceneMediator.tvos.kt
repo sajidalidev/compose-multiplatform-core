@@ -303,6 +303,13 @@ private class IndirectTouchState(
     var travelSteps: Int = 0
     var dragNextTravel: Float = 0f
 
+    /**
+     * How far the contact's own move took focus along its axis, as a share of the scene, which its
+     * momentum and its glide are sized to; `null` when focus stayed on its item or the distance is
+     * unknown.
+     */
+    var movePitch: Float? = null
+
     /** Set once the lift of the contact was handled, which happens at most once. */
     var liftHandled: Boolean = false
 
@@ -1440,7 +1447,7 @@ internal class ComposeSceneMediator(
         val burst = momentumBurst ?: return
         if (burstSource !== state) return
         val rows = swipeRows(state)
-        burst.raiseRows(rows)
+        burst.raiseRows(momentumRowsForPitch(rows, state.movePitch))
         swipeChain.onSwipeRows(rows)
     }
 
@@ -1466,7 +1473,7 @@ internal class ComposeSceneMediator(
         updateMomentum(state)
         while (state.maxTravel >= state.dragNextTravel) {
             state.travelSteps++
-            state.dragNextTravel += DRAG_STEP_TRAVEL
+            state.dragNextTravel += dragStepTravelFor(state.movePitch)
         }
         val burst = momentumBurst ?: return
         if (burstSource !== state) return
@@ -1504,6 +1511,7 @@ internal class ComposeSceneMediator(
         state.liftArmed = false
         state.travelSteps = 0
         state.dragNextTravel = 0f
+        state.movePitch = null
         updateIndirectMinRadius(state, sample)
         evaluateIndirectTouch(state, sample, timestamp, logSample = false)
     }
@@ -1568,14 +1576,18 @@ internal class ComposeSceneMediator(
         val key = state.dispatchedKey ?: return
         val boost = swipeChain.currentBoost()
         val rows = boostedRows(swipeRows(state), boost)
+        // The chain is judged on the rows the gesture earned, the burst moves the rows that fit in
+        // the distance they stand for where focus is.
+        val moves = momentumRowsForPitch(rows, state.movePitch)
         swipeDebug {
-            "MOMENTUM plan rows=$rows travel=${state.maxTravel} speed=${state.peakSpeed} " +
+            "MOMENTUM plan rows=$rows moves=$moves pitch=${state.movePitch} " +
+                "travel=${state.maxTravel} speed=${state.peakSpeed} " +
                 "chained=${state.followsMomentumSwipe} quick=${state.quickContact} " +
                 "boost=$boost startOffset=${debugStartOffset(state)} t=${debugSeconds(timestamp)}"
         }
         swipeChain.onSwipeRows(rows)
         swipeChain.onLift(timestamp)
-        if (burstSource === state) momentumBurst?.raiseRows(rows)
+        if (burstSource === state) momentumBurst?.raiseRows(moves)
         if (swipeChain.shouldEnterFastMode()) tryEnterFastScrollFromSwipe(key)
     }
 
@@ -2105,11 +2117,24 @@ internal class ComposeSceneMediator(
         val rows = swipeRows(state)
         swipeChain.onSwipeRows(rows)
         val cancellations = momentumCancellations
+        val focusBefore = scene.focusManager.getFocusRect(afterLayout = false)
         val consumed =
             onKeyboardEvent(KeyEvent(key, KeyEventType.KeyDown, nativeEvent = state.swipe))
         onKeyboardEvent(KeyEvent(key, KeyEventType.KeyUp, nativeEvent = state.swipe))
         if (cancellations != momentumCancellations) return
         if (consumed) swipeChain.onFocusMoved()
+        // Read before the layout pass that scrolls the item focus moved to into view, so the two
+        // rects are still one move apart.
+        val horizontal = isHorizontalFlingKey(key)
+        state.movePitch =
+            focusMovePitch(
+                horizontal = horizontal,
+                before = focusBefore,
+                after = scene.focusManager.getFocusRect(afterLayout = false),
+                sceneExtent = scene.size?.let { if (horizontal) it.width else it.height } ?: 0,
+            )
+        state.dragNextTravel = state.maxTravel + dragStepTravelFor(state.movePitch)
+        swipeDebug { "SWIPE move pitch=${state.movePitch}" }
         // A swipe in the same direction takes over what the burst it replaces still owed.
         val replaced = momentumBurst
         val carried =
@@ -2126,7 +2151,7 @@ internal class ComposeSceneMediator(
             TvMomentumBurst(
                 key = key,
                 startedAt = startedAt,
-                rows = rows,
+                rows = momentumRowsForPitch(rows, state.movePitch),
                 tau = if (state.followsMomentumSwipe) MOMENTUM_CHAIN_TAU_S else MOMENTUM_TAU_S,
                 carried = carried,
                 swipe = state.swipe,
